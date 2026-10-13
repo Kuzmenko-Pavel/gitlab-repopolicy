@@ -1,0 +1,4 @@
+gitlab-repopolicy: recovery: the policy has no administrators; Owner alice changed PATHPOLICY
+gitlab-repopolicy: warning (COMMITPOLICY: 1 violation)
+
+COMMITPOLICY [protected]: commit message format

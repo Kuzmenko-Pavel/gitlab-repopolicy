@@ -1,0 +1,6 @@
+gitlab-repopolicy: push rejected (gitlab-repopolicy: 1 violation)
+
+gitlab-repopolicy refs/heads/feature: push could not be verified
+
+user: alice (id 314)
+GL-HOOK-ERR: gitlab-repopolicy: push could not be verified. See push output.

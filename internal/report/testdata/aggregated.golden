@@ -1,0 +1,17 @@
+gitlab-repopolicy: push rejected (PATHPOLICY: 1 violation, COMMITPOLICY: 1 violation)
+
+PATHPOLICY [ci-config] refs/heads/main: modification denied
+  CI/CD configuration is owned by the platform team.
+  Propose a change through a merge request.
+  files:
+    .gitlab-ci.yml
+    Makefile
+
+COMMITPOLICY [protected] refs/heads/main: commit message format
+  commits:
+    3f2a9c1 "Fix deploy"
+      - header: expected "type(scope): subject"
+  fix: git rebase -i, reword; or enable squash on merge
+
+user: bob (key 7)
+GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY [ci-config] modification denied; COMMITPOLICY [protected] commit message format. See push output.

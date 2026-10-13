@@ -8,6 +8,8 @@ import (
 	"runtime"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
 
 // Exit codes returned by Run.
@@ -38,9 +40,20 @@ type command struct {
 	run     func(ctx context.Context, args []string, env []string, stdio Stdio) int
 }
 
-// Run executes the command line args (without the program name) and returns the exit code.
+// App is the composition root. Modules builds the module list from the
+// server config; tests replace it to run the core with test modules.
+type App struct {
+	Modules func(modules.Settings) []module.Module
+}
+
+// Run executes the command line args (without the program name) with the default modules.
 func Run(ctx context.Context, args []string, env []string, stdio Stdio) int {
-	commands := commandList()
+	return App{Modules: modules.Default}.Run(ctx, args, env, stdio)
+}
+
+// Run executes the command line args (without the program name) and returns the exit code.
+func (a App) Run(ctx context.Context, args []string, env []string, stdio Stdio) int {
+	commands := a.commandList()
 	if len(args) == 0 {
 		return withOutput(usage(stdio.Err, commands), ExitUsage)
 	}
@@ -61,8 +74,9 @@ func Run(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	return withOutput(usage(stdio.Err, commands), ExitUsage)
 }
 
-func commandList() []command {
+func (a App) commandList() []command {
 	return []command{
+		{name: "hook", summary: "run as the pre-receive hook of Gitaly: hook pre-receive --config FILE", run: a.runHook},
 		{name: "version", summary: "print version, commit, build date and Go version", run: runVersion},
 	}
 }

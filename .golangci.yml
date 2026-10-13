@@ -161,6 +161,9 @@ linters:
             - github.com/stretchr/testify
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+            # External tests of the package and the fake server.
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest
         hookenv:
           list-mode: strict
           files:

@@ -103,6 +103,7 @@ code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 	golangci-lint fmt --diff
 	go mod tidy -diff
 	for t in $(TOOLS); do go -C tools/$$t mod tidy -diff; done
+	go test -count=1 -run '^TestSchemas$$' ./internal/schema
 	actionlint
 	pipx run yamllint==$(YAMLLINT_VERSION) --strict .
 	mkdir -p bin; status=0; \

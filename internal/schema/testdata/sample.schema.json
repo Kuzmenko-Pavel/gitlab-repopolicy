@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "extra": {},
+    "labels": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "level": {
+            "enum": [
+              "error",
+              "warn",
+              "off"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "weight": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "version": {
+      "description": "Schema version of the file.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "rules"
+  ],
+  "title": "SAMPLEPOLICY",
+  "type": "object"
+}

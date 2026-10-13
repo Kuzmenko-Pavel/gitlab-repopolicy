@@ -75,6 +75,9 @@ type Scope struct {
 	// Protected matches the refs of the protected set; for ClassProtected the
 	// commits already in the default branch and in these refs are not new.
 	Protected func(ref string) bool
+	// FirstParent limits commit views to the first-parent chain: commits that
+	// enter through the other parents of a merge commit are left out. Paths ignore it.
+	FirstParent bool
 }
 
 // RefClassifier classifies refs. Default is local; protected needs the API and

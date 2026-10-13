@@ -95,9 +95,9 @@ type counting struct {
 	revLists int
 }
 
-func (c *counting) RevList(ctx context.Context, include, exclude []string, notBT bool, max int) ([]string, error) {
+func (c *counting) RevList(ctx context.Context, o gitx.RevListOptions) ([]string, error) {
 	c.revLists++
-	return c.Git.RevList(ctx, include, exclude, notBT, max)
+	return c.Git.RevList(ctx, o)
 }
 
 var zero = strings.Repeat("0", 40)
@@ -338,4 +338,31 @@ func fixtureGit() string {
 		return bin
 	}
 	return "git"
+}
+
+func TestEnteringCommits_FirstParent(t *testing.T) {
+	f := newFixture(t)
+	base := f.commit("base", map[string]string{"a": "1"})
+	f.publish(base + ":refs/heads/main")
+	f.git(f.work, "checkout", "-q", "-b", "feature")
+	side := f.commit("side", map[string]string{"b": "1"})
+	f.publish(side + ":refs/heads/feature")
+	f.git(f.work, "checkout", "-q", "main")
+	f.git(f.work, "merge", "-q", "--no-ff", "-m", "merge", "feature")
+	merge := f.git(f.work, "rev-parse", "HEAD")
+	f.stage(merge)
+	s, _ := f.set("refs/heads/main")
+	u := update(base, merge, "refs/heads/main")
+	all, err := s.EnteringCommits(ctx, u, def, 10)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{merge, side}, all)
+	fp, err := s.EnteringCommits(ctx, u, module.Scope{Class: module.ClassDefault, FirstParent: true}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{merge}, fp, "the merged branch commit is not on the first-parent chain")
+	created, err := s.EnteringCommits(ctx, update(zero, merge, "refs/heads/copy"), module.Scope{Class: module.ClassOther, FirstParent: true}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{merge}, created)
+	paths, err := s.Paths(ctx, update(zero, merge, "refs/heads/copy"), module.Scope{Class: module.ClassProtected, Key: "x", FirstParent: true})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"b"}, paths, "paths ignore FirstParent")
 }

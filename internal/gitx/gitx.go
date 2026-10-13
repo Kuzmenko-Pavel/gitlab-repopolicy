@@ -279,24 +279,37 @@ func parseCommitPaths(out []byte) []string {
 	return paths
 }
 
-// RevList lists commits reachable from include and not from exclude; with
-// notBranchesTags it also excludes everything reachable from branches and tags.
-// It returns ErrLimit when more than max commits match.
-func (r *Repo) RevList(ctx context.Context, include, exclude []string, notBranchesTags bool, max int) ([]string, error) {
-	args := []string{"rev-list", fmt.Sprintf("--max-count=%d", max+1)}
-	for _, rev := range include {
+// RevListOptions select commits for RevList.
+type RevListOptions struct {
+	// Include and Exclude are object names or full ref names.
+	Include, Exclude []string
+	// NotBranchesTags also excludes everything reachable from branches and tags.
+	NotBranchesTags bool
+	// FirstParent follows only the first parent of merge commits.
+	FirstParent bool
+	// Max is the largest number of commits returned; more is ErrLimit.
+	Max int
+}
+
+// RevList lists commits reachable from o.Include and not from o.Exclude.
+func (r *Repo) RevList(ctx context.Context, o RevListOptions) ([]string, error) {
+	args := []string{"rev-list", fmt.Sprintf("--max-count=%d", o.Max+1)}
+	if o.FirstParent {
+		args = append(args, "--first-parent")
+	}
+	for _, rev := range o.Include {
 		if err := checkRev(rev); err != nil {
 			return nil, err
 		}
 		args = append(args, rev)
 	}
-	for _, rev := range exclude {
+	for _, rev := range o.Exclude {
 		if err := checkRev(rev); err != nil {
 			return nil, err
 		}
 		args = append(args, "^"+rev)
 	}
-	if notBranchesTags {
+	if o.NotBranchesTags {
 		args = append(args, "--not", "--branches", "--tags")
 	}
 	out, err := r.run(ctx, nil, args...)
@@ -304,7 +317,7 @@ func (r *Repo) RevList(ctx context.Context, include, exclude []string, notBranch
 		return nil, err
 	}
 	commits := strings.Fields(string(out))
-	if len(commits) > max {
+	if len(commits) > o.Max {
 		return nil, ErrLimit
 	}
 	return commits, nil
@@ -321,4 +334,35 @@ func splitZ(out []byte) []string {
 		}
 	}
 	return res
+}
+
+// Discover returns the git directory of the repository that contains dir.
+func Discover(ctx context.Context, path, dir string) (string, error) {
+	git, err := lookGit(path)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, git, "rev-parse", "--absolute-git-dir") //nolint:gosec // G204: git from PATH, fixed arguments
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "LC_ALL=C"}
+	var stderr limitedBuffer
+	stderr.max = maxStderr
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", &Error{Args: []string{"rev-parse"}, Err: err, Stderr: strings.TrimSpace(stderr.String())}
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// ResolveCommit returns the commit a revision such as "origin/main" names.
+func (r *Repo) ResolveCommit(ctx context.Context, rev string) (string, error) {
+	if rev == "" || strings.HasPrefix(rev, "-") {
+		return "", fmt.Errorf("gitx: invalid revision %q", rev)
+	}
+	info, err := r.Info(ctx, rev+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("gitx: %s: %w", rev, err)
+	}
+	return info.OID, nil
 }

@@ -23,7 +23,7 @@ type Git interface {
 	Peel(ctx context.Context, rev string) (string, error)
 	DiffNames(ctx context.Context, a, b string) ([]string, error)
 	CommitPaths(ctx context.Context, commits []string) ([]string, error)
-	RevList(ctx context.Context, include, exclude []string, notBranchesTags bool, max int) ([]string, error)
+	RevList(ctx context.Context, o gitx.RevListOptions) ([]string, error)
 	Refs(ctx context.Context) ([]string, error)
 }
 
@@ -95,10 +95,10 @@ func (s *Set) ends(ctx context.Context, u module.RefUpdate) (oldC, newC string, 
 	return oldC, newC, nil
 }
 
-func (s *Set) revList(ctx context.Context, include, exclude []string, notBranchesTags bool, max int) ([]string, error) {
-	commits, err := s.git.RevList(ctx, include, exclude, notBranchesTags, max)
+func (s *Set) revList(ctx context.Context, o gitx.RevListOptions) ([]string, error) {
+	commits, err := s.git.RevList(ctx, o)
 	if errors.Is(err, gitx.ErrLimit) {
-		return nil, fmt.Errorf("more than %d commits: %w", max, module.ErrLimitExceeded)
+		return nil, fmt.Errorf("more than %d commits: %w", o.Max, module.ErrLimitExceeded)
 	}
 	return commits, err
 }
@@ -112,15 +112,19 @@ func (s *Set) withDefault() []string {
 
 // NewCommits are the commits not reachable from any branch or tag before the push.
 func (s *Set) NewCommits(ctx context.Context, u module.RefUpdate, max int) ([]string, error) {
+	return s.newCommits(ctx, u, false, max)
+}
+
+func (s *Set) newCommits(ctx context.Context, u module.RefUpdate, firstParent bool, max int) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
 	}
-	return s.cached(fmt.Sprintf("new %s %d", u.Ref, max), func() ([]string, error) {
+	return s.cached(fmt.Sprintf("new %s %t %d", u.Ref, firstParent, max), func() ([]string, error) {
 		_, newC, err := s.ends(ctx, u)
 		if err != nil {
 			return nil, err
 		}
-		return s.revList(ctx, []string{newC}, nil, true, max)
+		return s.revList(ctx, gitx.RevListOptions{Include: []string{newC}, NotBranchesTags: true, FirstParent: firstParent, Max: max})
 	})
 }
 
@@ -140,7 +144,7 @@ func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string,
 			return nil, err
 		}
 		if u.Kind() == module.Create {
-			commits, err := s.revList(ctx, []string{newC}, s.withDefault(), false, MaxPathCommits)
+			commits, err := s.revList(ctx, gitx.RevListOptions{Include: []string{newC}, Exclude: s.withDefault(), Max: MaxPathCommits})
 			if err != nil {
 				return nil, err
 			}
@@ -182,6 +186,7 @@ func (s *Set) Paths(ctx context.Context, u module.RefUpdate, scope module.Scope)
 		case u.Kind() == module.Update:
 			return s.git.DiffNames(ctx, oldC, newC)
 		default:
+			scope.FirstParent = false
 			commits, err = s.EnteringCommits(ctx, u, scope, MaxPathCommits)
 		}
 		if err != nil {
@@ -202,9 +207,9 @@ func (s *Set) CandidateCommits(ctx context.Context, u module.RefUpdate, max int)
 			return nil, err
 		}
 		if u.Kind() == module.Update {
-			return s.revList(ctx, []string{newC}, []string{oldC}, false, max)
+			return s.revList(ctx, gitx.RevListOptions{Include: []string{newC}, Exclude: []string{oldC}, Max: max})
 		}
-		return s.revList(ctx, []string{newC}, s.withDefault(), false, max)
+		return s.revList(ctx, gitx.RevListOptions{Include: []string{newC}, Exclude: s.withDefault(), Max: max})
 	})
 }
 
@@ -216,25 +221,25 @@ func (s *Set) EnteringCommits(ctx context.Context, u module.RefUpdate, scope mod
 		return nil, nil
 	}
 	if scope.Class == module.ClassOther && u.Kind() == module.Create {
-		return s.NewCommits(ctx, u, max)
+		return s.newCommits(ctx, u, scope.FirstParent, max)
 	}
-	return s.cached(fmt.Sprintf("entering %s %d %q %d", u.Ref, scope.Class, scope.Key, max), func() ([]string, error) {
+	key := fmt.Sprintf("entering %s %d %q %t %d", u.Ref, scope.Class, scope.Key, scope.FirstParent, max)
+	return s.cached(key, func() ([]string, error) {
 		oldC, newC, err := s.ends(ctx, u)
 		if err != nil {
 			return nil, err
 		}
+		o := gitx.RevListOptions{Include: []string{newC}, FirstParent: scope.FirstParent, Max: max}
 		switch {
 		case u.Kind() == module.Update:
-			return s.revList(ctx, []string{newC}, []string{oldC}, false, max)
+			o.Exclude = []string{oldC}
 		case scope.Class == module.ClassDefault:
-			return s.revList(ctx, []string{newC}, nil, false, max)
 		default:
-			exclude, err := s.protectedSet(ctx, scope)
-			if err != nil {
+			if o.Exclude, err = s.protectedSet(ctx, scope); err != nil {
 				return nil, err
 			}
-			return s.revList(ctx, []string{newC}, exclude, false, max)
 		}
+		return s.revList(ctx, o)
 	})
 }
 

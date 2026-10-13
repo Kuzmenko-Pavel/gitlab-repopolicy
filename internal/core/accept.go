@@ -113,7 +113,7 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		problems = append(problems, err.Error())
 	} else {
 		var warnings []string
-		for _, pr := range p.Validate(ctx, r.deps.Validator) {
+		for _, pr := range p.Validate(ctx, r.validatorFor(l)) {
 			switch {
 			case pr.Unknown:
 				unknown = true
@@ -153,4 +153,46 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		r.events = append(r.events, r.event(base))
 	}
 	return nil
+}
+
+// addedOnly is a Validator that asks only about usernames new in this version (D28).
+type addedOnly struct {
+	next  module.Validator
+	known map[string]bool
+}
+
+func (a addedOnly) ActiveUsers(ctx context.Context, usernames []string) (map[string]bool, module.Status) {
+	out := map[string]bool{}
+	var ask []string
+	for _, u := range usernames {
+		if a.known[strings.ToLower(u)] {
+			out[u] = true
+		} else {
+			ask = append(ask, u)
+		}
+	}
+	if len(ask) == 0 {
+		return out, module.Confirmed()
+	}
+	got, status := a.next.ActiveUsers(ctx, ask)
+	for u, ok := range got {
+		out[u] = ok
+	}
+	return out, status
+}
+
+// validatorFor wraps the validator with the usernames of the anchor version.
+func (r *receive) validatorFor(l *loaded) module.Validator {
+	if r.deps.Validator == nil {
+		return nil
+	}
+	lister, ok := l.policy.(module.UsernameLister)
+	if !ok {
+		return r.deps.Validator
+	}
+	known := map[string]bool{}
+	for _, u := range lister.Usernames() {
+		known[strings.ToLower(u)] = true
+	}
+	return addedOnly{next: r.deps.Validator, known: known}
 }

@@ -107,6 +107,11 @@ func (f *fakeAPI) UsersByUsername(context.Context, string) ([]gitlab.User, error
 
 func (f *fakeAPI) Calls() int { return f.calls + f.userCalls }
 
+func (f *fakeAPI) UserHasKey(context.Context, int64, int64) (bool, error) {
+	f.calls++
+	return true, nil
+}
+
 type memAudit struct{ events []audit.Event }
 
 func (m *memAudit) Write(e audit.Event) error {

@@ -162,3 +162,19 @@ func TestNew_Errors(t *testing.T) {
 	_, err = gitlab.New(gitlab.Options{BaseURL: "https://x", Timeout: time.Second})
 	assert.ErrorContains(t, err, "MaxCalls")
 }
+
+func TestClient_UserHasKey(t *testing.T) {
+	srv := gitlabtest.NewUnix(t)
+	srv.Handle(http.MethodGet, "/api/v4/users/2/keys/7", gitlabtest.OK(map[string]any{"id": 7}))
+	srv.Handle(http.MethodGet, "/api/v4/users/2/keys/8", gitlabtest.Status(http.StatusNotFound))
+	srv.Handle(http.MethodGet, "/api/v4/users/2/keys/9", gitlabtest.Status(http.StatusBadGateway))
+	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
+	ok, err := c.UserHasKey(context.Background(), 2, 7)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	ok, err = c.UserHasKey(context.Background(), 2, 8)
+	require.NoError(t, err)
+	assert.False(t, ok, "404: not one of the user's keys, a deploy key")
+	_, err = c.UserHasKey(context.Background(), 2, 9)
+	assert.Equal(t, gitlab.Unavailable, gitlab.KindOf(err))
+}

@@ -108,3 +108,13 @@ func syntaxError(err error) error {
 	}
 	return &Error{Msg: err.Error()}
 }
+
+// DecodeValue applies the rules of Decode to a value that an earlier Decode
+// left undecoded, such as a section of the server config.
+func DecodeValue(v, out any, maxBytes int) error {
+	data, err := yaml.Marshal(v)
+	if err != nil {
+		return &Error{Msg: err.Error()}
+	}
+	return Decode(data, out, maxBytes)
+}

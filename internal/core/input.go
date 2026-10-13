@@ -7,6 +7,7 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/changes"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
@@ -18,6 +19,7 @@ func (r *receive) newInput() *module.Input {
 		Refs:        refs.New(r.defaultRef, r.req.Env.ProjectID, r.deps.API, r.guard),
 		Changes:     changes.New(r.deps.Git, r.defaultRef),
 		Principal:   r.req.Env.Principal,
+		Principals:  identity.NewResolver(r.deps.API, r.req.Env.Principal, r.guard),
 		Objects:     objects{git: r.deps.Git},
 		Clock:       r.deps.Clock,
 		PolicyFiles: r.policyFiles(),

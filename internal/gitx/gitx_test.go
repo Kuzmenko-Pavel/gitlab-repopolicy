@@ -273,16 +273,29 @@ func TestRevList(t *testing.T) {
 	f.push("HEAD:refs/heads/other")
 	r := f.open(false)
 	ctx := context.Background()
-	got, err := r.RevList(ctx, []string{c3}, []string{"refs/heads/main"}, false, 10)
+	got, err := r.RevList(ctx, RevListOptions{Include: []string{c3}, Exclude: []string{"refs/heads/main"}, Max: 10})
 	require.NoError(t, err)
 	assert.Equal(t, []string{c3, c2}, got)
-	got, err = r.RevList(ctx, []string{c3}, nil, true, 10)
+	got, err = r.RevList(ctx, RevListOptions{Include: []string{c3}, NotBranchesTags: true, Max: 10})
 	require.NoError(t, err)
 	assert.Empty(t, got, "everything is reachable from branches")
-	_, err = r.RevList(ctx, []string{c3}, []string{c1}, false, 1)
+	_, err = r.RevList(ctx, RevListOptions{Include: []string{c3}, Exclude: []string{c1}, Max: 1})
 	assert.ErrorIs(t, err, ErrLimit)
-	_, err = r.RevList(ctx, []string{"--all"}, nil, false, 1)
+	_, err = r.RevList(ctx, RevListOptions{Include: []string{"--all"}, Max: 1})
 	assert.Error(t, err)
+
+	f.git(f.work, "checkout", "-q", "-b", "side", c1)
+	side := f.commit("side")
+	f.git(f.work, "checkout", "-q", "-")
+	f.git(f.work, "merge", "-q", "--no-ff", "-m", "merge", "side")
+	merge := f.git(f.work, "rev-parse", "HEAD")
+	f.push("HEAD:refs/heads/merged")
+	got, err = r.RevList(ctx, RevListOptions{Include: []string{merge}, Exclude: []string{c3}, Max: 10})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{merge, side}, got)
+	got, err = r.RevList(ctx, RevListOptions{Include: []string{merge}, Exclude: []string{c3}, FirstParent: true, Max: 10})
+	require.NoError(t, err)
+	assert.Equal(t, []string{merge}, got, "the side branch is not on the first-parent chain")
 }
 
 func TestObjectModeDetection(t *testing.T) {
@@ -343,4 +356,24 @@ func fixtureGit() string {
 		return bin
 	}
 	return "git"
+}
+
+func TestDiscoverAndResolve(t *testing.T) {
+	f := newFixture(t)
+	c := f.commit("one")
+	dir, err := Discover(context.Background(), f.path, f.work)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(f.work, ".git"), dir)
+	_, err = Discover(context.Background(), f.path, t.TempDir())
+	assert.Error(t, err)
+	r, err := Open(Env{Dir: dir, Path: f.path})
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, r.Close()) }()
+	got, err := r.ResolveCommit(context.Background(), "HEAD")
+	require.NoError(t, err)
+	assert.Equal(t, c, got)
+	_, err = r.ResolveCommit(context.Background(), "--all")
+	assert.Error(t, err)
+	_, err = r.ResolveCommit(context.Background(), "nope")
+	assert.ErrorIs(t, err, ErrMissing)
 }

@@ -160,3 +160,35 @@ func TestAuditFailureKeepsDecision(t *testing.T) {
 	assert.ErrorContains(t, out.AuditErr, "disk full")
 	assert.Contains(t, out.Stderr, "user: alice (key 5)")
 }
+
+type recordingValidator struct{ asked []string }
+
+func (v *recordingValidator) ActiveUsers(_ context.Context, users []string) (map[string]bool, module.Status) {
+	v.asked = append(v.asked, users...)
+	out := map[string]bool{}
+	for _, u := range users {
+		out[u] = true
+	}
+	return out, module.Confirmed()
+}
+
+type listedPolicy struct{ users []string }
+
+func (p listedPolicy) Usernames() []string                                       { return p.users }
+func (listedPolicy) Validate(context.Context, module.Validator) []module.Problem { return nil }
+func (listedPolicy) Needs() module.Needs                                         { return module.Needs{} }
+func (listedPolicy) Evaluate(context.Context, *module.Input) (*module.Result, error) {
+	return &module.Result{}, nil
+}
+
+func TestValidator_AddedUsernamesOnly(t *testing.T) {
+	rv := &recordingValidator{}
+	r := &receive{deps: Deps{Validator: rv}}
+	v := r.validatorFor(&loaded{policy: listedPolicy{users: []string{"Alice"}}})
+	got, st := v.ActiveUsers(context.Background(), []string{"alice", "bob"})
+	assert.True(t, st.IsConfirmed())
+	assert.Equal(t, map[string]bool{"alice": true, "bob": true}, got)
+	assert.Equal(t, []string{"bob"}, rv.asked, "usernames of the anchor version are not asked again (D28)")
+	assert.Nil(t, (&receive{}).validatorFor(&loaded{}))
+	assert.Equal(t, rv, (&receive{deps: Deps{Validator: rv}}).validatorFor(&loaded{policy: testPolicy{}}))
+}

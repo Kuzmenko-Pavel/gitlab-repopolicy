@@ -83,3 +83,11 @@ func FuzzDecode(f *testing.F) {
 		}
 	})
 }
+
+func TestDecodeValue(t *testing.T) {
+	var out doc
+	require.NoError(t, DecodeValue(map[string]any{"version": 1, "items": []any{"x", "y"}, "nested": map[string]any{"value": "v"}}, &out, 1024))
+	assert.Equal(t, []string{"x", "y"}, out.Items)
+	assert.ErrorContains(t, DecodeValue(map[string]any{"bogus": 1}, &out, 1024), "field bogus not found")
+	assert.ErrorContains(t, DecodeValue(map[string]any{"name": strings.Repeat("x", 100)}, &out, 10), "the limit is 10")
+}

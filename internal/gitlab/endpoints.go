@@ -59,3 +59,13 @@ func (c *Client) UsersByUsername(ctx context.Context, username string) ([]User, 
 	err := c.do(ctx, http.MethodGet, "/api/v4/users?username="+url.QueryEscape(username), nil, &users)
 	return users, err
 }
+
+// UserHasKey reports whether the SSH key keyID belongs to the user's own keys:
+// GET /users/:user_id/keys/:key_id is 200 for a personal key and 404 for a deploy key.
+func (c *Client) UserHasKey(ctx context.Context, userID, keyID int64) (bool, error) {
+	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v4/users/%d/keys/%d", userID, keyID), nil, nil)
+	if KindOf(err) == NotFound {
+		return false, nil
+	}
+	return err == nil, err
+}

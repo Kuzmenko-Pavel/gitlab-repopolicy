@@ -85,10 +85,13 @@ type Input struct {
 	Updates []RefUpdate
 	Refs    RefClassifier
 	Changes ChangeSet
-	// Principal is the identity of the pusher.
+	// Principal is the identity of the pusher as GL_ID and GL_USERNAME.
 	Principal Principal
-	Objects   ObjectReader
-	Clock     func() time.Time
+	// Principals resolves the pusher to a person's username; an SSH key is
+	// checked to be personal (architecture §9.2). It calls the API lazily.
+	Principals PrincipalResolver
+	Objects    ObjectReader
+	Clock      func() time.Time
 	// PolicyFiles are the files of all enabled modules; a change to any of them always touches the rules.
 	PolicyFiles []string
 }
@@ -206,4 +209,32 @@ type SchemaProvider interface {
 // the reflection of their Go type cannot express, such as enums or durations.
 type JSONSchemaer interface {
 	JSONSchema() map[string]any
+}
+
+// PrincipalResolver resolves the pusher to the username of a person.
+type PrincipalResolver interface {
+	// Username is "" for a deploy key or an unparsable GL_ID; the status is
+	// unknown when GitLab did not answer.
+	Username(ctx context.Context) (string, Status)
+}
+
+// LintFinding is a broken rule found by a local lint of a commit message.
+type LintFinding struct {
+	Ruleset string
+	// Error is false for warnings.
+	Error  bool
+	Reason string
+}
+
+// CommitLinter is implemented by policies that check commit messages
+// outside of a push, for gitlab-repopolicy lint-commit.
+type CommitLinter interface {
+	LintMessage(ctx context.Context, message string) []LintFinding
+	LintCommit(ctx context.Context, object []byte) []LintFinding
+}
+
+// UsernameLister is implemented by policies with principals. At acceptance the
+// core checks only usernames that the anchor version does not have (D28).
+type UsernameLister interface {
+	Usernames() []string
 }

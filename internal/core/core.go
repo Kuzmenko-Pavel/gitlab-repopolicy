@@ -32,7 +32,7 @@ type Git interface {
 // API is the part of the GitLab client the core uses.
 type API interface {
 	refs.API
-	identity.Users
+	identity.API
 	Calls() int
 }
 

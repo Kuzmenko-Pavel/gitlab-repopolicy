@@ -55,6 +55,14 @@ RELEASE_ASSETS_DIR  ?=
 # Version for make release, without v; asked interactively when empty.
 RELEASE_VERSION ?=
 COMPOSE_PROJECT_NAME ?= gitlab-repopolicy-$(or $(GITHUB_RUN_ID),local)-$(subst .,-,$(GITLAB_VERSION))
+# e2e stand: runner image, ports on 127.0.0.1, state (test CA, SSH keys, tokens) outside the repo volumes.
+GITLAB_RUNNER_VERSION ?= v19.4.1
+E2E_HTTPS_PORT ?= 8443
+E2E_SSH_PORT   ?= 2222
+E2E_STATE_ROOT ?= $(CURDIR)/bin/e2e-stand
+E2E_STATE_DIR  := $(abspath $(E2E_STATE_ROOT))/$(COMPOSE_PROJECT_NAME)
+# Linux build of the binary for the stand, mounted read-only as /usr/bin/gitlab-repopolicy.
+E2E_BINARY     := $(CURDIR)/bin/e2e/gitlab-repopolicy
 
 # yamllint is not a Go tool; its version is pinned here and run through pipx.
 YAMLLINT_VERSION := 1.38.0
@@ -235,16 +243,32 @@ test-load: $(TOOLS_BIN)/benchstat
 .PHONY: test-e2e
 ## Run e2e tests on the GitLab CE GITLAB_VERSION stand in docker compose. | E2e stand
 test-e2e:
-	if [ ! -f docker-compose.yml ]; then \
-		echo "test-e2e: docker-compose.yml with the GitLab stand is missing" >&2; exit 1; \
+	mkdir -p bin/e2e
+	CGO_ENABLED=0 GOOS=linux GOARCH=$$(docker version --format '{{.Server.Arch}}') \
+		go build -trimpath -ldflags "$(LDFLAGS)" -o $(E2E_BINARY).new ./cmd/gitlab-repopolicy
+	# Overwrite in place: the file is bind-mounted, a new inode would not reach the container.
+	cmp -s $(E2E_BINARY).new $(E2E_BINARY) || cp $(E2E_BINARY).new $(E2E_BINARY)
+	rm -f $(E2E_BINARY).new
+	d="$(E2E_STATE_DIR)/tls"; \
+	if [ ! -f "$$d/gitlab.crt" ]; then \
+		mkdir -p "$$d" && chmod 700 "$(E2E_STATE_DIR)"; \
+		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 365 \
+			-subj "/CN=gitlab-repopolicy e2e CA" -keyout "$$d/ca.key" -out "$$d/ca.crt" \
+			-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign 2> /dev/null; \
+		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=localhost \
+			-keyout "$$d/gitlab.key" -out "$$d/gitlab.csr" 2> /dev/null; \
+		openssl x509 -req -in "$$d/gitlab.csr" -CA "$$d/ca.crt" -CAkey "$$d/ca.key" -days 365 \
+			-extfile <(printf 'subjectAltName=DNS:localhost,DNS:gitlab,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n') \
+			-out "$$d/gitlab.crt" 2> /dev/null; \
 	fi
-	docker compose -p "$(COMPOSE_PROJECT_NAME)" up --detach --wait
-	go test -tags e2e -count=1 ./tests/e2e/...
+	docker compose up --detach --wait --wait-timeout 1200
+	go test -tags e2e -count=1 -timeout 60m ./tests/e2e/...
 
 .PHONY: test-e2e-down
 ## Remove the e2e stand COMPOSE_PROJECT_NAME with its volumes.
 test-e2e-down:
-	docker compose -p "$(COMPOSE_PROJECT_NAME)" down --volumes --remove-orphans
+	docker compose down --volumes --remove-orphans
+	rm -rf "$(E2E_STATE_DIR)"
 
 .PHONY: security-sast
 ## Static analysis with gosec, SARIF report in bin/reports/. | Security

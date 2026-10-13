@@ -183,6 +183,9 @@ linters:
           allow:
             - $gostd
             - github.com/stretchr/testify
+            # External tests of the package (package gitlab_test) and the fake server.
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest
         gitlabtest:
           list-mode: strict
           files:

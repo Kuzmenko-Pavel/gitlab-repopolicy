@@ -1,0 +1,5 @@
+version: 1
+rulesets:
+  - name: r
+    rules:
+      typo-enum: { level: error, value: [feat] }

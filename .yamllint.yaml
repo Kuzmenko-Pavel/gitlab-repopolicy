@@ -1,9 +1,11 @@
 extends: default
 
+# Policy files are checked by gitlab-repopolicy validate, not by yamllint (design §3.3).
 ignore: |
   bin/
   dist/
   coverage/
+  tests/corpus/
 
 rules:
   document-start: disable

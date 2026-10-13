@@ -1,0 +1,40 @@
+version: 1
+mode: warn
+rulesets:
+  - name: commits
+    refs: ["refs/heads/*", "refs/heads/*/*"]
+    format: conventional
+    except:
+      merge_commits: true
+      git_reverts: true
+      merged_commits: true
+      users: [release-bot]
+    rules:
+      type-enum:            { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:                { level: error, value: optional }
+      scope-enum:           { level: warn,  value: [api, ui] }
+      breaking-bang:        { level: error, value: allow }
+      header-max-length:    { level: warn,  value: 100 }
+      subject-case:         { level: error, value: lower-first }
+      subject-full-stop:    { level: error, value: forbid }
+      body-required:        { level: error, types: [feat, fix] }
+      body-max-line-length: { level: warn,  value: 120 }
+      reference:            { level: error, location: trailer, keys: [Issue, Refs], pattern: "[A-Za-z0-9_./-]*#[0-9]+", types: [feat, fix] }
+      trailer-required:     { level: error, value: [Signed-off-by] }
+      pattern:
+        level: warn
+        value: '(?P<type>[a-z]+)(\(.+\))?!?: .+'
+        examples:
+          valid: ["feat(api): add x"]
+          invalid: ["Add x"]
+    message: >-
+      Commits follow Conventional Commits.
+  - name: release
+    refs: ["refs/heads/release/*"]
+    rules:
+      type-enum: { level: error, value: [fix, docs, chore] }
+  - name: protected
+    refs: protected
+    format: free
+    rules:
+      subject-full-stop: { level: warn, value: forbid }

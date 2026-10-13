@@ -1,0 +1,42 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.venv/
+node_modules/
+
+# Language caches
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Test coverage
+.coverage
+coverage/
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# Logs
+*.log
+logs/
+
+# Terraform
+.terraform/
+*.tfstate
+
+# Agent local settings
+.claude/settings.local.json
+.claude/.cc-writes/
+
+# IDE
+.idea/
+
+# OS
+.DS_Store

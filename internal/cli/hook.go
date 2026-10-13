@@ -81,7 +81,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 		Version: build.Version, Node: node, Clock: time.Now})
 	var mods []module.Module
 	for _, m := range a.Modules(modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std()}) {
+		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}) {
 		if cfg.ModuleEnabled(m.Name()) {
 			mods = append(mods, m)
 		}

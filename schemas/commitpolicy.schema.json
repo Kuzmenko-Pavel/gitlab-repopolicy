@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "extends": {
+      "description": "A preset from commitpolicy_presets of the server config; rules of the file override it.",
+      "type": "string"
+    },
+    "mode": {
+      "description": "warn turns every error into a warning; the default is enforce.",
+      "enum": [
+        "warn",
+        "enforce"
+      ],
+      "type": "string"
+    },
+    "rulesets": {
+      "description": "Rule sets; every ruleset that matches a ref applies (AND).",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "except": {
+            "additionalProperties": false,
+            "properties": {
+              "git_reverts": {
+                "description": "Skip messages of git revert and of the GitLab revert button.",
+                "type": "boolean"
+              },
+              "merge_commits": {
+                "description": "Skip merge commits.",
+                "type": "boolean"
+              },
+              "merged_commits": {
+                "description": "Check only the first-parent chain: commits that a merge commit brings in are not checked.",
+                "type": "boolean"
+              },
+              "users": {
+                "description": "Usernames whose pushes skip this ruleset, for example a release bot.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "format": {
+            "description": "conventional (default): type(scope)!: subject; free: the header is the subject.",
+            "enum": [
+              "conventional",
+              "free"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "description": "Text shown to the author of a rejected commit.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "refs": {
+            "description": "all (default), default, protected or a list of ref patterns such as refs/heads/release/*.",
+            "oneOf": [
+              {
+                "enum": [
+                  "all",
+                  "default",
+                  "protected"
+                ],
+                "type": "string"
+              },
+              {
+                "items": {
+                  "pattern": "^refs/",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "rules": {
+            "additionalProperties": false,
+            "properties": {
+              "body-max-line-length": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "body-required": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "description": "Apply the rule only to these types.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "level"
+                ],
+                "type": "object"
+              },
+              "breaking-bang": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "enum": [
+                      "allow",
+                      "forbid"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "header-max-length": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "pattern": {
+                "additionalProperties": false,
+                "properties": {
+                  "examples": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "invalid": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "valid": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "description": "regexp2 expression in RE2 mode, matched at the start of the message.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "reference": {
+                "additionalProperties": false,
+                "properties": {
+                  "keys": {
+                    "description": "Trailer keys to look in, for location: trailer.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "location": {
+                    "enum": [
+                      "trailer",
+                      "body",
+                      "any"
+                    ],
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "description": "RE2 regular expression of the reference, for example group/project#123.",
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "level",
+                  "location",
+                  "pattern"
+                ],
+                "type": "object"
+              },
+              "scope": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "enum": [
+                      "optional",
+                      "required",
+                      "forbidden"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "scope-enum": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "subject-case": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "enum": [
+                      "lower-first",
+                      "sentence",
+                      "any"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "subject-full-stop": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "enum": [
+                      "forbid",
+                      "require"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "trailer-required": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "type-enum": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "enum": [
+                      "error",
+                      "warn",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "types": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "value": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "version": {
+      "const": 1,
+      "description": "Schema version of the file.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "rulesets"
+  ],
+  "title": "COMMITPOLICY",
+  "type": "object"
+}

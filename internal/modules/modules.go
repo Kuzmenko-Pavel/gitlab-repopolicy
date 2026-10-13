@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 )
 
 // Settings are the parts of the server config that modules need; the CLI fills them in.
@@ -14,10 +15,14 @@ type Settings struct {
 	CommitPresets  map[string]any
 	PatternTimeout time.Duration
 	PatternBudget  time.Duration
+	// Clock measures time budgets.
+	Clock func() time.Time
 }
 
 // Default returns the modules in evaluation order: PATHPOLICY first, because
 // it guards the files of the other modules (architecture §8).
-func Default(Settings) []module.Module {
-	return []module.Module{}
+func Default(s Settings) []module.Module {
+	return []module.Module{
+		commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
+	}
 }

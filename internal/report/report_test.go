@@ -45,6 +45,22 @@ func TestGolden(t *testing.T) {
 			})
 		}
 	})
+	t.Run("commitpolicy", func(t *testing.T) {
+		out := Rejection([]Section{{Name: "COMMITPOLICY", Violations: []module.Violation{
+			{Code: module.CodeCommitFormat, Rule: "conventional", Ref: "refs/heads/main",
+				Message: "Commits follow Conventional Commits.",
+				Items: []module.Item{
+					{Name: `3f2a9c1aa "Fix deploy."`, Commit: true, Details: []string{`type-enum: "Fix" is not one of feat, fix`, "subject-full-stop: the subject must not end with a full stop"}},
+					{Name: `9b1d2e3ff "wip"`, Commit: true, Details: []string{`header: expected "type(scope): subject"`}},
+				},
+				Hint: "fix: git rebase -i and reword, or enable squash on merge"},
+			{Code: module.CodeCommitCheckTimeout, Rule: "conventional", Ref: "refs/heads/main",
+				Items: []module.Item{{Name: `77aa01bc2 "feat: x"`, Commit: true, Details: []string{"pattern: not checked in time (match timeout)"}}}},
+			{Code: module.CodeLimitExceeded, Rule: "conventional", Ref: "refs/heads/import",
+				Message: "More than 10000 commits enter the ref; COMMITPOLICY does not check pushes this large."},
+		}}}, alice)
+		golden(t, "commitpolicy", out)
+	})
 	t.Run("aggregated", func(t *testing.T) {
 		out := Rejection([]Section{
 			{Name: "PATHPOLICY", Violations: []module.Violation{{

@@ -77,6 +77,8 @@ func (a App) Run(ctx context.Context, args []string, env []string, stdio Stdio) 
 func (a App) commandList() []command {
 	return []command{
 		{name: "hook", summary: "run as the pre-receive hook of Gitaly: hook pre-receive --config FILE", run: a.runHook},
+		{name: "lint-commit", summary: "check commit messages against COMMITPOLICY: -m MSG | --range A..B [-f FILE]", run: a.runLintCommit},
+		{name: "validate", summary: "check policy files as the hook does when it accepts them: [-f FILE]", run: a.runValidate},
 		{name: "version", summary: "print version, commit, build date and Go version", run: runVersion},
 	}
 }

@@ -44,6 +44,8 @@ unexport GO_MODULE LDFLAGS
 BASE_REF       ?= origin/main
 # git for integration: system git or the git bundled with Gitaly.
 GIT_BIN        ?= git
+# Tests run from their package directories, so a path in GIT_BIN is made absolute.
+GIT_BIN_ABS     = $(if $(findstring /,$(GIT_BIN)),$(abspath $(GIT_BIN)),$(GIT_BIN))
 # gitlab/gitlab-ce image for e2e.
 GITLAB_VERSION ?= 19.4.2-ce.0
 FUZZTIME       ?= 30s
@@ -196,7 +198,7 @@ test-integration:
 	if [ -z "$$(go list -tags integration ./tests/integration/... 2>/dev/null)" ]; then \
 		echo "test-integration: no integration test packages under tests/integration" >&2; exit 1; \
 	fi
-	GIT_BIN="$(GIT_BIN)" go test -race -shuffle=on -tags integration ./tests/integration/...
+	GIT_BIN="$(GIT_BIN_ABS)" go test -count=1 -race -shuffle=on -tags integration ./tests/integration/...
 
 .PHONY: test-coverage
 ## Run unit and integration tests with coverage into coverage/.
@@ -205,8 +207,8 @@ test-coverage:
 		echo "test-coverage: no integration test packages under tests/integration" >&2; exit 1; \
 	fi
 	rm -rf coverage; mkdir -p coverage/unit coverage/integration
-	go test -cover -covermode=atomic -coverpkg=./... ./... -args -test.gocoverdir="$(CURDIR)/coverage/unit"
-	GIT_BIN="$(GIT_BIN)" GOCOVERDIR="$(CURDIR)/coverage/integration" go test -tags integration ./tests/integration/...
+	go test -count=1 -cover -covermode=atomic -coverpkg=./... ./... -args -test.gocoverdir="$(CURDIR)/coverage/unit"
+	GIT_BIN="$(GIT_BIN_ABS)" GOCOVERDIR="$(CURDIR)/coverage/integration" go test -count=1 -tags integration ./tests/integration/...
 	go tool covdata textfmt -i=coverage/unit,coverage/integration -o coverage/coverage.out
 	go tool cover -func=coverage/coverage.out | tail -n 1
 

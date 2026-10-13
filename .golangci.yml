@@ -292,12 +292,26 @@ linters:
           list-mode: strict
           files:
             - "**/tests/integration/**/*.go"
+            - "!**/tests/integration/internal/**"
           allow:
             - $gostd
             - github.com/stretchr/testify
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest
             - github.com/ProtonMail/go-crypto
             - golang.org/x/crypto/ssh
+        # The test hook binary of the integration harness: the CLI with test
+        # modules, so that core cases run without the real modules.
+        tests-integration-hook:
+          list-mode: strict
+          files:
+            - "**/tests/integration/internal/**/*.go"
+          allow:
+            - $gostd
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/cli
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/tests/integration/internal
         tests-e2e:
           list-mode: strict
           files:
@@ -350,7 +364,7 @@ linters:
           - gosec
           - errcheck
           - forbidigo
-      - path: ^(cmd/gitlab-repopolicy|internal/cli)/
+      - path: ^(cmd/gitlab-repopolicy|internal/cli|tests/integration/internal/testhook)/
         linters:
           - forbidigo
     paths:

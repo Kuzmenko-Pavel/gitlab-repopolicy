@@ -1,0 +1,18 @@
+extends: default
+
+ignore: |
+  bin/
+  dist/
+  coverage/
+
+rules:
+  document-start: disable
+  line-length:
+    max: 160
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  braces:
+    max-spaces-inside: 1

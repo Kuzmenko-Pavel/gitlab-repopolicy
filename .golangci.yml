@@ -1,0 +1,360 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - forbidigo
+    - godot
+    - gosec
+    - govet
+    - misspell
+    - noctx
+    - prealloc
+    - staticcheck
+    - unconvert
+    - unused
+
+  settings:
+    depguard:
+      rules:
+        cmd:
+          list-mode: strict
+          files:
+            - "**/cmd/gitlab-repopolicy/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/cli
+        cli:
+          list-mode: strict
+          files:
+            - "**/internal/cli/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/core
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/changes
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/report
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/install
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/settings
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/coverage
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/token
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/schema
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+        core:
+          list-mode: strict
+          files:
+            - "**/internal/core/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/changes
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/report
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+        module:
+          list-mode: strict
+          files:
+            - "**/internal/module/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+        modules:
+          list-mode: strict
+          files:
+            - "**/internal/modules/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag
+        modules-path:
+          list-mode: strict
+          files:
+            - "**/internal/modules/path/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+            - github.com/bmatcuk/doublestar/v4
+        modules-commit:
+          list-mode: strict
+          files:
+            - "**/internal/modules/commit/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+            - github.com/dlclark/regexp2/v2
+        modules-tag:
+          list-mode: strict
+          files:
+            - "**/internal/modules/tag/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+            - github.com/ProtonMail/go-crypto
+            - golang.org/x/crypto/ssh
+        changes:
+          list-mode: strict
+          files:
+            - "**/internal/changes/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs
+        refs:
+          list-mode: strict
+          files:
+            - "**/internal/refs/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+        identity:
+          list-mode: strict
+          files:
+            - "**/internal/identity/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+        hookenv:
+          list-mode: strict
+          files:
+            - "**/internal/hookenv/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+        gitx:
+          list-mode: strict
+          files:
+            - "**/internal/gitx/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        gitlab:
+          list-mode: strict
+          files:
+            - "**/internal/gitlab/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        gitlabtest:
+          list-mode: strict
+          files:
+            - "**/internal/gitlab/gitlabtest/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+        audit:
+          list-mode: strict
+          files:
+            - "**/internal/audit/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        buildinfo:
+          list-mode: strict
+          files:
+            - "**/internal/buildinfo/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        config:
+          list-mode: strict
+          files:
+            - "**/internal/config/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
+        strictyaml:
+          list-mode: strict
+          files:
+            - "**/internal/strictyaml/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - go.yaml.in/yaml/v3
+        report:
+          list-mode: strict
+          files:
+            - "**/internal/report/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+        schema:
+          list-mode: strict
+          files:
+            - "**/internal/schema/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$
+        settings:
+          list-mode: strict
+          files:
+            - "**/internal/settings/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
+        coverage:
+          list-mode: strict
+          files:
+            - "**/internal/coverage/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+        token:
+          list-mode: strict
+          files:
+            - "**/internal/token/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config
+        install:
+          list-mode: strict
+          files:
+            - "**/internal/install/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        breakglass:
+          list-mode: strict
+          files:
+            - "**/internal/breakglass/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        tests-integration:
+          list-mode: strict
+          files:
+            - "**/tests/integration/**/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest
+            - github.com/ProtonMail/go-crypto
+            - golang.org/x/crypto/ssh
+        tests-e2e:
+          list-mode: strict
+          files:
+            - "**/tests/e2e/**/*.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+        test-only-packages:
+          list-mode: lax
+          files:
+            - $all
+            - "!$test"
+          deny:
+            - pkg: github.com/stretchr/testify
+              desc: testify is a test-only dependency
+            - pkg: github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest
+              desc: the fake GitLab API is for tests only
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^os\.(Exit|Args|Getenv|LookupEnv|Environ)$
+          msg: process state is read only in cmd and internal/cli and passed down as arguments
+        - pattern: ^time\.Now$
+          msg: use the injected clock
+
+    gosec:
+      excludes:
+        - G601
+
+    godot:
+      scope: declarations
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - forbidigo
+      - path: ^(cmd/gitlab-repopolicy|internal/cli)/
+        linters:
+          - forbidigo
+    paths:
+      - zz_generated
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Kuzmenko-Pavel/gitlab-repopolicy
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0

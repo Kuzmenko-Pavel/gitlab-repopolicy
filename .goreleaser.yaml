@@ -1,0 +1,42 @@
+version: 2
+
+project_name: gitlab-repopolicy
+
+builds:
+  - id: gitlab-repopolicy
+    main: ./cmd/gitlab-repopolicy
+    binary: gitlab-repopolicy
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X {{ .ModulePath }}/internal/buildinfo.Version={{ .Version }}
+      - -X {{ .ModulePath }}/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X {{ .ModulePath }}/internal/buildinfo.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: gitlab-repopolicy
+    ids: [gitlab-repopolicy]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.en.md
+        info:
+          mtime: "{{ .CommitDate }}"
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"

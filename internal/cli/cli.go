@@ -78,10 +78,11 @@ func usage(w io.Writer, commands []command) error {
 
 // CurrentBuild returns the metadata of the running binary.
 func CurrentBuild() Build {
+	info := buildinfo.Resolve()
 	return Build{
-		Version: buildinfo.Version,
-		Commit:  buildinfo.Commit,
-		Date:    buildinfo.Date,
+		Version: info.Version,
+		Commit:  info.Commit,
+		Date:    info.Date,
 		Go:      runtime.Version(),
 	}
 }

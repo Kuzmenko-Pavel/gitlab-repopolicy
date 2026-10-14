@@ -88,6 +88,44 @@ type fakeAPI struct {
 	users     []gitlab.User
 	calls     int
 	userCalls int
+	// projectErr and projectLevel answer the service account check; the default is Maintainer.
+	projectErr   error
+	projectLevel int
+	projectCalls int
+}
+
+func (f *fakeAPI) ProjectAccess(context.Context, int64) (int, error) {
+	f.projectCalls++
+	if f.projectErr != nil {
+		return 0, f.projectErr
+	}
+	if f.projectLevel == 0 {
+		return 40, nil
+	}
+	return f.projectLevel, nil
+}
+
+func (f *fakeAPI) UsersByUsernames(_ context.Context, names []string) ([]gitlab.GraphQLUser, error) {
+	f.calls++
+	out := make([]gitlab.GraphQLUser, 0, len(names))
+	for i, n := range names {
+		out = append(out, gitlab.GraphQLUser{ID: int64(100 + i), Username: n, State: "active"})
+	}
+	return out, nil
+}
+
+func (f *fakeAPI) MemberAccess(context.Context, int64, int64) (int, error) {
+	f.calls++
+	return 40, nil
+}
+
+func (f *fakeAPI) MembersAccess(_ context.Context, _ int64, ids []int64) (map[int64]int, error) {
+	f.calls++
+	out := map[int64]int{}
+	for _, id := range ids {
+		out[id] = 40
+	}
+	return out, nil
 }
 
 func (f *fakeAPI) ProtectedBranches(context.Context, int64) ([]string, error) {

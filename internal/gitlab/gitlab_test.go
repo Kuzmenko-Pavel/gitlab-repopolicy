@@ -178,3 +178,72 @@ func TestClient_UserHasKey(t *testing.T) {
 	_, err = c.UserHasKey(context.Background(), 2, 9)
 	assert.Equal(t, gitlab.Unavailable, gitlab.KindOf(err))
 }
+
+func TestClient_ProjectAccess(t *testing.T) {
+	srv := gitlabtest.NewUnix(t)
+	srv.Handle(http.MethodGet, "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{
+		"project_access": nil, "group_access": map[string]any{"access_level": 40}}}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/2", gitlabtest.OK(map[string]any{"permissions": map[string]any{
+		"project_access": map[string]any{"access_level": 50}, "group_access": map[string]any{"access_level": 30}}}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/3", gitlabtest.OK(map[string]any{"permissions": map[string]any{}}))
+	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
+	for id, want := range map[int64]int{1: 40, 2: 50, 3: 0} {
+		got, err := c.ProjectAccess(context.Background(), id)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, "project %d", id)
+	}
+	_, err := c.ProjectAccess(context.Background(), 4)
+	assert.Equal(t, gitlab.NotFound, gitlab.KindOf(err), "a private project without membership is 404")
+}
+
+func TestClient_UsersByUsernames(t *testing.T) {
+	srv := gitlabtest.NewUnix(t)
+	srv.Handle(http.MethodPost, "/api/graphql", gitlabtest.OK(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": []any{
+		map[string]any{"id": "gid://gitlab/User/2", "username": "alice", "state": "active"},
+		map[string]any{"id": "gid://gitlab/User/8", "username": "dave", "state": "deactivated"},
+	}}}}))
+	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
+	got, err := c.UsersByUsernames(context.Background(), []string{"alice", "dave", "nobody"})
+	require.NoError(t, err)
+	assert.Equal(t, []gitlab.GraphQLUser{{ID: 2, Username: "alice", State: "active"}, {ID: 8, Username: "dave", State: "deactivated"}}, got)
+	assert.Equal(t, 1, srv.TotalCalls(), "one request for all usernames (D28)")
+
+	names := make([]string, 150)
+	for i := range names {
+		names[i] = fmt.Sprintf("u%d", i)
+	}
+	_, err = c.UsersByUsernames(context.Background(), names)
+	require.NoError(t, err)
+	assert.Equal(t, 3, srv.TotalCalls(), "100 usernames per request")
+
+	bad := gitlabtest.NewUnix(t)
+	bad.Handle(http.MethodPost, "/api/graphql", gitlabtest.OK(map[string]any{"errors": []any{map[string]any{"message": "boom"}}}))
+	_, err = newClient(t, bad, writeToken(t, "glpat-1"), 30).UsersByUsernames(context.Background(), []string{"a"})
+	assert.Equal(t, gitlab.Unexpected, gitlab.KindOf(err))
+	odd := gitlabtest.NewUnix(t)
+	odd.Handle(http.MethodPost, "/api/graphql", gitlabtest.OK(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": []any{
+		map[string]any{"id": "gid://gitlab/Group/2", "username": "x"}}}}}))
+	_, err = newClient(t, odd, writeToken(t, "glpat-1"), 30).UsersByUsernames(context.Background(), []string{"x"})
+	assert.ErrorContains(t, err, "unexpected global ID")
+}
+
+func TestClient_MemberAccess(t *testing.T) {
+	srv := gitlabtest.NewUnix(t)
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/2", gitlabtest.OK(map[string]any{"access_level": 50, "state": "active"}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/3", gitlabtest.Status(http.StatusNotFound))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/4", gitlabtest.OK(map[string]any{"access_level": 40, "state": "blocked"}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2&user_ids%5B%5D=4",
+		gitlabtest.OK([]any{map[string]any{"id": 2, "access_level": 40, "state": "active"}, map[string]any{"id": 4, "access_level": 50, "state": "deactivated"}}))
+	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
+	for uid, want := range map[int64]int{2: 50, 3: 0, 4: 0} {
+		got, err := c.MemberAccess(context.Background(), 1, uid)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, "user %d", uid)
+	}
+	got, err := c.MembersAccess(context.Background(), 1, []int64{2, 4})
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]int{2: 40}, got, "inactive members do not count")
+	empty, err := c.MembersAccess(context.Background(), 1, nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}

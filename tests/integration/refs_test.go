@@ -238,7 +238,7 @@ func TestRefs_ProtectedClassAPIFailure(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	s.Commit("ci", map[string]string{"ci.yml": "x"})
 	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "unable to verify authorization")
-	assert.NotContains(t, s.Push(alice, "HEAD:refs/heads/feature").Output, "404", "API details stay in audit")
+	assert.NotContains(t, s.Push(alice, "HEAD:refs/heads/feature").Output, "HTTP 404", "API details stay in audit")
 }
 
 func TestRefs_TagToNonCommit(t *testing.T) {

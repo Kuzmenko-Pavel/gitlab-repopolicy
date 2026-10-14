@@ -150,6 +150,9 @@ func NewStand(t *testing.T, opts ...Option) *Stand {
 		"GIT_AUTHOR_NAME=dev", "GIT_AUTHOR_EMAIL=dev@example.com", "GIT_COMMITTER_NAME=dev",
 		"GIT_COMMITTER_EMAIL=dev@example.com", "GOCOVERDIR=" + s.coverDir, "LC_ALL=C"}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "token"), []byte("glpat-test\n"), 0o600))
+	// The service account is a Maintainer of the project unless a test says otherwise.
+	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{
+		"group_access": map[string]any{"access_level": 40}}}))
 	s.writeConfig("enforce")
 	for _, o := range opts {
 		o(s)

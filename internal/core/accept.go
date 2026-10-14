@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -99,6 +100,7 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		return err
 	}
 	base := audit.Event{Event: audit.EventPolicyChange, Module: l.mod.Name(), Ref: u.Ref, OldRev: u.Old, NewRev: u.New, PolicyBlob: f.blob}
+	r.input.PolicyChanges = append(r.input.PolicyChanges, module.PolicyChange{Ref: u.Ref, File: l.mod.File(), Deleted: !f.present})
 	if !f.present {
 		// Removal is not a new version; who may remove it is up to the modules.
 		base.Action = "delete"
@@ -106,6 +108,7 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		return nil
 	}
 	var problems []string
+	code := module.CodeInvalidPolicyUpdate
 	unknown := false
 	if f.invalid != nil {
 		problems = append(problems, f.invalid.Error())
@@ -121,7 +124,13 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 				warnings = append(warnings, pr.Msg)
 			default:
 				problems = append(problems, pr.Msg)
+				if pr.Code != "" {
+					code = pr.Code
+				}
 			}
+		}
+		if w := r.coverageWarning(l); w != "" {
+			warnings = append(warnings, w)
 		}
 		if len(warnings) > 0 && len(problems) == 0 && !unknown {
 			r.addWarning(l.mod.File(), module.Violation{
@@ -132,13 +141,13 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 	}
 	switch {
 	case len(problems) > 0:
-		v := module.Violation{Code: module.CodeInvalidPolicyUpdate, Ref: u.Ref,
+		v := module.Violation{Code: code, Ref: u.Ref,
 			Message: "Fix the file before pushing; the hook validates every new version on any branch.",
 			Items:   []module.Item{{Name: l.mod.File(), Details: problems}}}
 		r.addSection(l.mod.File(), v)
 		r.events = append(r.events, r.event(audit.Event{Event: audit.EventDecision, Module: l.mod.Name(), Decision: "deny",
-			Code: module.CodeInvalidPolicyUpdate, Ref: u.Ref, OldRev: u.Old, NewRev: u.New, PolicyBlob: f.blob,
-			Violations: []audit.Violation{{Code: module.CodeInvalidPolicyUpdate, Paths: []string{l.mod.File()}, Reason: strings.Join(problems, "; ")}}}))
+			Code: code, Ref: u.Ref, OldRev: u.Old, NewRev: u.New, PolicyBlob: f.blob,
+			Violations: []audit.Violation{{Code: code, Paths: []string{l.mod.File()}, Reason: strings.Join(problems, "; ")}}}))
 	case unknown:
 		v := module.Violation{Code: module.CodeAuthorizationBackend, Ref: u.Ref, Message: coreMessage(module.CodeAuthorizationBackend, 0),
 			Items: []module.Item{{Name: l.mod.File()}}}
@@ -155,44 +164,25 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 	return nil
 }
 
-// addedOnly is a Validator that asks only about usernames new in this version (D28).
-type addedOnly struct {
-	next  module.Validator
-	known map[string]bool
+// validatorFor is the authorizer that knows the usernames of the anchor version (D28).
+func (r *receive) validatorFor(l *loaded) module.Validator {
+	var known []string
+	if lister, ok := l.policy.(module.UsernameLister); ok {
+		known = lister.Usernames()
+	}
+	return r.authz.WithKnown(known)
 }
 
-func (a addedOnly) ActiveUsers(ctx context.Context, usernames []string) (map[string]bool, module.Status) {
-	out := map[string]bool{}
-	var ask []string
-	for _, u := range usernames {
-		if a.known[strings.ToLower(u)] {
-			out[u] = true
-		} else {
-			ask = append(ask, u)
+// coverageWarning is the warning for a new version of a delegated policy file
+// that no rule of the PATHPOLICY on the anchor covers (architecture §12.2).
+func (r *receive) coverageWarning(l *loaded) string {
+	for _, other := range r.policies {
+		if other == l || other.policy == nil {
+			continue
+		}
+		if c, ok := other.policy.(module.PathCoverer); ok && !c.Covers(l.mod.File()) {
+			return fmt.Sprintf("no %s rule covers %s: anyone who can push may change it", other.mod.File(), l.mod.File())
 		}
 	}
-	if len(ask) == 0 {
-		return out, module.Confirmed()
-	}
-	got, status := a.next.ActiveUsers(ctx, ask)
-	for u, ok := range got {
-		out[u] = ok
-	}
-	return out, status
-}
-
-// validatorFor wraps the validator with the usernames of the anchor version.
-func (r *receive) validatorFor(l *loaded) module.Validator {
-	if r.deps.Validator == nil {
-		return nil
-	}
-	lister, ok := l.policy.(module.UsernameLister)
-	if !ok {
-		return r.deps.Validator
-	}
-	known := map[string]bool{}
-	for _, u := range lister.Usernames() {
-		known[strings.ToLower(u)] = true
-	}
-	return addedOnly{next: r.deps.Validator, known: known}
+	return ""
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -161,17 +162,6 @@ func TestAuditFailureKeepsDecision(t *testing.T) {
 	assert.Contains(t, out.Stderr, "user: alice (key 5)")
 }
 
-type recordingValidator struct{ asked []string }
-
-func (v *recordingValidator) ActiveUsers(_ context.Context, users []string) (map[string]bool, module.Status) {
-	v.asked = append(v.asked, users...)
-	out := map[string]bool{}
-	for _, u := range users {
-		out[u] = true
-	}
-	return out, module.Confirmed()
-}
-
 type listedPolicy struct{ users []string }
 
 func (p listedPolicy) Usernames() []string                                       { return p.users }
@@ -181,14 +171,42 @@ func (listedPolicy) Evaluate(context.Context, *module.Input) (*module.Result, er
 	return &module.Result{}, nil
 }
 
-func TestValidator_AddedUsernamesOnly(t *testing.T) {
-	rv := &recordingValidator{}
-	r := &receive{deps: Deps{Validator: rv}}
+func TestValidator_KnowsAnchorUsernames(t *testing.T) {
+	r := &receive{deps: Deps{API: &fakeAPI{}}, req: Request{Env: hookenv.Env{ProjectID: 1, ProjectPath: "a/b/c"}}}
+	r.input = r.newInput()
 	v := r.validatorFor(&loaded{policy: listedPolicy{users: []string{"Alice"}}})
-	got, st := v.ActiveUsers(context.Background(), []string{"alice", "bob"})
-	assert.True(t, st.IsConfirmed())
-	assert.Equal(t, map[string]bool{"alice": true, "bob": true}, got)
-	assert.Equal(t, []string{"bob"}, rv.asked, "usernames of the anchor version are not asked again (D28)")
-	assert.Nil(t, (&receive{}).validatorFor(&loaded{}))
-	assert.Equal(t, rv, (&receive{deps: Deps{Validator: rv}}).validatorFor(&loaded{policy: testPolicy{}}))
+	assert.True(t, v.Known("alice"), "usernames of the anchor version are not checked again (D28)")
+	assert.False(t, v.Known("bob"))
+	assert.False(t, r.validatorFor(&loaded{}).Known("alice"))
+}
+
+func TestServiceAccountCheck(t *testing.T) {
+	tests := []struct {
+		name   string
+		api    *fakeAPI
+		reason string
+	}{
+		{"not visible", &fakeAPI{projectErr: &gitlab.Error{Kind: gitlab.NotFound}}, "project_not_visible"},
+		{"developer", &fakeAPI{projectLevel: 30}, "role_below_maintainer"},
+		{"API down", &fakeAPI{projectErr: &gitlab.Error{Kind: gitlab.Unavailable}}, "unavailable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &receive{deps: Deps{API: tt.api, Clock: time.Now}, req: Request{Env: hookenv.Env{ProjectID: 1, ProjectPath: "a/b/c"}}}
+			for range 2 {
+				st, stop := r.guard(context.Background())
+				assert.True(t, stop)
+				assert.Contains(t, st.Reason(), tt.reason)
+			}
+			assert.Equal(t, 1, tt.api.projectCalls, "checked once per receive")
+			if tt.reason != "unavailable" {
+				require.Len(t, r.events, 1, "the alert is an audit event")
+				assert.Equal(t, audit.EventAuthorizationBackendFailure, r.events[0].Event)
+				assert.Equal(t, tt.reason, r.events[0].Reason)
+			}
+		})
+	}
+	ok := &receive{deps: Deps{API: &fakeAPI{}, Clock: time.Now}, req: Request{Env: hookenv.Env{ProjectID: 1, ProjectPath: "a/b/c"}}}
+	_, stop := ok.guard(context.Background())
+	assert.False(t, stop)
 }

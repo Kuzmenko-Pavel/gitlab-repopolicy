@@ -6,6 +6,8 @@ package module
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -65,17 +67,50 @@ type Needs struct {
 
 // Problem is a finding of policy validation.
 type Problem struct {
-	Msg string
+	// Code is the violation code of a rejected new version; empty means invalid_policy_update.
+	Code string
+	Msg  string
 	// Warning problems do not reject a new version.
 	Warning bool
 	// Unknown means the check could not be done because GitLab did not answer.
 	Unknown bool
 }
 
+// Access levels of GitLab members.
+const (
+	AccessDeveloper  = 30
+	AccessMaintainer = 40
+	AccessOwner      = 50
+)
+
+// User is a GitLab user as policies see it.
+type User struct {
+	ID     int64
+	Active bool
+}
+
 // Validator answers the online questions of policy validation.
 type Validator interface {
-	// ActiveUsers reports which of the usernames exist and are active.
-	ActiveUsers(ctx context.Context, usernames []string) (map[string]bool, Status)
+	// Users looks usernames up in one request (D28). The map is keyed by the
+	// lowercased username; a missing key means the user does not exist or is
+	// not visible (blocked, banned).
+	Users(ctx context.Context, usernames []string) (map[string]User, Status)
+	// AccessLevels returns the effective access level in the project by user ID; 0 is not a member.
+	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
+	// Known reports whether the username is in the version on the anchor:
+	// such usernames are not checked for existence again (D28).
+	Known(username string) bool
+}
+
+// Authorizer answers questions about the pusher and the project for modules
+// that declare Needs().Identity (architecture §13). Answers are three-valued:
+// a status that is not confirmed is never "no".
+type Authorizer interface {
+	// PusherAccess is the effective access level of the pushing person; 0 is
+	// not a member, a deploy key or an unknown principal.
+	PusherAccess(ctx context.Context) (int, Status)
+	Users(ctx context.Context, usernames []string) (map[string]User, Status)
+	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
 }
 
 // Input is everything a module may use to evaluate a push.
@@ -87,11 +122,17 @@ type Input struct {
 	Changes ChangeSet
 	// Principal is the identity of the pusher as GL_ID and GL_USERNAME.
 	Principal Principal
-	// Principals resolves the pusher to a person's username; an SSH key is
-	// checked to be personal (architecture §9.2). It calls the API lazily.
+	// Principals resolves the pusher to a person; an SSH key is checked to be
+	// personal (architecture §9.2). It calls the API lazily.
 	Principals PrincipalResolver
-	Objects    ObjectReader
-	Clock      func() time.Time
+	// Authz is set only for modules with Needs().Identity.
+	Authz Authorizer
+	// AnchorPolicies are the policy files present on the anchor.
+	AnchorPolicies []string
+	// PolicyChanges are the policy files the push changes, from acceptance.
+	PolicyChanges []PolicyChange
+	Objects       ObjectReader
+	Clock         func() time.Time
 	// PolicyFiles are the files of all enabled modules; a change to any of them always touches the rules.
 	PolicyFiles []string
 }
@@ -211,11 +252,23 @@ type JSONSchemaer interface {
 	JSONSchema() map[string]any
 }
 
-// PrincipalResolver resolves the pusher to the username of a person.
+// Person is the pusher as a GitLab user.
+type Person struct {
+	Username string
+	ID       int64
+}
+
+// PrincipalResolver resolves the pusher to a person.
 type PrincipalResolver interface {
-	// Username is "" for a deploy key or an unparsable GL_ID; the status is
+	// Person is zero for a deploy key or an unparsable GL_ID; the status is
 	// unknown when GitLab did not answer.
-	Username(ctx context.Context) (string, Status)
+	Person(ctx context.Context) (Person, Status)
+}
+
+// PathCoverer is implemented by policies that guard paths: the core warns when
+// a new version of a delegated policy file is not covered (architecture §12.2).
+type PathCoverer interface {
+	Covers(path string) bool
 }
 
 // LintFinding is a broken rule found by a local lint of a commit message.
@@ -237,4 +290,31 @@ type CommitLinter interface {
 // core checks only usernames that the anchor version does not have (D28).
 type UsernameLister interface {
 	Usernames() []string
+}
+
+// IdentityModule is implemented by modules that need the authorizer when the
+// anchor has no valid policy, for bootstrap and Owner recovery.
+type IdentityModule interface {
+	NeedsIdentity() bool
+}
+
+// PolicyChange is a policy file that an update changes, as the core accepted it.
+type PolicyChange struct {
+	Ref  string
+	File string
+	// Deleted means the file is absent after the update.
+	Deleted bool
+}
+
+// UsernamePattern is the format of a GitLab username: NAMESPACE_FORMAT_REGEX
+// of GitLab (lib/gitlab/path_regex.rb) without its look-behind, which
+// ValidUsername checks separately.
+const UsernamePattern = `^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$`
+
+var usernameFormat = regexp.MustCompile(UsernamePattern)
+
+// ValidUsername reports whether s has the format of a GitLab username. Whether
+// the user exists is checked online when a policy is accepted.
+func ValidUsername(s string) bool {
+	return usernameFormat.MatchString(s) && !strings.HasSuffix(s, ".git") && !strings.HasSuffix(s, ".atom")
 }

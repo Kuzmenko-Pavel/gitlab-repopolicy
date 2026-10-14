@@ -90,9 +90,12 @@ type fakePrincipal struct {
 	asked  int
 }
 
-func (p *fakePrincipal) Username(context.Context) (string, module.Status) {
+func (p *fakePrincipal) Person(context.Context) (module.Person, module.Status) {
 	p.asked++
-	return p.name, p.status
+	if p.name == "" {
+		return module.Person{}, p.status
+	}
+	return module.Person{Username: p.name, ID: 1}, p.status
 }
 
 func newRepo() *fakeRepo {
@@ -254,9 +257,21 @@ func TestNeeds_NoIdentity(t *testing.T) {
 
 type activeUsers map[string]bool
 
-func (a activeUsers) ActiveUsers(_ context.Context, users []string) (map[string]bool, module.Status) {
-	return a, module.Confirmed()
+func (a activeUsers) Users(_ context.Context, users []string) (map[string]module.User, module.Status) {
+	out := map[string]module.User{}
+	for _, u := range users {
+		if active, ok := a[strings.ToLower(u)]; ok {
+			out[strings.ToLower(u)] = module.User{ID: 1, Active: active}
+		}
+	}
+	return out, module.Confirmed()
 }
+
+func (activeUsers) AccessLevels(context.Context, []int64) (map[int64]int, module.Status) {
+	return nil, module.Confirmed()
+}
+
+func (activeUsers) Known(u string) bool { return u == "anchor-bot" }
 
 func TestValidate_ExceptUsers(t *testing.T) {
 	p, err := New(testSettings()).Parse([]byte(exceptPolicy))
@@ -265,6 +280,10 @@ func TestValidate_ExceptUsers(t *testing.T) {
 	got := p.Validate(context.Background(), activeUsers{})
 	require.Len(t, got, 1)
 	assert.Contains(t, got[0].Msg, `"release-bot" is not an active GitLab user`)
+	assert.Len(t, p.Validate(context.Background(), activeUsers{"release-bot": false}), 1, "a blocked or deactivated user is not active")
+	known, err := New(testSettings()).Parse([]byte(strings.Replace(exceptPolicy, "release-bot", "anchor-bot", 1)))
+	require.NoError(t, err)
+	assert.Empty(t, known.Validate(context.Background(), activeUsers{}), "usernames of the anchor version are not checked again (D28)")
 	assert.Equal(t, []string{"release-bot"}, p.(module.UsernameLister).Usernames())
 }
 

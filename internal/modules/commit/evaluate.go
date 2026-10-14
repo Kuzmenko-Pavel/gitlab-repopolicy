@@ -247,14 +247,14 @@ func (e *evaluation) report(ctx context.Context, rs *ruleset, u module.RefUpdate
 		return nil
 	}
 	if len(rs.except.Users) > 0 {
-		username, status := e.in.Principals.Username(ctx)
+		person, status := e.in.Principals.Person(ctx)
 		if !status.IsConfirmed() {
 			e.warn(module.Violation{Code: module.CodeAuthorizationBackend, Rule: rs.name, Ref: u.Ref, Reason: status.Reason(),
 				Message: "The pusher cannot be matched against except.users; this ruleset is skipped."})
 			return nil
 		}
 		for _, x := range rs.except.Users {
-			if username != "" && strings.EqualFold(x, username) {
+			if person.Username != "" && strings.EqualFold(x, person.Username) {
 				return nil
 			}
 		}

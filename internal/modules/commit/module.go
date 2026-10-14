@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -116,14 +117,22 @@ func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 		}
 		users = append(users, rs.except.Users...)
 	}
-	if len(users) > 0 && v != nil {
-		active, status := v.ActiveUsers(ctx, users)
-		if !status.IsConfirmed() {
-			return append(problems, module.Problem{Unknown: true, Msg: "except.users cannot be checked: " + status.Reason()})
-		}
+	if v != nil {
+		var added []string
 		for _, u := range users {
-			if !active[u] {
-				problems = append(problems, module.Problem{Msg: fmt.Sprintf("except.users: %q is not an active GitLab user", u)})
+			if !v.Known(u) {
+				added = append(added, u)
+			}
+		}
+		if len(added) > 0 {
+			found, status := v.Users(ctx, added)
+			if !status.IsConfirmed() {
+				return append(problems, module.Problem{Unknown: true, Msg: "except.users cannot be checked: " + status.Reason()})
+			}
+			for _, u := range added {
+				if !found[strings.ToLower(u)].Active {
+					problems = append(problems, module.Problem{Msg: fmt.Sprintf("except.users: %q is not an active GitLab user", u)})
+				}
 			}
 		}
 	}

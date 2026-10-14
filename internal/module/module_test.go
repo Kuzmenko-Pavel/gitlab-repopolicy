@@ -76,3 +76,12 @@ func TestStatus(t *testing.T) {
 	assert.Equal(t, "deny", Deny.String())
 	assert.Equal(t, "protected", ClassProtected.String())
 }
+
+func TestValidUsername(t *testing.T) {
+	for _, ok := range []string{"a", "_", "alice", "Alice.Smith", "dev-lead", ".svc", "a_b.c-d", "project_1_bot_e42782", strings.Repeat("a", 256)} {
+		assert.True(t, ValidUsername(ok), ok)
+	}
+	for _, bad := range []string{"", "-a", "a.", ".", "-", "group/sub", "@alice", "a b", "repo.git", "feed.atom", "ядро", strings.Repeat("a", 257)} {
+		assert.False(t, ValidUsername(bad), bad)
+	}
+}

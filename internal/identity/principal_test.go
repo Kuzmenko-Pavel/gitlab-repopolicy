@@ -24,23 +24,23 @@ func TestResolver(t *testing.T) {
 	tests := []struct {
 		name     string
 		p        module.Principal
-		want     string
+		want     module.Person
 		known    bool
 		apiCalls int
 	}{
-		{"HTTPS user", module.Principal{GLID: "user-2", Username: "alice"}, "alice", true, 0},
-		{"personal SSH key", module.Principal{GLID: "key-7", Username: "alice"}, "alice", true, 2},
-		{"deploy key", module.Principal{GLID: "key-8", Username: "alice"}, "", true, 2},
-		{"owner not visible", module.Principal{GLID: "key-9", Username: "ghost"}, "", true, 1},
-		{"API failure", module.Principal{GLID: "key-9", Username: "down"}, "", false, 1},
-		{"unparsable GL_ID", module.Principal{GLID: "deploy-1", Username: "alice"}, "", true, 0},
+		{"HTTPS user", module.Principal{GLID: "user-2", Username: "Alice"}, module.Person{Username: "Alice", ID: 2}, true, 0},
+		{"personal SSH key", module.Principal{GLID: "key-7", Username: "alice"}, module.Person{Username: "alice", ID: 2}, true, 2},
+		{"deploy key", module.Principal{GLID: "key-8", Username: "alice"}, module.Person{}, true, 2},
+		{"owner not visible", module.Principal{GLID: "key-9", Username: "ghost"}, module.Person{}, true, 1},
+		{"API failure", module.Principal{GLID: "key-9", Username: "down"}, module.Person{}, false, 1},
+		{"unparsable GL_ID", module.Principal{GLID: "deploy-1", Username: "alice"}, module.Person{}, true, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			before := srv.TotalCalls()
 			r := identity.NewResolver(c, tt.p, nil)
 			for range 2 {
-				got, st := r.Username(ctx)
+				got, st := r.Person(ctx)
 				assert.Equal(t, tt.want, got)
 				assert.Equal(t, tt.known, st.IsConfirmed())
 			}
@@ -49,6 +49,6 @@ func TestResolver(t *testing.T) {
 	}
 	stopped := identity.NewResolver(c, module.Principal{GLID: "key-7", Username: "alice"},
 		func(context.Context) (module.Status, bool) { return module.Unknown("personal namespace"), true })
-	_, st := stopped.Username(ctx)
+	_, st := stopped.Person(ctx)
 	assert.False(t, st.IsConfirmed())
 }

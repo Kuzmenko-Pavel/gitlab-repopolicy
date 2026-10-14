@@ -22,11 +22,13 @@ func (r *receive) evaluate(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			res, err = call(func() (*module.Result, error) { return ev.EvaluateAbsent(ctx, r.input) })
+			in := r.inputFor(needsIdentity(l.mod))
+			res, err = call(func() (*module.Result, error) { return ev.EvaluateAbsent(ctx, in) })
 		case l.invalid != nil:
 			res, err = r.evaluateInvalid(ctx, l)
 		default:
-			res, err = call(func() (*module.Result, error) { return l.policy.Evaluate(ctx, r.input) })
+			in := r.inputFor(l.policy.Needs().Identity)
+			res, err = call(func() (*module.Result, error) { return l.policy.Evaluate(ctx, in) })
 		}
 		if err != nil {
 			r.moduleFailed(ctx, l, err)
@@ -34,6 +36,11 @@ func (r *receive) evaluate(ctx context.Context) {
 		}
 		r.apply(l, res)
 	}
+}
+
+func needsIdentity(m module.Module) bool {
+	im, ok := m.(module.IdentityModule)
+	return ok && im.NeedsIdentity()
 }
 
 // call runs a module entry point; a panic becomes an error.
@@ -53,7 +60,8 @@ func call(fn func() (*module.Result, error)) (res *module.Result, err error) {
 // evaluateInvalid handles an invalid policy on the anchor (architecture §14).
 func (r *receive) evaluateInvalid(ctx context.Context, l *loaded) (*module.Result, error) {
 	if ev, ok := l.mod.(module.InvalidEvaluator); ok {
-		return call(func() (*module.Result, error) { return ev.EvaluateInvalid(ctx, r.input, l.invalid) })
+		in := r.inputFor(needsIdentity(l.mod))
+		return call(func() (*module.Result, error) { return ev.EvaluateInvalid(ctx, in, l.invalid) })
 	}
 	msg := fmt.Sprintf("%s on the default branch is invalid: %v", l.mod.File(), l.invalid)
 	ev := audit.Event{Event: audit.EventInvalidPolicy, Module: l.mod.Name(), Code: module.CodeInvalidPolicy, Reason: l.invalid.Error()}

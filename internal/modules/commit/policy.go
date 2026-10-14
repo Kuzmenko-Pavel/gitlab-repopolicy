@@ -164,7 +164,7 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 		r, err := parseRuleset(rs, preset)
 		if err != nil {
 			name := rs.Name
-			if name == "" {
+			if !ruleName.MatchString(name) {
 				name = "#" + strconv.Itoa(i+1)
 			}
 			return nil, fmt.Errorf("ruleset %s: %w", name, err)
@@ -179,8 +179,8 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 }
 
 func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, error) {
-	if y.Name == "" {
-		return nil, errors.New("name is required")
+	if !ruleName.MatchString(y.Name) {
+		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
 	}
 	r := &ruleset{name: y.Name, except: y.Except, message: strings.TrimSpace(y.Message)}
 	switch y.Format {
@@ -197,7 +197,7 @@ func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, er
 		return nil, fmt.Errorf("except.users: %d users, the limit is %d", len(y.Except.Users), maxExceptUsers)
 	}
 	for _, u := range y.Except.Users {
-		if !validUsername(u) {
+		if !module.ValidUsername(u) {
 			return nil, fmt.Errorf("except.users: %q is not a GitLab username", u)
 		}
 	}
@@ -415,6 +415,5 @@ func stringList(v any) ([]string, error) {
 	return out, nil
 }
 
-var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$`)
-
-func validUsername(s string) bool { return usernamePattern.MatchString(s) }
+// ruleName is the name format shared by the rules of every module (architecture §9.1).
+var ruleName = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)

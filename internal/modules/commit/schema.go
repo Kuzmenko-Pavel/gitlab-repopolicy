@@ -1,5 +1,7 @@
 package commit
 
+import "github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+
 // The types below describe COMMITPOLICY for schemas/commitpolicy.schema.json;
 // the module decodes the file through fileYAML and checks rules by hand.
 
@@ -20,10 +22,10 @@ type schemaRuleset struct {
 }
 
 type schemaExcept struct {
-	MergeCommits  bool     `yaml:"merge_commits" desc:"Skip merge commits."`
-	GitReverts    bool     `yaml:"git_reverts" desc:"Skip messages of git revert and of the GitLab revert button."`
-	MergedCommits bool     `yaml:"merged_commits" desc:"Check only the first-parent chain: commits that a merge commit brings in are not checked."`
-	Users         []string `yaml:"users" desc:"Usernames whose pushes skip this ruleset, for example a release bot."`
+	MergeCommits  bool        `yaml:"merge_commits" desc:"Skip merge commits."`
+	GitReverts    bool        `yaml:"git_reverts" desc:"Skip messages of git revert and of the GitLab revert button."`
+	MergedCommits bool        `yaml:"merged_commits" desc:"Check only the first-parent chain: commits that a merge commit brings in are not checked."`
+	Users         schemaUsers `yaml:"users" desc:"Usernames whose pushes skip this ruleset, for example a release bot."`
 }
 
 type schemaRules struct {
@@ -103,6 +105,7 @@ type schemaExamples struct {
 }
 
 type (
+	schemaUsers   []string
 	schemaVersion int
 	schemaMode    string
 	schemaFormat  string
@@ -136,4 +139,9 @@ func (schemaRefs) JSONSchema() map[string]any {
 		enum("all", "default", "protected"),
 		map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "pattern": "^refs/"}},
 	}}
+}
+
+func (schemaUsers) JSONSchema() map[string]any {
+	return map[string]any{"type": "array", "maxItems": 50,
+		"items": map[string]any{"type": "string", "pattern": module.UsernamePattern}}
 }

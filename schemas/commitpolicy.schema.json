@@ -37,8 +37,10 @@
               "users": {
                 "description": "Usernames whose pushes skip this ruleset, for example a release bot.",
                 "items": {
+                  "pattern": "^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$",
                   "type": "string"
                 },
+                "maxItems": 50,
                 "type": "array"
               }
             },

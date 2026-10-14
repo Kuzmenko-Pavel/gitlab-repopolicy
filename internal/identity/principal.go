@@ -23,9 +23,9 @@ type Resolver struct {
 	// guard runs before the first API call; a true result stops it.
 	guard func(ctx context.Context) (module.Status, bool)
 
-	once     sync.Once
-	username string
-	status   module.Status
+	once   sync.Once
+	person module.Person
+	status module.Status
 }
 
 // NewResolver returns a resolver of the pusher.
@@ -33,31 +33,32 @@ func NewResolver(api API, p module.Principal, guard func(ctx context.Context) (m
 	return &Resolver{api: api, principal: p, guard: guard}
 }
 
-// Username returns the username of a person: GL_USERNAME for user-<id>; for
+// Person returns the pushing person: GL_USERNAME and the ID of user-<id>; for
 // key-<id> only if the key is one of the user's own keys. A deploy key or an
-// unparsable GL_ID gives "" (unknown_principal). A failed lookup is unknown.
-func (r *Resolver) Username(ctx context.Context) (string, module.Status) {
-	r.once.Do(func() { r.username, r.status = r.resolve(ctx) })
-	return r.username, r.status
+// unparsable GL_ID gives a zero person (unknown_principal). A failed lookup is unknown.
+func (r *Resolver) Person(ctx context.Context) (module.Person, module.Status) {
+	r.once.Do(func() { r.person, r.status = r.resolve(ctx) })
+	return r.person, r.status
 }
 
-func (r *Resolver) resolve(ctx context.Context) (string, module.Status) {
-	kind, keyID := r.principal.Kind()
+func (r *Resolver) resolve(ctx context.Context) (module.Person, module.Status) {
+	kind, id := r.principal.Kind()
 	switch kind {
 	case module.PrincipalUser:
-		return r.principal.Username, module.Confirmed()
+		return module.Person{Username: r.principal.Username, ID: id}, module.Confirmed()
 	case module.PrincipalKey:
 	default:
-		return "", module.Confirmed()
+		return module.Person{}, module.Confirmed()
 	}
+	keyID := id
 	if r.guard != nil {
 		if st, stop := r.guard(ctx); stop {
-			return "", st
+			return module.Person{}, st
 		}
 	}
 	users, err := r.api.UsersByUsername(ctx, r.principal.Username)
 	if err != nil {
-		return "", statusOf(err)
+		return module.Person{}, statusOf(err)
 	}
 	var userID int64
 	for _, u := range users {
@@ -67,16 +68,16 @@ func (r *Resolver) resolve(ctx context.Context) (string, module.Status) {
 	}
 	if userID == 0 {
 		// The owner of the key is not visible: blocked, banned or deleted.
-		return "", module.Confirmed()
+		return module.Person{}, module.Confirmed()
 	}
 	personal, err := r.api.UserHasKey(ctx, userID, keyID)
 	if err != nil {
-		return "", statusOf(err)
+		return module.Person{}, statusOf(err)
 	}
 	if !personal {
-		return "", module.Confirmed()
+		return module.Person{}, module.Confirmed()
 	}
-	return r.principal.Username, module.Confirmed()
+	return module.Person{Username: r.principal.Username, ID: userID}, module.Confirmed()
 }
 
 func statusOf(err error) module.Status {

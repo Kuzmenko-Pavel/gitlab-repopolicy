@@ -33,6 +33,8 @@ type Git interface {
 type API interface {
 	refs.API
 	identity.API
+	identity.AuthzAPI
+	ProjectAccess(ctx context.Context, projectID int64) (int, error)
 	Calls() int
 }
 
@@ -49,11 +51,9 @@ type Auditor interface {
 // Deps are the collaborators of a receive.
 type Deps struct {
 	// Modules are the enabled modules in evaluation order, PATHPOLICY first.
-	Modules []module.Module
-	Git     Git
-	API     API
-	// Validator answers online questions of policy acceptance; nil when unavailable.
-	Validator  module.Validator
+	Modules    []module.Module
+	Git        Git
+	API        API
 	Audit      Auditor
 	Breakglass Breakglass
 	Clock      func() time.Time
@@ -106,6 +106,9 @@ type receive struct {
 	input      *module.Input
 
 	personal *bool
+	// serviceAccount is the outcome of the check of the service account in the project.
+	serviceAccount *module.Status
+	authz          *identity.Authorizer
 
 	sections []report.Section
 	warnings []report.Section

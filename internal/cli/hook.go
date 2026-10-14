@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/core"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
@@ -89,6 +90,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	auditor := &gitAudit{w: writer, git: git, ctx: ctx}
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{
 		Modules: mods, Git: git, API: api, Audit: auditor, Clock: time.Now,
+		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: updates})
 	if err := git.Close(); err != nil {
 		// The decision is made; the only channel left for a failure is audit.

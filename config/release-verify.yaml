@@ -1,0 +1,20 @@
+# Config of "make release-verify-tag": gitlab-repopolicy test checks the
+# signature of the release tag against TAGPOLICY of this repository (design §6.2).
+mode: enforce
+
+# Only TAGPOLICY runs and it does not use the API, so gitlab_url and token_file
+# are never read. They point nowhere: a call would fail and deny.
+gitlab_url: http+unix://%2Fnonexistent%2Fgitlab-repopolicy.sock
+token_file: /nonexistent/gitlab-repopolicy/token
+
+# Events go to stdout; release-verify-tag requires the allow decision of tagpolicy.
+audit:
+  file: ""
+  stdout: true
+
+breakglass_dir: /nonexistent/gitlab-repopolicy/breakglass
+
+modules:
+  pathpolicy: disabled
+  commitpolicy: disabled
+  tagpolicy: enabled

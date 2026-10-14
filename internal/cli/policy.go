@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
@@ -51,14 +52,17 @@ func readPolicyFile(path string, m module.Module) ([]byte, error) {
 	return data, err
 }
 
-// runValidate implements "validate [-f FILE] [--module NAME] [--config FILE]":
-// the checks of acceptance without GitLab (architecture §18.7, D23).
+// runValidate implements "validate [-f FILE] [--module NAME] [--config FILE]
+// [--online [--project P]]": the checks of acceptance; with --online also the
+// principals through the API of the server config (architecture §18.7, D23).
 func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
 	file := fs.String("f", "", "policy file; default: every policy file in the current directory")
 	name := fs.String("module", "", "module of the file when its name is not a policy file name")
-	configPath := fs.String("config", "", "server config with commitpolicy_presets")
+	configPath := fs.String("config", "", "server config with commitpolicy_presets; required with --online")
+	online := fs.Bool("online", false, "also check that principals exist, through the GitLab API of --config")
+	project := fs.String("project", "", "with --online: project ID or path, to check the access of admins")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -68,11 +72,27 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		out.printf("gitlab-repopolicy validate: unexpected arguments %q\n", fs.Args())
 		return withOutput(out.err, ExitUsage)
 	}
+	if *online && *configPath == "" {
+		out.w = stdio.Err
+		out.printf("gitlab-repopolicy validate: --online needs --config with gitlab_url and token_file\n")
+		return withOutput(out.err, ExitUsage)
+	}
 	mods, err := a.moduleSet(*configPath)
 	if err != nil {
 		out.w = stdio.Err
 		out.printf("gitlab-repopolicy validate: %v\n", err)
 		return withOutput(out.err, ExitError)
+	}
+	var v module.Validator
+	if *online {
+		ctx2, cancel := context.WithTimeout(ctx, queryTimeout)
+		defer cancel()
+		ctx = ctx2
+		if v, err = onlineValidator(ctx, *configPath, *project); err != nil {
+			out.w = stdio.Err
+			out.printf("gitlab-repopolicy validate: %v\n", err)
+			return withOutput(out.err, ExitError)
+		}
 	}
 	var targets []struct {
 		path string
@@ -106,15 +126,17 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 	}
 	code := ExitOK
 	for _, tg := range targets {
-		problems, err := validateFile(ctx, tg.path, tg.mod)
+		problems, err := validateFile(ctx, tg.path, tg.mod, v)
 		if err != nil {
 			out.printf("%s: invalid\n  %v\n", tg.path, err)
 			code = ExitError
 			continue
 		}
-		var errs, warns []string
+		var errs, warns, notes []string
 		for _, p := range problems {
 			switch {
+			case p.Unknown:
+				notes = append(notes, p.Msg)
 			case p.Warning:
 				warns = append(warns, p.Msg)
 			default:
@@ -132,11 +154,14 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		for _, w := range warns {
 			out.printf("  warning: %s\n", w)
 		}
+		for _, n := range notes {
+			out.printf("  not checked: %s\n", n)
+		}
 	}
 	return withOutput(out.err, code)
 }
 
-func validateFile(ctx context.Context, path string, m module.Module) ([]module.Problem, error) {
+func validateFile(ctx context.Context, path string, m module.Module, v module.Validator) ([]module.Problem, error) {
 	data, err := readPolicyFile(path, m)
 	if err != nil {
 		return nil, err
@@ -145,18 +170,39 @@ func validateFile(ctx context.Context, path string, m module.Module) ([]module.P
 	if err != nil {
 		return nil, err
 	}
-	found := p.Validate(ctx, nil)
+	problems := p.Validate(ctx, v)
 	if vv, ok := p.(module.VersionValidator); ok {
-		found = append(found, vv.ValidateVersion(nil, time.Now())...)
-	}
-	var problems []module.Problem
-	for _, pr := range found {
-		if pr.Unknown {
-			continue
-		}
-		problems = append(problems, pr)
+		problems = append(problems, vv.ValidateVersion(nil, time.Now())...)
 	}
 	return problems, nil
+}
+
+// onlineValidator answers the online checks of validate --online. Without a
+// project the access of admins cannot be checked and is reported as such.
+func onlineValidator(ctx context.Context, configPath, project string) (module.Validator, error) {
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+	api, err := apiClient(cfg, opsMaxCalls)
+	if err != nil {
+		return nil, err
+	}
+	if project == "" {
+		return noProject{identity.NewAuthorizer(api, 0, nil, nil)}, nil
+	}
+	p, err := api.Project(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("--project %s: %w", project, err)
+	}
+	return identity.NewAuthorizer(api, p.ID, nil, nil), nil
+}
+
+// noProject is a validator without a project: access levels are unknown.
+type noProject struct{ *identity.Authorizer }
+
+func (noProject) AccessLevels(context.Context, []int64) (map[int64]int, module.Status) {
+	return nil, module.Unknown("--project is not given")
 }
 
 func findModule(mods []module.Module, base, name string) module.Module {

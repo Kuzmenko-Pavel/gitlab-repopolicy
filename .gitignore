@@ -15,7 +15,7 @@ __pycache__/
 
 # Test coverage
 .coverage
-coverage/
+/coverage/
 htmlcov/
 
 # Build artifacts

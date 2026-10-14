@@ -44,6 +44,8 @@ type command struct {
 // server config; tests replace it to run the core with test modules.
 type App struct {
 	Modules func(modules.Settings) []module.Module
+	// System is the operating system as root commands see it; nil is the real one.
+	System System
 }
 
 // Run executes the command line args (without the program name) with the default modules.
@@ -77,8 +79,18 @@ func (a App) Run(ctx context.Context, args []string, env []string, stdio Stdio) 
 func (a App) commandList() []command {
 	return []command{
 		{name: "hook", summary: "run as the pre-receive hook of Gitaly: hook pre-receive --config FILE", run: a.runHook},
+		{name: "install-hook", summary: "connect the hook to Gitaly: --hooks-dir DIR [--user git] (root)", run: a.runInstallHook},
+		{name: "uninstall-hook", summary: "remove the hook wrapper: --hooks-dir DIR (root)", run: a.runUninstallHook},
+		{name: "selftest", summary: "check config, token, service account, API and audit log [--config FILE]", run: a.runSelftest},
+		{name: "settings-check", summary: "compare settings of projects with PATHPOLICY against the server config", run: a.runSettingsCheck},
+		{name: "coverage", summary: "find top-level groups without the service account: --token-file ADMIN_TOKEN", run: a.runCoverage},
+		{name: "token", summary: "rotate the service account token: token rotate [--before 30d] (root)", run: a.runToken},
+		{name: "breakglass", summary: "grant | revoke | list break-glass for a project (root)", run: a.runBreakglass},
+		{name: "explain", summary: "which path rules match and whether they allow a user: --project P --user U --path X [--ref R]", run: a.runExplain},
+		{name: "admins", summary: "configured, effective and missing admins of PATHPOLICY: --project P", run: a.runAdmins},
+		{name: "test", summary: "the decision of the hook without a push: --repo DIR --old A --new B --ref R --user U", run: a.runTest},
 		{name: "lint-commit", summary: "check commit messages against COMMITPOLICY: -m MSG | --range A..B [-f FILE]", run: a.runLintCommit},
-		{name: "validate", summary: "check policy files as the hook does when it accepts them: [-f FILE]", run: a.runValidate},
+		{name: "validate", summary: "check policy files as the hook does when it accepts them: [-f FILE] [--online]", run: a.runValidate},
 		{name: "version", summary: "print version, commit, build date and Go version", run: runVersion},
 	}
 }

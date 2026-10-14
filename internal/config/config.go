@@ -93,6 +93,23 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	return nil
 }
 
+// MarshalText writes whole days with the suffix "d" and anything else as a Go duration.
+func (d Duration) MarshalText() ([]byte, error) {
+	const day = 24 * time.Hour
+	if v := time.Duration(d); v > 0 && v%day == 0 {
+		return []byte(strconv.FormatInt(int64(v/day), 10) + "d"), nil
+	}
+	return []byte(time.Duration(d).String()), nil
+}
+
+func (d Duration) String() string {
+	b, err := d.MarshalText()
+	if err != nil {
+		return time.Duration(d).String()
+	}
+	return string(b)
+}
+
 // Std returns the value as time.Duration.
 func (d Duration) Std() time.Duration { return time.Duration(d) }
 

@@ -168,6 +168,18 @@ type Result struct {
 	Notices []string
 	// Events are extra audit events of the module.
 	Events []audit.Event
+	// Signatures are the verified signers of tags, for the decision events.
+	Signatures []Signature
+}
+
+// Signature is the signer of a tag that a module verified (architecture §11.2).
+type Signature struct {
+	Ref string
+	// Rules are the rules whose names matched the tag.
+	Rules []string
+	// Signer is the key label in the policy file.
+	Signer      string
+	Fingerprint string
 }
 
 // Violation is one broken rule.
@@ -284,6 +296,14 @@ type LintFinding struct {
 type CommitLinter interface {
 	LintMessage(ctx context.Context, message string) []LintFinding
 	LintCommit(ctx context.Context, object []byte) []LintFinding
+}
+
+// VersionValidator is implemented by policies whose acceptance depends on the
+// time or on the version on the anchor, for example TAGPOLICY rejects an
+// expired key only in a new or changed entry (architecture §11.3). The anchor
+// policy is nil when the anchor has no valid version of the file.
+type VersionValidator interface {
+	ValidateVersion(anchor Policy, now time.Time) []Problem
 }
 
 // UsernameLister is implemented by policies with principals. At acceptance the

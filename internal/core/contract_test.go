@@ -210,3 +210,67 @@ func TestServiceAccountCheck(t *testing.T) {
 	_, stop := ok.guard(context.Background())
 	assert.False(t, stop)
 }
+
+func TestSignaturesInAudit(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"TESTPOLICY": "sign\n"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"a": "1"})
+	r.stage(c2)
+	res := r.run([]module.Module{closed}, enforce, nil, "",
+		module.RefUpdate{Old: zero40, New: c2, Ref: "refs/tags/v1"}, module.RefUpdate{Old: zero40, New: c2, Ref: "refs/tags/v2"})
+	assert.True(t, res.out.Allow)
+	decisions := events(res.audit, audit.EventDecision)
+	require.Len(t, decisions, 2, "one decision per signed tag")
+	for i, ref := range []string{"refs/tags/v1", "refs/tags/v2"} {
+		assert.Equal(t, ref, decisions[i].Ref)
+		assert.Equal(t, "allow", decisions[i].Decision)
+		assert.Equal(t, []string{"r"}, decisions[i].Rules)
+		assert.Equal(t, "lead", decisions[i].Signer)
+		assert.Equal(t, "FPR", decisions[i].Fingerprint)
+		assert.Equal(t, c2, decisions[i].NewRev)
+	}
+
+	// A denied ref keeps its violations and the signer.
+	r.git(r.work, "reset", "-q", "--hard", c1)
+	c3 := r.commit(map[string]string{"TESTPOLICY": "sign\ndeny\n"})
+	r.publish(c3)
+	res = r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: zero40, New: c3, Ref: "refs/tags/v3"})
+	assert.False(t, res.out.Allow)
+	decisions = events(res.audit, audit.EventDecision)
+	require.Len(t, decisions, 1)
+	assert.Equal(t, "deny", decisions[0].Decision)
+	assert.Equal(t, "lead", decisions[0].Signer)
+	assert.Len(t, decisions[0].Violations, 1)
+
+	// In a denied push a signed ref without violations is still allowed in audit.
+	res = r.run([]module.Module{closed}, enforce, nil, "",
+		module.RefUpdate{Old: zero40, New: c3, Ref: "refs/tags/v3"}, module.RefUpdate{Old: zero40, New: c3, Ref: "refs/tags/v4"})
+	decisions = events(res.audit, audit.EventDecision)
+	require.Len(t, decisions, 2)
+	assert.Equal(t, "deny", decisions[0].Decision)
+	assert.Equal(t, "refs/tags/v4", decisions[1].Ref)
+	assert.Equal(t, "allow", decisions[1].Decision)
+	assert.Empty(t, decisions[1].Code)
+}
+
+func TestVersionValidator(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"TESTPOLICY": "touch\n"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"TESTPOLICY": "touch\nversioned\n"})
+	r.stage(c2)
+	res := r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/feature"})
+	assert.True(t, res.out.Allow, "a warning of a new version does not reject it")
+	assert.Contains(t, res.out.Stdout, "anchor version: touch", "the module gets the version on the anchor")
+
+	// Without a valid anchor version the module gets nil.
+	r.git(r.work, "reset", "-q", "--hard", c1)
+	c3 := r.commit(map[string]string{"TESTPOLICY": "garbage\n"})
+	r.publish(c3)
+	c4 := r.commit(map[string]string{"TESTPOLICY": "versioned\n"})
+	r.stage(c4)
+	m := hooked{testModule: closed, invalid: func(*module.Input, error) (*module.Result, error) { return &module.Result{}, nil }}
+	res = r.run([]module.Module{m}, enforce, nil, "", module.RefUpdate{Old: c3, New: c4, Ref: "refs/heads/feature"})
+	assert.Contains(t, res.out.Stdout, "anchor version: \n", res.out.Stdout)
+}

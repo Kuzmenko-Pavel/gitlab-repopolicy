@@ -131,15 +131,25 @@ func (r *receive) apply(l *loaded, res *module.Result) {
 }
 
 // decisionEvents are the "decision" events of a module: one per ref with
-// violations, or one for the push when the rules were touched without any.
+// violations or a verified signature, or one for the push when the rules were
+// touched without any.
 func (r *receive) decisionEvents(l *loaded, res *module.Result) []audit.Event {
 	byRef := map[string][]module.Violation{}
+	signed := map[string]module.Signature{}
 	var order []string
 	for _, v := range res.Violations {
 		if _, ok := byRef[v.Ref]; !ok {
 			order = append(order, v.Ref)
 		}
 		byRef[v.Ref] = append(byRef[v.Ref], v)
+	}
+	for _, s := range res.Signatures {
+		if _, ok := byRef[s.Ref]; !ok {
+			if _, dup := signed[s.Ref]; !dup {
+				order = append(order, s.Ref)
+			}
+		}
+		signed[s.Ref] = s
 	}
 	if len(order) == 0 {
 		e := audit.Event{Event: audit.EventDecision, Module: l.mod.Name(), Decision: res.Decision.String(), PolicyBlob: l.blob}
@@ -152,8 +162,15 @@ func (r *receive) decisionEvents(l *loaded, res *module.Result) []audit.Event {
 	var events []audit.Event
 	for _, ref := range order {
 		vs := byRef[ref]
-		e := audit.Event{Event: audit.EventDecision, Module: l.mod.Name(), Decision: res.Decision.String(),
-			Code: vs[0].Code, Ref: ref, PolicyBlob: l.blob}
+		e := audit.Event{Event: audit.EventDecision, Module: l.mod.Name(), Decision: res.Decision.String(), Ref: ref, PolicyBlob: l.blob}
+		if len(vs) == 0 {
+			e.Decision = module.Allow.String()
+		} else {
+			e.Code = vs[0].Code
+		}
+		if s, ok := signed[ref]; ok {
+			e.Rules, e.Signer, e.Fingerprint = s.Rules, s.Signer, s.Fingerprint
+		}
 		for _, u := range r.updates {
 			if u.Ref == ref {
 				e.OldRev, e.NewRev = u.Old, u.New

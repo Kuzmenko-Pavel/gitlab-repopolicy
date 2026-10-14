@@ -145,8 +145,12 @@ func validateFile(ctx context.Context, path string, m module.Module) ([]module.P
 	if err != nil {
 		return nil, err
 	}
+	found := p.Validate(ctx, nil)
+	if vv, ok := p.(module.VersionValidator); ok {
+		found = append(found, vv.ValidateVersion(nil, time.Now())...)
+	}
 	var problems []module.Problem
-	for _, pr := range p.Validate(ctx, nil) {
+	for _, pr := range found {
 		if pr.Unknown {
 			continue
 		}

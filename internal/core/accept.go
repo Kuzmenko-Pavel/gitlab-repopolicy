@@ -116,7 +116,11 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		problems = append(problems, err.Error())
 	} else {
 		var warnings []string
-		for _, pr := range p.Validate(ctx, r.validatorFor(l)) {
+		found := p.Validate(ctx, r.validatorFor(l))
+		if vv, ok := p.(module.VersionValidator); ok {
+			found = append(found, vv.ValidateVersion(l.policy, r.deps.Clock())...)
+		}
+		for _, pr := range found {
 			switch {
 			case pr.Unknown:
 				unknown = true

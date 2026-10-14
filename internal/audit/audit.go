@@ -50,6 +50,9 @@ type Event struct {
 	PolicyBlob  string      `json:"policy_blob,omitempty"`
 	Reason      string      `json:"reason,omitempty"`
 	Violations  []Violation `json:"violations,omitempty"`
+	Rules       []string    `json:"rules,omitempty"`
+	Signer      string      `json:"signer,omitempty"`
+	Fingerprint string      `json:"fingerprint,omitempty"`
 	Truncated   bool        `json:"truncated,omitempty"`
 	APICalls    int         `json:"api_calls"`
 	DurationMS  int64       `json:"duration_ms"`

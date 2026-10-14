@@ -22,7 +22,7 @@ import (
 )
 
 // testModule reads one instruction per line: "deny", "panic", "slow",
-// "touch", "classify", "fail-open". Any other content is invalid.
+// "touch", "classify", "bad-new", "sign", "versioned". Any other content is invalid.
 type testModule struct {
 	file string
 	mode module.FailMode
@@ -36,7 +36,7 @@ func (m testModule) Parse(blob []byte) (module.Policy, error) {
 	var p testPolicy
 	for _, line := range strings.Fields(string(blob)) {
 		switch line {
-		case "deny", "panic", "slow", "touch", "classify", "bad-new":
+		case "deny", "panic", "slow", "touch", "classify", "bad-new", "sign", "versioned":
 			p = append(p, line)
 		default:
 			return nil, errors.New("unknown instruction " + line)
@@ -58,6 +58,21 @@ func (p testPolicy) Validate(context.Context, module.Validator) []module.Problem
 	return nil
 }
 
+// ValidateVersion of "versioned" reports the anchor version it was given.
+func (p testPolicy) ValidateVersion(anchor module.Policy, now time.Time) []module.Problem {
+	for _, s := range p {
+		if s != "versioned" {
+			continue
+		}
+		prev, _ := anchor.(testPolicy)
+		if now.IsZero() {
+			return []module.Problem{{Msg: "no clock"}}
+		}
+		return []module.Problem{{Warning: true, Msg: "anchor version: " + strings.Join(prev, ",")}}
+	}
+	return nil
+}
+
 func (p testPolicy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	res := &module.Result{}
 	for _, s := range p {
@@ -69,6 +84,11 @@ func (p testPolicy) Evaluate(ctx context.Context, in *module.Input) (*module.Res
 			return nil, ctx.Err()
 		case "touch":
 			res.Touched = true
+		case "sign":
+			res.Touched = true
+			for _, u := range in.Updates {
+				res.Signatures = append(res.Signatures, module.Signature{Ref: u.Ref, Rules: []string{"r"}, Signer: "lead", Fingerprint: "FPR"})
+			}
 		case "classify":
 			_, st := in.Refs.Class(ctx, in.Updates[0].Ref)
 			if !st.IsConfirmed() {

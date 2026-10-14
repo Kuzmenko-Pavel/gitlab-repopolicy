@@ -249,21 +249,52 @@ func (c *Client) once(ctx context.Context, method, path, token string, body, out
 	switch s := resp.StatusCode; {
 	case s >= 200 && s < 300:
 	case s == http.StatusUnauthorized || s == http.StatusForbidden:
-		return s, &Error{Kind: Unauthorized, Status: s, Path: path}
+		return s, &Error{Kind: Unauthorized, Status: s, Path: path, Err: message(data)}
 	case s == http.StatusNotFound:
 		return s, &Error{Kind: NotFound, Status: s, Path: path}
 	case s == http.StatusTooManyRequests || s >= 500:
 		return s, &Error{Kind: Unavailable, Status: s, Path: path}
 	default:
-		return s, &Error{Kind: Unexpected, Status: s, Path: path}
+		return s, &Error{Kind: Unexpected, Status: s, Path: path, Err: message(data)}
 	}
 	if len(data) > maxResponse {
 		return resp.StatusCode, &Error{Kind: Unexpected, Status: resp.StatusCode, Path: path, Err: errors.New("response too large")}
 	}
-	if out != nil {
+	if raw, ok := out.(*[]byte); ok {
+		*raw = data
+	} else if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
 			return resp.StatusCode, &Error{Kind: Unexpected, Status: resp.StatusCode, Path: path, Err: err}
 		}
 	}
 	return resp.StatusCode, nil
+}
+
+// maxMessage bounds the error text taken from a response.
+const maxMessage = 300
+
+// message returns the "message" or "error" of a GitLab error response, nil without one.
+func message(data []byte) error {
+	var body struct {
+		Message any    `json:"message"`
+		Error   string `json:"error"`
+	}
+	if json.Unmarshal(data, &body) != nil {
+		return nil
+	}
+	text := body.Error
+	if body.Message != nil {
+		if s, ok := body.Message.(string); ok {
+			text = s
+		} else if b, err := json.Marshal(body.Message); err == nil {
+			text = string(b)
+		}
+	}
+	if text == "" {
+		return nil
+	}
+	if len(text) > maxMessage {
+		text = text[:maxMessage] + "..."
+	}
+	return errors.New(text)
 }

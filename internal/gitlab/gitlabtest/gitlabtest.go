@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,7 @@ type Server struct {
 	scripts map[string][]Response
 	calls   map[string]int
 	tokens  []string
+	bodies  map[string][]string
 }
 
 // NewUnix starts a server on a unix socket in a temporary directory.
@@ -84,7 +86,7 @@ func NewTLS(t testing.TB) *Server {
 }
 
 func newServer(t testing.TB) *Server {
-	return &Server{t: t, scripts: map[string][]Response{}, calls: map[string]int{}}
+	return &Server{t: t, scripts: map[string][]Response{}, calls: map[string]int{}, bodies: map[string][]string{}}
 }
 
 // URL is the gitlab_url of the server: http+unix://<escaped socket> or https://host:port.
@@ -157,10 +159,24 @@ func (s *Server) Tokens() []string {
 	return append([]string(nil), s.tokens...)
 }
 
+// Bodies returns the request bodies of "METHOD path", in order.
+func (s *Server) Bodies(method, path string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.bodies[method+" "+path]...)
+}
+
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	key := r.Method + " " + r.URL.RequestURI()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		s.t.Log(err)
+	}
 	s.mu.Lock()
 	s.calls[key]++
+	if len(body) > 0 {
+		s.bodies[key] = append(s.bodies[key], string(body))
+	}
 	s.tokens = append(s.tokens, r.Header.Get("PRIVATE-TOKEN"))
 	script, ok := s.scripts[key]
 	var resp Response

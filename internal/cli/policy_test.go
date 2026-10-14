@@ -66,6 +66,14 @@ func TestValidate(t *testing.T) {
 	assert.Equal(t, "no policy files in the current directory\n", out)
 }
 
+func TestValidate_TagPolicyKeys(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE"
+	inDir(t, map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + key + "\n"})
+	code, out, _ := run(t, "validate")
+	assert.Equal(t, ExitOK, code)
+	assert.Equal(t, "TAGPOLICY: valid\n  warning: keys.lead is not used by any rule\n", out, "the checks that need time run offline too")
+}
+
 func TestLintCommit_Usage(t *testing.T) {
 	inDir(t, map[string]string{"COMMITPOLICY": goodPolicy})
 	code, _, errOut := run(t, "lint-commit")

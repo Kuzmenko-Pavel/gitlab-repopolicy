@@ -78,6 +78,22 @@ func TestGolden(t *testing.T) {
 		}}}, alice)
 		golden(t, "commitpolicy", out)
 	})
+	t.Run("tagpolicy", func(t *testing.T) {
+		out := Rejection([]Section{{Name: "TAGPOLICY", Violations: []module.Violation{
+			{Code: module.CodeTagSignerNotAllowed, Rule: "prod", Ref: "refs/tags/v3.156.0-prod",
+				Message: "Prod releases are signed by release-lead or sre-lead.\nsigned by: dev-lead (4528A421CE40AA6A717FF2112DA7684307491280)\nallowed:   release-lead, sre-lead",
+				Reason:  "signer dev-lead (4528A421CE40AA6A717FF2112DA7684307491280) not in signers of prod"},
+			{Code: module.CodeTagNotSigned, Rule: "staging", Ref: "refs/tags/v3.156.0-staging",
+				Message: "The tag is not signed. Create it with git tag -s v3.156.0-staging", Reason: "no signature"},
+			{Code: module.CodeTagObjectInvalid, Rule: "prod", Ref: "refs/tags/v3.157.0-prod",
+				Message: `The tag object is named "v3.157.0-staging", but it is pushed as "v3.157.0-prod". Push a tag signed under its own name.`},
+			{Code: module.CodeTagSignatureInvalid, Rule: "prod", Ref: "refs/tags/v3.158.0-prod",
+				Message: "The signature cannot be accepted: the signing key is expired.", Reason: "invalid signature: the signing key is expired"},
+			{Code: module.CodeInvalidPolicy, Ref: "refs/tags/v3.159.0",
+				Message: "TAGPOLICY on the default branch is invalid: rule prod: signers: \"x\" is not a label in keys\nNo tag can be created or moved until it is fixed on the default branch."},
+		}}}, alice)
+		golden(t, "tagpolicy", out)
+	})
 	t.Run("aggregated", func(t *testing.T) {
 		out := Rejection([]Section{
 			{Name: "PATHPOLICY", Violations: []module.Violation{{

@@ -157,9 +157,10 @@ code-lint-commits: code-build
 	fi
 
 .PHONY: code-generate
-## Regenerate schemas/ from Go types.
+## Regenerate schemas/ from Go types and the golden files of push output.
 code-generate:
 	go test ./internal/schema -run '^TestSchemas$$' -update
+	go test ./internal/report -run '^TestGolden$$' -update
 
 .PHONY: code-deps-update
 ## Update dependencies of the product and of every tool module.

@@ -8,6 +8,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
 )
 
 // Settings are the parts of the server config that modules need; the CLI fills them in.
@@ -26,5 +27,6 @@ func Default(s Settings) []module.Module {
 	return []module.Module{
 		path.New(),
 		commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
+		tag.New(),
 	}
 }

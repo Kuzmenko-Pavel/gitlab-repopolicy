@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "keys": {
+      "additionalProperties": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "description": "1 to 32 public keys by label: an armored OpenPGP public key block or an OpenSSH public key on one line.",
+      "maxProperties": 32,
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]{1,255}$"
+      },
+      "type": "object"
+    },
+    "rules": {
+      "description": "Up to 50 tag rules; every rule that matches a tag must be satisfied (AND).",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "Text shown when a tag is denied, up to 1000 characters.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "signers": {
+            "description": "Labels of keys that may sign the matching tags.",
+            "items": {
+              "pattern": "^[A-Za-z0-9_.-]{1,255}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "tags": {
+            "description": "RE2 regular expression that matches the whole tag name without refs/tags/.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "tags",
+          "signers"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "version": {
+      "const": 1,
+      "description": "Schema version; version 1 is frozen.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "keys"
+  ],
+  "title": "TAGPOLICY",
+  "type": "object"
+}

@@ -1,0 +1,62 @@
+version: 1
+
+rules:
+  - name: release
+    tags: 'v.+'
+    signers: [kuzmenko-pavel]
+    message: Release tags are signed by a maintainer key from this file.
+
+keys:
+  kuzmenko-pavel: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+    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
+    9In27jg=
+    =gT/H
+    -----END PGP PUBLIC KEY BLOCK-----

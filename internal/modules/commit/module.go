@@ -71,6 +71,9 @@ func (*Module) Name() string               { return "commitpolicy" }
 func (*Module) File() string               { return File }
 func (*Module) OnInvalid() module.FailMode { return module.FailOpen }
 
+// ConfigErrors reports presets of the server config that cannot be used.
+func (m *Module) ConfigErrors() []string { return m.settings.PresetErrors() }
+
 // Parse decodes a COMMITPOLICY file offline.
 func (m *Module) Parse(blob []byte) (module.Policy, error) {
 	p, err := parsePolicy(blob, m.settings)

@@ -1,6 +1,7 @@
 package path
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	pathpkg "path"
@@ -285,4 +286,54 @@ func (p *policy) Usernames() []string {
 		out = append(out, r.allow...)
 	}
 	return out
+}
+
+// ExplainPath implements module.PathExplainer for gitlab-repopolicy explain.
+// PATHPOLICY itself is changed only by admins (architecture §9.4).
+func (p *policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]module.PathRule, module.Status) {
+	var out []module.PathRule
+	if isPolicyPath(path) {
+		out = append(out, module.PathRule{Name: "admins of " + File, Refs: "all", Applies: true,
+			Allow: p.admins, Allowed: p.isAdmin(username)})
+	}
+	for _, r := range p.rules {
+		if !r.matches(path) {
+			continue
+		}
+		applies, st := r.appliesTo(ctx, ref, refs)
+		if !st.IsConfirmed() {
+			return nil, st
+		}
+		out = append(out, module.PathRule{Name: r.name, Refs: r.refsText(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
+	}
+	return out, module.Confirmed()
+}
+
+// appliesTo reports whether the ref scope of the rule includes the ref.
+func (r *rule) appliesTo(ctx context.Context, ref string, refs module.RefClassifier) (bool, module.Status) {
+	switch r.refs {
+	case refsList:
+		return r.matchList(ref), module.Confirmed()
+	case refsDefault:
+		return ref == refs.Default(), module.Confirmed()
+	case refsProtected:
+		if ref == refs.Default() {
+			return true, module.Confirmed()
+		}
+		class, st := refs.Class(ctx, ref)
+		return class != module.ClassOther, st
+	}
+	return true, module.Confirmed()
+}
+
+func (r *rule) refsText() string {
+	switch r.refs {
+	case refsList:
+		return strings.Join(r.list, ", ")
+	case refsDefault:
+		return "default"
+	case refsProtected:
+		return "protected"
+	}
+	return "all"
 }

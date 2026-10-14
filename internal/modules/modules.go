@@ -30,3 +30,14 @@ func Default(s Settings) []module.Module {
 		tag.New(),
 	}
 }
+
+// Guard returns the module that guards paths, PATHPOLICY, from a module list;
+// nil when it is not in the list. settings-check checks the projects that have its file.
+func Guard(mods []module.Module) module.Module {
+	for _, m := range mods {
+		if m.File() == path.File {
+			return m
+		}
+	}
+	return nil
+}

@@ -82,38 +82,54 @@ func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 	return problems
 }
 
-// accessChecker is what counting admins needs from GitLab.
-type accessChecker interface {
-	Users(ctx context.Context, usernames []string) (map[string]module.User, module.Status)
-	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, module.Status)
-}
-
 // countAdmins is count_effective_admins of architecture §9.4: admins that are
 // active users with effective access of at least Maintainer. A failure is
 // unknown and never zero (D15).
-func countAdmins(ctx context.Context, a accessChecker, admins []string) (int, module.Status) {
-	users, status := a.Users(ctx, admins)
-	if !status.IsConfirmed() {
-		return 0, status
-	}
-	var ids []int64
-	for _, name := range admins {
-		if u := users[strings.ToLower(name)]; u.Active && u.ID != 0 {
-			ids = append(ids, u.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, module.Confirmed()
-	}
-	levels, status := a.AccessLevels(ctx, ids)
+func countAdmins(ctx context.Context, a module.AccessChecker, admins []string) (int, module.Status) {
+	report, status := adminReport(ctx, a, admins)
 	if !status.IsConfirmed() {
 		return 0, status
 	}
 	n := 0
-	for _, id := range ids {
-		if levels[id] >= module.AccessMaintainer {
+	for _, ad := range report {
+		if ad.Effective {
 			n++
 		}
 	}
 	return n, module.Confirmed()
+}
+
+// AdminReport implements module.AdminReporter for gitlab-repopolicy admins.
+func (p *policy) AdminReport(ctx context.Context, a module.AccessChecker) ([]module.Admin, module.Status) {
+	return adminReport(ctx, a, p.admins)
+}
+
+func adminReport(ctx context.Context, a module.AccessChecker, admins []string) ([]module.Admin, module.Status) {
+	report := make([]module.Admin, len(admins))
+	users, status := a.Users(ctx, admins)
+	if !status.IsConfirmed() {
+		return nil, status
+	}
+	var ids []int64
+	for i, name := range admins {
+		u, ok := users[strings.ToLower(name)]
+		report[i] = module.Admin{Username: name, Exists: ok, Active: u.Active}
+		if u.Active && u.ID != 0 {
+			ids = append(ids, u.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return report, module.Confirmed()
+	}
+	levels, status := a.AccessLevels(ctx, ids)
+	if !status.IsConfirmed() {
+		return nil, status
+	}
+	for i, name := range admins {
+		if u := users[strings.ToLower(name)]; u.Active && u.ID != 0 {
+			report[i].Access = levels[u.ID]
+			report[i].Effective = levels[u.ID] >= module.AccessMaintainer
+		}
+	}
+	return report, module.Confirmed()
 }

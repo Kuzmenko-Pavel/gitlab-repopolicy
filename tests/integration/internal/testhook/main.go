@@ -1,5 +1,6 @@
 // Command testhook is gitlab-repopolicy with the test modules added after the
-// default ones; the integration harness installs it as the pre-receive hook.
+// default ones and a fake root (system.go); the integration harness installs
+// it as the pre-receive hook and runs the other commands with it.
 package main
 
 import (
@@ -18,7 +19,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	app := cli.App{Modules: func(s modules.Settings) []module.Module {
 		return append(modules.Default(s), testmodule.Modules()...)
-	}}
+	}, System: testSystem{}}
 	code := app.Run(ctx, os.Args[1:], os.Environ(), cli.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	stop()
 	os.Exit(code)

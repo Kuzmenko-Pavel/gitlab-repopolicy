@@ -24,8 +24,9 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest"
 )
 
-// hookBin is the test hook binary built once by TestMain with -cover.
-var hookBin string
+// hookBin is the test hook binary built once by TestMain with -cover; workDir
+// holds it and the fixtures of benchmarks and is removed after the run.
+var hookBin, workDir string
 
 func TestMain(m *testing.M) {
 	if _, err := gitBin(); err != nil {
@@ -37,6 +38,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	workDir = dir
 	hookBin = filepath.Join(dir, "testhook")
 	build := exec.CommandContext(context.Background(), "go", "build", "-cover", "-covermode=atomic",
 		"-coverpkg=github.com/Kuzmenko-Pavel/gitlab-repopolicy/...", "-o", hookBin, "./internal/testhook")
@@ -70,7 +72,7 @@ func gitBin() (string, error) {
 
 // gitExe is the git that pushes: exec looks a bare name up in the PATH of the
 // test process, not in the PATH given to the child.
-func gitExe(t *testing.T) string {
+func gitExe(t testing.TB) string {
 	t.Helper()
 	bin, err := gitBin()
 	require.NoError(t, err)
@@ -115,6 +117,8 @@ type Stand struct {
 	Repo    string
 	// HookPath replaces PATH of the hook process when set.
 	HookPath string
+	// Wrapper, when set, is run instead of the binary: the wrapper of install-hook.
+	Wrapper  string
 	coverDir string
 }
 
@@ -168,6 +172,16 @@ func (s *Stand) writeConfig(mode string) {
 	cfg := fmt.Sprintf("mode: %s\ngitlab_url: %s\ntoken_file: %s\naudit:\n  file: %s\nbreakglass_dir: %s\n",
 		mode, s.API.URL(), filepath.Join(s.Dir, "token"), s.audit, filepath.Join(s.Dir, "breakglass"))
 	require.NoError(s.t, os.WriteFile(s.config, []byte(cfg), 0o600))
+}
+
+// AddConfig appends YAML to config.yaml, for sections such as settings_check.
+func (s *Stand) AddConfig(yaml string) {
+	s.t.Helper()
+	f, err := os.OpenFile(s.config, os.O_WRONLY|os.O_APPEND, 0)
+	require.NoError(s.t, err)
+	_, err = f.WriteString(yaml)
+	require.NoError(s.t, err)
+	require.NoError(s.t, f.Close())
 }
 
 // git runs git with the stand environment and returns trimmed stdout.
@@ -247,8 +261,8 @@ func (s *Stand) Push(user User, refspecs ...string) Result {
 git --version > %q
 %sGL_ID=%q GL_USERNAME=%q GL_PROTOCOL=ssh GL_REPOSITORY=%q GL_PROJECT_PATH=%q
 export GL_ID GL_USERNAME GL_PROTOCOL GL_REPOSITORY GL_PROJECT_PATH
-exec %q hook pre-receive --config %q
-`, versionFile, path, user.GLID, user.Name, s.Repo, s.Project, hookBin, s.config)
+%s
+`, versionFile, path, user.GLID, user.Name, s.Repo, s.Project, s.hookExec())
 	require.NoError(s.t, os.MkdirAll(filepath.Join(s.Bare, "hooks"), 0o755))
 	require.NoError(s.t, os.WriteFile(filepath.Join(s.Bare, "hooks", "pre-receive"), []byte(hook), 0o755))
 	out, err := s.gitErr(s.Work, append([]string{"push", "--porcelain", "-f", s.Bare}, refspecs...)...)
@@ -256,6 +270,38 @@ exec %q hook pre-receive --config %q
 	require.NoError(s.t, rerr, "the hook did not run: %s", out)
 	require.NoError(s.t, os.Remove(versionFile))
 	return Result{OK: err == nil, Output: out, HookGit: strings.TrimSpace(string(version))}
+}
+
+func (s *Stand) hookExec() string {
+	if s.Wrapper != "" {
+		return fmt.Sprintf("exec %q", s.Wrapper)
+	}
+	return fmt.Sprintf("exec %q hook pre-receive --config %q", hookBin, s.config)
+}
+
+// CLI is the outcome of a command of the binary.
+type CLI struct {
+	Code   int
+	Stdout string
+	Stderr string
+}
+
+// Run runs a command of the binary in the work clone with the stand
+// environment and extra variables, such as REPOPOLICY_TEST_NOT_ROOT.
+func (s *Stand) Run(extraEnv []string, args ...string) CLI {
+	s.t.Helper()
+	cmd := exec.CommandContext(s.t.Context(), hookBin, args...)
+	cmd.Env, cmd.Dir = append(slices.Clone(s.env), extraEnv...), s.Work
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		var exit *exec.ExitError
+		require.ErrorAs(s.t, err, &exit, "%s", stderr.String())
+		code = exit.ExitCode()
+	}
+	return CLI{Code: code, Stdout: stdout.String(), Stderr: stderr.String()}
 }
 
 // Event is an audit event as JSON.

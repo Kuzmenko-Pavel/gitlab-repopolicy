@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 const (
 	accessDeveloper  = 30
 	accessMaintainer = 40
+	accessOwner      = 50
 )
 
 const (
@@ -32,7 +34,8 @@ const (
 	personalProj   = "alice/scratch"
 )
 
-// Users of the stand and their role in the top-level group; carol is blocked.
+// Users of the stand and their role in the top-level group; carol is blocked,
+// owen is not a member and becomes an Owner of single projects in tests.
 var standUsers = []struct {
 	username string
 	access   int
@@ -41,6 +44,8 @@ var standUsers = []struct {
 	{"alice", accessMaintainer, false},
 	{"bob", accessDeveloper, false},
 	{"carol", accessDeveloper, true},
+	{"olga", accessOwner, false},
+	{"owen", 0, false},
 }
 
 // bootstrap brings the stand to the state the tests expect. Every step checks
@@ -60,6 +65,7 @@ func (s *stand) bootstrap(ctx context.Context) error {
 		{"SSH keys", s.ensureSSHKeys},
 		{"project access token", s.ensureProjectToken},
 		{"runner", s.ensureRunner},
+		{"hook", s.ensureHook},
 	}
 	for _, step := range steps {
 		err := step.run(ctx)
@@ -285,7 +291,9 @@ func (s *stand) ensureProjects(ctx context.Context) error {
 func (s *stand) ensureMemberships(ctx context.Context) error {
 	members := map[int]int{s.state.ServiceAccount.ID: accessMaintainer}
 	for _, u := range standUsers {
-		members[s.state.Users[u.username].ID] = u.access
+		if u.access > 0 {
+			members[s.state.Users[u.username].ID] = u.access
+		}
 	}
 	group := s.state.Groups[topGroup]
 	for userID, access := range members {
@@ -432,6 +440,42 @@ func (s *stand) ensureRunner(ctx context.Context) error {
 	}
 	s.state.RunnerToken = created.Token
 	return nil
+}
+
+// Paths of the hook installation in the GitLab container (architecture §18.2, §18.3).
+const (
+	hooksDir   = "/var/opt/gitlab/gitaly/custom_hooks"
+	hookConfig = "/etc/gitlab-repopolicy/config.yaml"
+	hookToken  = "/etc/gitlab-repopolicy/token"
+	auditLog   = "/var/log/gitlab-repopolicy/audit.log"
+)
+
+// hookFilesScript lays out the files as the package and an administrator do:
+// owned by root, then install-hook gives the git user what the hook reads.
+const hookFilesScript = `set -eu
+umask 027
+mkdir -p /etc/gitlab-repopolicy /var/log/gitlab-repopolicy
+chmod 755 /etc/gitlab-repopolicy
+chmod 750 /var/log/gitlab-repopolicy
+cat > ` + hookConfig + `
+printf '%s' "$E2E_HOOK_TOKEN" > ` + hookToken + `
+chown root:root ` + hookConfig + ` ` + hookToken + ` /var/log/gitlab-repopolicy
+`
+
+// ensureHook writes the server config and the service account token, then
+// installs the hook with install-hook as in production (design §8.3).
+func (s *stand) ensureHook(ctx context.Context) error {
+	cfg, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
+	if err != nil {
+		return err
+	}
+	if _, err := s.compose(ctx, []string{"E2E_HOOK_TOKEN=" + s.state.ServiceAccount.Token}, bytes.NewReader(cfg),
+		"exec", "-T", "-e", "E2E_HOOK_TOKEN", "gitlab", "sh", "-c", hookFilesScript); err != nil {
+		return err
+	}
+	_, err = s.compose(ctx, nil, nil, "exec", "-T", "gitlab",
+		"gitlab-repopolicy", "install-hook", "--hooks-dir", hooksDir, "--user", "git")
+	return err
 }
 
 func expiresAt() string { return time.Now().AddDate(0, 0, 300).Format(time.DateOnly) }

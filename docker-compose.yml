@@ -1,7 +1,8 @@
 ---
-# e2e stand: GitLab CE with the hook installed as in production and a runner
-# with the shell executor. Started by make test-e2e, which sets the variables
-# below; state (test CA, keys, tokens) lives in E2E_STATE_DIR, not in the repo.
+# e2e stand: GitLab CE with the binary of the branch and a runner with the
+# shell executor; the e2e bootstrap installs the hook as in production.
+# Started by make test-e2e, which sets the variables below; state (test CA,
+# keys, tokens) lives in E2E_STATE_DIR, not in the repo.
 name: ${COMPOSE_PROJECT_NAME:?run through make test-e2e}
 
 services:
@@ -31,7 +32,6 @@ services:
       - ${E2E_STATE_DIR:?}/tls/gitlab.crt:/etc/gitlab-stand/gitlab.crt:ro
       - ${E2E_STATE_DIR}/tls/gitlab.key:/etc/gitlab-stand/gitlab.key:ro
       - ${E2E_BINARY:?}:/usr/bin/gitlab-repopolicy:ro
-      - ./tests/e2e/testdata/config.yaml:/etc/gitlab-repopolicy/config.yaml:ro
     # The image healthcheck passes before the first reconfigure; readiness covers
     # Puma, the database, Redis and Gitaly.
     healthcheck:

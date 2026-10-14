@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+// gl is the bootstrapped stand shared by the tests.
+var gl *stand
+
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	s, err := newStand()
@@ -23,5 +26,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "e2e stand:", err)
 		os.Exit(1)
 	}
+	gl = s
 	os.Exit(m.Run())
 }

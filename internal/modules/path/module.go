@@ -1,0 +1,119 @@
+// Package path is the PATHPOLICY module: who may change which paths of the
+// repository (architecture §9). It is FailClosed and the root of trust: it
+// also guards itself through admins and the files of the other modules
+// through its ordinary rules.
+package path
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+)
+
+// File is the policy file of the module.
+const File = "PATHPOLICY"
+
+// Module is PATHPOLICY.
+type Module struct{}
+
+// New returns the module.
+func New() *Module { return &Module{} }
+
+func (*Module) Name() string               { return "pathpolicy" }
+func (*Module) File() string               { return File }
+func (*Module) OnInvalid() module.FailMode { return module.FailClosed }
+
+// NeedsIdentity gives the module the authorizer also for bootstrap and recovery.
+func (*Module) NeedsIdentity() bool { return true }
+
+// Parse decodes a PATHPOLICY file offline.
+func (*Module) Parse(blob []byte) (module.Policy, error) {
+	p, err := parsePolicy(blob)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// SchemaType is the type behind schemas/pathpolicy.schema.json.
+func (*Module) SchemaType() any { return schemaFile{} }
+
+// Needs: PATHPOLICY decides on access and asks GitLab about people.
+func (*policy) Needs() module.Needs { return module.Needs{Identity: true} }
+
+// Validate checks a new version: usernames added in this version exist and
+// are active (D28), and at least one admin is effective, or the new version
+// would lock everyone out (architecture §9.4, §12.2).
+func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
+	if v == nil {
+		return nil
+	}
+	var problems []module.Problem
+	var added []string
+	seen := map[string]bool{}
+	for _, u := range p.Usernames() {
+		key := strings.ToLower(u)
+		if !seen[key] && !v.Known(u) {
+			added = append(added, u)
+		}
+		seen[key] = true
+	}
+	if len(added) > 0 {
+		users, status := v.Users(ctx, added)
+		if !status.IsConfirmed() {
+			return []module.Problem{{Unknown: true, Msg: "usernames cannot be checked: " + status.Reason()}}
+		}
+		for _, u := range added {
+			if !users[strings.ToLower(u)].Active {
+				problems = append(problems, module.Problem{Msg: fmt.Sprintf("%q is not an active GitLab user", u)})
+			}
+		}
+	}
+	n, status := countAdmins(ctx, v, p.admins)
+	switch {
+	case !status.IsConfirmed():
+		problems = append(problems, module.Problem{Unknown: true, Msg: "admins cannot be checked: " + status.Reason()})
+	case n == 0:
+		problems = append(problems, module.Problem{Code: module.CodeLockoutPrevented,
+			Msg: "none of the admins is an active user with at least Maintainer access to the project"})
+	}
+	return problems
+}
+
+// accessChecker is what counting admins needs from GitLab.
+type accessChecker interface {
+	Users(ctx context.Context, usernames []string) (map[string]module.User, module.Status)
+	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, module.Status)
+}
+
+// countAdmins is count_effective_admins of architecture §9.4: admins that are
+// active users with effective access of at least Maintainer. A failure is
+// unknown and never zero (D15).
+func countAdmins(ctx context.Context, a accessChecker, admins []string) (int, module.Status) {
+	users, status := a.Users(ctx, admins)
+	if !status.IsConfirmed() {
+		return 0, status
+	}
+	var ids []int64
+	for _, name := range admins {
+		if u := users[strings.ToLower(name)]; u.Active && u.ID != 0 {
+			ids = append(ids, u.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, module.Confirmed()
+	}
+	levels, status := a.AccessLevels(ctx, ids)
+	if !status.IsConfirmed() {
+		return 0, status
+	}
+	n := 0
+	for _, id := range ids {
+		if levels[id] >= module.AccessMaintainer {
+			n++
+		}
+	}
+	return n, module.Confirmed()
+}

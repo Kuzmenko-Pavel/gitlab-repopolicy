@@ -1,0 +1,31 @@
+gitlab-repopolicy: push rejected (PATHPOLICY: 6 violations)
+
+PATHPOLICY refs/heads/main: policy change denied
+  PATHPOLICY is changed by its admins: platform-lead.
+  Without an effective admin, an Owner of the project may change it (recovery).
+  files:
+    PATHPOLICY
+
+PATHPOLICY refs/heads/feature: new policy has no effective administrators
+  files:
+    PATHPOLICY
+      - none of the admins is an active user with at least Maintainer access to the project
+
+PATHPOLICY refs/heads/feature: policy is invalid
+  PATHPOLICY on the default branch is invalid: line 3: bad
+
+PATHPOLICY [ci-config] refs/heads/main: modification denied
+  Allowed to change these paths: platform-lead, sre-lead.
+  files:
+    .gitlab-ci.yml
+
+PATHPOLICY [deploy] refs/heads/main: principal type not allowed
+  Protected paths are changed only by people: a deploy key cannot change them.
+  files:
+    deploy/prod.yml
+
+PATHPOLICY [prod-values] refs/heads/release/1: unable to verify authorization
+  GitLab could not confirm the authorization. Retry later; administrators are alerted.
+
+user: bob (id 3)
+GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY [ci-config] modification denied; PATHPOLICY policy change denied; PATHPOLICY new policy has no effective administrators; 3 more. See push output.

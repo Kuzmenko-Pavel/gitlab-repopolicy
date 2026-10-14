@@ -49,8 +49,10 @@ GIT_BIN_ABS     = $(if $(findstring /,$(GIT_BIN)),$(abspath $(GIT_BIN)),$(GIT_BI
 # gitlab/gitlab-ce image for e2e.
 GITLAB_VERSION ?= 19.4.2-ce.0
 FUZZTIME       ?= 30s
-# Previous minor version for the rollback check (set by release).
+# Previous minor version for the rollback check, without v; computed from
+# tags v* when not given: the last release, not rc, of a lower minor version.
 COMPAT_PREV_VERSION ?=
+COMPAT_PREV_TAG     := v$(COMPAT_PREV_VERSION)
 # Local release check: directories with already downloaded archives and checksums.txt.
 COMPAT_PREV_DIR     ?=
 RELEASE_ASSETS_DIR  ?=
@@ -200,6 +202,52 @@ test-integration:
 		echo "test-integration: no integration test packages under tests/integration" >&2; exit 1; \
 	fi
 	GIT_BIN="$(GIT_BIN_ABS)" go test -count=1 -race -shuffle=on -tags integration ./tests/integration/...
+	prev="$(COMPAT_PREV_VERSION)"; \
+	if [ -z "$$prev" ]; then \
+		if [ "$(GITHUB_REF_TYPE)" = tag ] && ! git fetch --quiet --force --tags origin; then \
+			echo "test-integration: cannot fetch the tags for the rollback check" >&2; exit 1; \
+		fi; \
+		current="$(VERSION)"; major=$${current%%.*}; rest=$${current#*.}; minor=$${rest%%.*}; \
+		prev=$$(git tag --list 'v*' | sed -n 's/^v\(\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\)$$/\1/p' \
+			| awk -F. -v M="$$major" -v m="$$minor" '$$1 < M || ($$1 == M && $$2 < m)' | sort -V | tail -n 1); \
+	fi; \
+	if [ -z "$$prev" ]; then \
+		echo "test-integration: rollback check skipped: no release of a lower minor version than $(VERSION) among the tags v*"; \
+	else \
+		$(MAKE) --no-print-directory test-integration-compat COMPAT_PREV_VERSION="$$prev"; \
+	fi
+
+# The rollback check of test-integration (design §8.2): the previous minor
+# release, verified like a consumer does, accepts every valid PATHPOLICY and
+# TAGPOLICY of the corpus and of examples/.
+.PHONY: test-integration-compat
+test-integration-compat: $(TOOLS_BIN)/cosign
+	dir=bin/compat/$(COMPAT_PREV_VERSION); rm -rf "$$dir"; mkdir -p "$$dir"; \
+	case "$$(uname -m)" in x86_64) arch=amd64 ;; aarch64 | arm64) arch=arm64 ;; *) echo "test-integration: unsupported arch $$(uname -m)" >&2; exit 1 ;; esac; \
+	archive="gitlab-repopolicy_$(COMPAT_PREV_VERSION)_linux_$$arch.tar.gz"; \
+	if [ -n "$(COMPAT_PREV_DIR)" ]; then \
+		cp "$(COMPAT_PREV_DIR)/checksums.txt" "$(COMPAT_PREV_DIR)/$$archive" "$$dir/"; \
+		echo "test-integration: $(COMPAT_PREV_TAG) from COMPAT_PREV_DIR, cosign verify-blob skipped"; \
+		(cd "$$dir" && sha256sum --check --ignore-missing checksums.txt); \
+	else \
+		base="https://github.com/$(GITHUB_REPOSITORY_SLUG)/releases/download/$(COMPAT_PREV_TAG)"; \
+		for f in checksums.txt checksums.txt.sigstore.json "$$archive"; do \
+			curl --fail --silent --show-error --location --output "$$dir/$$f" "$$base/$$f"; \
+		done; \
+		(cd "$$dir" && $(VERIFY_ASSETS)); \
+	fi; \
+	tar -xzf "$$dir/$$archive" -C "$$dir" gitlab-repopolicy; \
+	"$$dir/gitlab-repopolicy" version; \
+	n=0; \
+	for module in pathpolicy tagpolicy; do \
+		file=$$(echo "$$module" | tr '[:lower:]' '[:upper:]'); \
+		for f in tests/corpus/$$module/valid/* $$(find examples -type f -name "$$file" 2>/dev/null | sort); do \
+			"$$dir/gitlab-repopolicy" validate -f "$$f" --module "$$module" > /dev/null || { \
+				echo "test-integration: $(COMPAT_PREV_VERSION) rejects $$f" >&2; exit 1; }; \
+			n=$$((n + 1)); \
+		done; \
+	done; \
+	echo "test-integration: $(COMPAT_PREV_VERSION) accepts all $$n valid PATHPOLICY and TAGPOLICY files"
 
 .PHONY: test-coverage
 ## Run unit and integration tests with coverage into coverage/.
@@ -432,7 +480,10 @@ release-publish: $(TOOLS_BIN)/goreleaser $(TOOLS_BIN)/syft $(TOOLS_BIN)/cosign
 	if [ "$(GITHUB_ACTIONS)" != true ] || [ "$(GITHUB_REF_TYPE)" != tag ] || [ -n "$(ACT)" ]; then \
 		echo "release-publish: runs only in GitHub Actions on a tag push (GITHUB_ACTIONS=true, GITHUB_REF_TYPE=tag, ACT unset)" >&2; exit 1; \
 	fi
-	GORELEASER_CURRENT_TAG="$(RELEASE_TAG)" goreleaser release --clean
+	git fetch --force origin "+refs/tags/$(RELEASE_TAG):refs/tags/$(RELEASE_TAG)"
+	mkdir -p bin
+	git for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$(RELEASE_TAG)" > bin/release-notes.md
+	GORELEASER_CURRENT_TAG="$(RELEASE_TAG)" goreleaser release --clean --release-notes bin/release-notes.md
 	rm -rf bin/published; mkdir -p bin/published
 	gh release download "$(RELEASE_TAG)" --repo "$(GITHUB_REPOSITORY_SLUG)" --dir bin/published
 	cd bin/published && $(VERIFY_ASSETS)

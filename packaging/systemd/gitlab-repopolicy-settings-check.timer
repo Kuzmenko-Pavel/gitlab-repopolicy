@@ -1,0 +1,11 @@
+[Unit]
+Description=Run gitlab-repopolicy settings-check every 15 minutes
+Documentation=https://github.com/Kuzmenko-Pavel/gitlab-repopolicy
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

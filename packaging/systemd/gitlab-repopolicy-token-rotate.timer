@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily rotation check of the gitlab-repopolicy token
+Documentation=https://github.com/Kuzmenko-Pavel/gitlab-repopolicy
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

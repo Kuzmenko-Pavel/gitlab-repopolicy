@@ -67,6 +67,10 @@ E2E_STATE_ROOT ?= $(CURDIR)/bin/e2e-stand
 E2E_STATE_DIR  := $(abspath $(E2E_STATE_ROOT))/$(COMPOSE_PROJECT_NAME)
 # Linux build of the binary for the stand, mounted read-only as /usr/bin/gitlab-repopolicy.
 E2E_BINARY     := $(CURDIR)/bin/e2e/gitlab-repopolicy
+# E2E_NIGHTLY=1 adds the nightly scenarios (parallel merges) to test-e2e.
+E2E_NIGHTLY    ?=
+comma          := ,
+E2E_TAGS       := e2e$(if $(filter 1,$(E2E_NIGHTLY)),$(comma)nightly)
 
 # yamllint is not a Go tool; its version is pinned here and run through pipx.
 YAMLLINT_VERSION := 1.38.0
@@ -314,7 +318,7 @@ test-e2e:
 			-out "$$d/gitlab.crt" 2> /dev/null; \
 	fi
 	docker compose up --detach --wait --wait-timeout 1200
-	go test -tags e2e -count=1 -timeout 60m ./tests/e2e/...
+	go test -tags $(E2E_TAGS) -count=1 -v -timeout 60m ./tests/e2e/...
 
 .PHONY: test-e2e-down
 ## Remove the e2e stand COMPOSE_PROJECT_NAME with its volumes.

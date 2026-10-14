@@ -202,3 +202,25 @@ func FuzzValidatePattern(f *testing.F) {
 		}
 	})
 }
+
+func FuzzParse(f *testing.F) {
+	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: ci\n    paths: [ci.yml, \"deploy/**\"]\n    refs: [\"refs/heads/release/*\"]\n    allow: [alice]\n"))
+	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: x\n    paths: [\"{a,b}\"]\n    allow: [group/x]\n"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		p, err := parsePolicy(data)
+		if err != nil {
+			return
+		}
+		// A parsed policy keeps the limits of architecture §17.
+		if len(p.admins) < 1 || len(p.admins) > maxAdmins || len(p.rules) > maxRules {
+			t.Fatalf("limits not kept: %d admins, %d rules", len(p.admins), len(p.rules))
+		}
+		for _, r := range p.rules {
+			for _, pattern := range r.paths {
+				if validatePattern(pattern) != nil {
+					t.Fatalf("invalid pattern %q accepted", pattern)
+				}
+			}
+		}
+	})
+}

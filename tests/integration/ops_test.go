@@ -48,12 +48,26 @@ func TestInstallHook(t *testing.T) {
 	log, err := os.ReadFile(chownLog)
 	require.NoError(t, err)
 	ids := fmt.Sprintf(" %d:%d\n", os.Getuid(), os.Getgid())
-	assert.Equal(t, 2, strings.Count(string(log), ids), "the directory and the wrapper belong to --user:\n%s", log)
+	group := fmt.Sprintf(" -1:%d\n", os.Getgid())
+	assert.Equal(t, 3, strings.Count(string(log), ids), "the directory, the wrapper and the log directory belong to --user:\n%s", log)
 	assert.Contains(t, string(log), filepath.Join(hooks, "pre-receive.d")+ids)
+	assert.Contains(t, string(log), s.Dir+ids, "the audit log directory (question 16)")
+	assert.Contains(t, string(log), s.config+group, "config.yaml gets the group of --user")
+	assert.Contains(t, string(log), filepath.Join(s.Dir, "token")+group)
+	assert.Contains(t, r.Stdout, s.config+": owner set")
 
 	r = s.Run(env, args...)
 	require.Equal(t, 0, r.Code, r.Stderr)
 	assert.Contains(t, r.Stdout, ": unchanged")
+
+	// Without a readable config the wrapper is installed, but the hook could not work.
+	broken := append(args[:len(args)-1:len(args)-1], filepath.Join(s.Dir, "missing.yaml"))
+	r = s.Run(env, broken...)
+	assert.Equal(t, 1, r.Code)
+	assert.Contains(t, r.Stdout, "missing.yaml: not read")
+	assert.Contains(t, r.Stdout, "The hook cannot read its files")
+	r = s.Run(env, args...)
+	require.Equal(t, 0, r.Code, r.Stderr)
 
 	// The installed wrapper is the hook: Gitaly runs it with the GL_* environment.
 	s.Wrapper = wrapper

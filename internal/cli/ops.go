@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -73,8 +76,57 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 		return fail(stdio.Err, "install-hook", err, ExitError)
 	}
 	out := &output{w: stdio.Out}
-	out.printf("%s: %s\nNext: gitlab-repopolicy selftest\n", path, res)
+	out.printf("%s: %s\n", path, res)
+	lines, ok := a.ownFiles(*configPath, uid, gid)
+	for _, line := range lines {
+		out.printf("%s\n", line)
+	}
+	if !ok {
+		out.printf("The hook cannot read its files: fix the owners above, then run gitlab-repopolicy selftest\n")
+		return withOutput(out.err, ExitError)
+	}
+	out.printf("Next: gitlab-repopolicy selftest\n")
 	return withOutput(out.err, ExitOK)
+}
+
+// ownFiles gives the hook user what it reads and writes (question 16): the
+// group of config.yaml and of the token, and the audit log directory. The
+// package does the same at its first installation when the user exists.
+func (a App) ownFiles(configPath string, uid, gid int) ([]string, bool) {
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: not read (%v)", configPath, err)}, false
+	}
+	sys := a.system()
+	targets := []struct {
+		path     string
+		uid, gid int
+	}{{configPath, -1, gid}, {cfg.TokenFile, -1, gid}}
+	if cfg.Audit.File != "" {
+		targets = append(targets, struct {
+			path     string
+			uid, gid int
+		}{filepath.Dir(cfg.Audit.File), uid, gid})
+	}
+	var lines []string
+	ok := true
+	for _, t := range targets {
+		switch _, err := os.Lstat(t.path); {
+		case errors.Is(err, fs.ErrNotExist):
+			lines = append(lines, t.path+": does not exist yet")
+		case err != nil:
+			ok = false
+			lines = append(lines, fmt.Sprintf("%s: %v", t.path, err))
+		default:
+			if err := sys.Chown(t.path, t.uid, t.gid); err != nil {
+				ok = false
+				lines = append(lines, fmt.Sprintf("%s: %v", t.path, err))
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("%s: owner set", t.path))
+		}
+	}
+	return lines, ok
 }
 
 // runUninstallHook implements "uninstall-hook --hooks-dir DIR": only the wrapper is removed.

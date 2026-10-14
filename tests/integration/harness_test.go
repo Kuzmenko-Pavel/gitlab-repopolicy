@@ -331,3 +331,26 @@ func (s *Stand) gitStdin(stdin, dir string, args ...string) string {
 	require.NoError(s.t, err, "git %v: %s", args, out)
 	return strings.TrimSpace(string(out))
 }
+
+var (
+	owner   = User{Name: "owner", GLID: "user-5"}
+	devLead = User{Name: "dev-lead", GLID: "user-6"}
+)
+
+// Team scripts the fake API with the users of the tests and their roles in
+// the project: alice Maintainer, bob Developer, owner Owner, dev-lead Developer.
+func (s *Stand) Team() {
+	type member struct {
+		id    int
+		name  string
+		level int
+	}
+	team := []member{{2, "alice", 40}, {3, "bob", 30}, {5, "owner", 50}, {6, "dev-lead", 30}}
+	nodes := make([]any, 0, len(team))
+	for _, m := range team {
+		nodes = append(nodes, map[string]any{"id": fmt.Sprintf("gid://gitlab/User/%d", m.id), "username": m.name, "state": "active"})
+		s.API.Handle("GET", fmt.Sprintf("/api/v4/projects/1/members/all/%d", m.id), gitlabtest.OK(map[string]any{"access_level": m.level, "state": "active"}))
+	}
+	s.API.Handle("POST", "/api/graphql", gitlabtest.OK(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": nodes}}}))
+	s.Protected([]string{"main", "release/*"}, nil)
+}

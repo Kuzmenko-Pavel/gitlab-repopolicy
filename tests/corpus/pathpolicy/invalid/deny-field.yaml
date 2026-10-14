@@ -1,0 +1,4 @@
+version: 1
+admins: [a]
+rules:
+  - {name: r, paths: [x], allow: [a], deny: [b]}

@@ -30,6 +30,7 @@ jobs:
       - run: make test-e2e
         env:
           GITLAB_VERSION: latest
+          E2E_NIGHTLY: "1"
 
   fuzz:
     runs-on: ubuntu-24.04

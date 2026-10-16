@@ -140,6 +140,9 @@ code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 code-lint-commits: code-build
 	zero='^0+$$'; \
 	if [ "$(GITHUB_REF_TYPE)" = tag ]; then \
+		if ! [[ "$$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$$ ]]; then \
+			echo "code-lint-commits: the tag does not match vX.Y.Z or vX.Y.Z-rc.N" >&2; exit 1; \
+		fi; \
 		git fetch --force --tags origin; \
 		tip=$$(git rev-parse --verify "refs/tags/$(RELEASE_TAG)^{commit}"); \
 		policy=$$tip; \
@@ -417,15 +420,20 @@ release:
 release-snapshot: $(TOOLS_BIN)/goreleaser $(TOOLS_BIN)/syft
 	goreleaser release --snapshot --clean --skip=sign
 
+# The format of RELEASE_TAG is checked through the environment before any
+# recipe puts the tag into a command line.
+.PHONY: release-tag-format
+release-tag-format:
+	if ! [[ "$$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$$ ]]; then \
+		printf 'release: RELEASE_TAG %q does not match vX.Y.Z or vX.Y.Z-rc.N\n' "$$RELEASE_TAG" >&2; exit 1; \
+	fi
+
 .PHONY: release-verify-tag
 ## Verify the signature of RELEASE_TAG against the project TAGPOLICY.
-release-verify-tag: code-build
+release-verify-tag: release-tag-format code-build
 	git fetch --force origin "+refs/tags/$(RELEASE_TAG):refs/tags/$(RELEASE_TAG)"
 	if [ "$$(git cat-file -t "refs/tags/$(RELEASE_TAG)")" != tag ]; then \
 		echo "release-verify-tag: $(RELEASE_TAG) is not an annotated tag" >&2; exit 1; \
-	fi
-	if ! [[ "$(RELEASE_TAG)" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$$ ]]; then \
-		echo "release-verify-tag: $(RELEASE_TAG) does not match vX.Y.Z or vX.Y.Z-rc.N" >&2; exit 1; \
 	fi
 	git fetch --force origin "+refs/heads/main:refs/remotes/origin/main"
 	if ! git merge-base --is-ancestor "refs/tags/$(RELEASE_TAG)^{commit}" refs/remotes/origin/main; then \
@@ -485,7 +493,7 @@ release-reproduce: $(TOOLS_BIN)/goreleaser $(TOOLS_BIN)/cosign
 
 .PHONY: release-publish
 ## Publish the GitHub Release for RELEASE_TAG and verify its assets.
-release-publish: $(TOOLS_BIN)/goreleaser $(TOOLS_BIN)/syft $(TOOLS_BIN)/cosign
+release-publish: release-tag-format $(TOOLS_BIN)/goreleaser $(TOOLS_BIN)/syft $(TOOLS_BIN)/cosign
 	if [ "$(GITHUB_ACTIONS)" != true ] || [ "$(GITHUB_REF_TYPE)" != tag ] || [ -n "$(ACT)" ]; then \
 		echo "release-publish: runs only in GitHub Actions on a tag push (GITHUB_ACTIONS=true, GITHUB_REF_TYPE=tag, ACT unset)" >&2; exit 1; \
 	fi

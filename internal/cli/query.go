@@ -18,6 +18,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
@@ -38,13 +39,13 @@ func (a App) enabledModules(cfg *config.Config) []module.Module {
 
 // anchorPolicy reads the PATHPOLICY of a project from its default branch,
 // the anchor of the next push. The policy is nil when the project has none.
-func (a App) anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.Client, project string) (gitlab.Project, module.Policy, error) {
+func anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.Client, project string) (gitlab.Project, *path.Policy, error) {
 	p, err := api.Project(ctx, project)
 	if err != nil {
 		return p, nil, fmt.Errorf("project %s: %w", project, err)
 	}
-	guard, _ := modules.Split(a.enabledModules(cfg))
-	if guard == nil {
+	guard := path.New()
+	if !cfg.ModuleEnabled(guard.Name()) {
 		return p, nil, errors.New("the PATHPOLICY module is disabled in the server config")
 	}
 	if p.DefaultBranch == "" {
@@ -57,7 +58,7 @@ func (a App) anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.C
 	if err != nil {
 		return p, nil, err
 	}
-	pol, err := guard.Parse(data)
+	pol, err := path.Parse(data)
 	if err != nil {
 		return p, nil, fmt.Errorf("%s on %s is invalid: %w", guard.File(), p.DefaultBranch, err)
 	}
@@ -89,7 +90,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	}
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	p, pol, err := a.anchorPolicy(ctx, cfg, api, *project)
+	p, pol, err := anchorPolicy(ctx, cfg, api, *project)
 	if err != nil {
 		return fail(stdio.Err, "explain", err, ExitError)
 	}
@@ -100,11 +101,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	}
 	defaultRef := "refs/heads/" + p.DefaultBranch
 	target := fullRef(*ref, defaultRef)
-	explainer, ok := pol.(module.PathExplainer)
-	if !ok {
-		return fail(stdio.Err, "explain", errors.New("the PATHPOLICY module cannot explain paths"), ExitError)
-	}
-	rules, st := explainer.ExplainPath(ctx, strings.TrimPrefix(*path, "/"), target, *user, refs.New(defaultRef, p.ID, api, nil))
+	rules, st := pol.ExplainPath(ctx, strings.TrimPrefix(*path, "/"), target, *user, refs.New(defaultRef, p.ID, api, nil))
 	if !st.IsConfirmed() {
 		return fail(stdio.Err, "explain", fmt.Errorf("protected branches cannot be read: %s", st.Reason()), ExitError)
 	}
@@ -167,7 +164,7 @@ func (a App) runAdmins(ctx context.Context, args []string, _ []string, stdio Std
 	}
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	p, pol, err := a.anchorPolicy(ctx, cfg, api, *project)
+	p, pol, err := anchorPolicy(ctx, cfg, api, *project)
 	if err != nil {
 		return fail(stdio.Err, "admins", err, ExitError)
 	}
@@ -176,11 +173,7 @@ func (a App) runAdmins(ctx context.Context, args []string, _ []string, stdio Std
 		out.printf("%s has no PATHPOLICY on its default branch: a Maintainer may add the first one (bootstrap)\n", p.PathWithNamespace)
 		return withOutput(out.err, ExitOK)
 	}
-	reporter, ok := pol.(module.AdminReporter)
-	if !ok {
-		return fail(stdio.Err, "admins", errors.New("the PATHPOLICY module has no admins"), ExitError)
-	}
-	report, st := reporter.AdminReport(ctx, identity.NewAuthorizer(api, p.ID, nil, nil))
+	report, st := pol.AdminReport(ctx, identity.NewAuthorizer(api, p.ID, nil, nil))
 	if !st.IsConfirmed() {
 		return fail(stdio.Err, "admins", fmt.Errorf("GitLab did not answer: %s", st.Reason()), ExitError)
 	}

@@ -75,12 +75,9 @@ func (*Module) MaxPolicySize() int         { return module.DefaultMaxPolicySize 
 // Needs is empty: COMMITPOLICY gets no authorization backend.
 func (*Module) Needs() module.Needs { return module.Needs{} }
 
-// ConfigErrors reports presets of the server config that cannot be used.
-func (m *Module) ConfigErrors() []string { return m.settings.PresetErrors() }
-
 // Parse decodes a COMMITPOLICY file offline.
 func (m *Module) Parse(blob []byte) (module.Policy, error) {
-	p, err := parsePolicy(blob, m.settings)
+	p, err := Parse(blob, m.settings)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +100,7 @@ func (*Module) SchemaType() any { return schemaFile{} }
 
 // Validate checks a new version: what Parse leaves to the anchor (unknown
 // rules and presets), pattern examples and the users of except.users.
-func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
+func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
 	var problems []module.Problem
 	if p.unknownPreset != "" {
 		msg := fmt.Sprintf("extends: preset %q is not defined in the server config", p.unknownPreset)
@@ -145,7 +142,7 @@ func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 }
 
 // Usernames are the principals of the policy, for D28 at acceptance.
-func (p *policy) Usernames() []string {
+func (p *Policy) Usernames() []string {
 	var out []string
 	for _, rs := range p.rulesets {
 		out = append(out, rs.except.Users...)

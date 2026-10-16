@@ -28,7 +28,7 @@ rules:
 `
 
 func TestParse(t *testing.T) {
-	p, err := parsePolicy([]byte(basePolicy))
+	p, err := Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"platform-lead", "sre-lead"}, p.admins)
 	require.Len(t, p.rules, 3)
@@ -37,26 +37,26 @@ func TestParse(t *testing.T) {
 	assert.True(t, New().Covers(p, "COMMITPOLICY"))
 	assert.False(t, New().Covers(p, "TAGPOLICY"))
 	assert.Len(t, p.Usernames(), 8)
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\n"))
 	assert.NoError(t, err, "a policy may only guard itself")
 }
 
 func TestParse_GroupsAndRolesRejected(t *testing.T) {
 	for _, principal := range []string{"group/subgroup", "@maintainers", "role:maintainer", "@alice"} {
-		_, err := parsePolicy([]byte(fmt.Sprintf("version: 1\nadmins: [a]\nrules:\n  - name: r\n    paths: [x]\n    allow: [%q]\n", principal)))
+		_, err := Parse([]byte(fmt.Sprintf("version: 1\nadmins: [a]\nrules:\n  - name: r\n    paths: [x]\n    allow: [%q]\n", principal)))
 		require.Error(t, err, principal)
 		assert.Contains(t, err.Error(), "groups and roles are not supported", principal)
 	}
-	_, err := parsePolicy([]byte("version: 1\nadmins: [\"group/admins\"]\n"))
+	_, err := Parse([]byte("version: 1\nadmins: [\"group/admins\"]\n"))
 	assert.ErrorContains(t, err, "groups and roles are not supported")
 }
 
 func TestParse_AdminsLimit(t *testing.T) {
-	_, err := parsePolicy([]byte("version: 1\nadmins: [a, b, c, d, e, f]\n"))
+	_, err := Parse([]byte("version: 1\nadmins: [a, b, c, d, e, f]\n"))
 	assert.ErrorContains(t, err, "admins: 1 to 5 usernames are required")
-	_, err = parsePolicy([]byte("version: 1\nadmins: []\n"))
+	_, err = Parse([]byte("version: 1\nadmins: []\n"))
 	assert.ErrorContains(t, err, "admins: 1 to 5")
-	_, err = parsePolicy([]byte("version: 1\nadmins: [Alice, alice]\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [Alice, alice]\n"))
 	assert.ErrorContains(t, err, "listed twice")
 }
 
@@ -69,9 +69,9 @@ func TestParse_Limits(t *testing.T) {
 		}
 		return b.String()
 	}
-	_, err := parsePolicy([]byte(rules(100)))
+	_, err := Parse([]byte(rules(100)))
 	require.NoError(t, err)
-	_, err = parsePolicy([]byte(rules(101)))
+	_, err = Parse([]byte(rules(101)))
 	assert.ErrorContains(t, err, "101 rules, the limit is 100")
 
 	list := func(n int, prefix string) string {
@@ -81,15 +81,15 @@ func TestParse_Limits(t *testing.T) {
 		}
 		return "[" + strings.Join(items, ", ") + "]"
 	}
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: " + list(51, "p") + ", allow: [a]}\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: " + list(51, "p") + ", allow: [a]}\n"))
 	assert.ErrorContains(t, err, "paths: 1 to 50 patterns")
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: " + list(51, "u") + "}\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: " + list(51, "u") + "}\n"))
 	assert.ErrorContains(t, err, "allow: 1 to 50 usernames")
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: []}\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: []}\n"))
 	assert.ErrorContains(t, err, "allow: 1 to 50 usernames", "an empty allow would freeze the paths")
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a], message: " + strings.Repeat("m", 1001) + "}\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a], message: " + strings.Repeat("m", 1001) + "}\n"))
 	assert.ErrorContains(t, err, "message: 1001 characters")
-	_, err = parsePolicy([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a]}\n  - {name: r, paths: [y], allow: [a]}\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a]}\n  - {name: r, paths: [y], allow: [a]}\n"))
 	assert.ErrorContains(t, err, "used twice")
 	for in, want := range map[string]string{
 		"version: 2\nadmins: [a]\n":                                                              "version: 2",
@@ -101,7 +101,7 @@ func TestParse_Limits(t *testing.T) {
 		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [/abs], allow: [a]}]\n":               "remove the leading /",
 		"version: 1\nadmins: &x [a]\n":                                                           "anchors are not allowed",
 	} {
-		_, err := parsePolicy([]byte(in))
+		_, err := Parse([]byte(in))
 		require.Error(t, err, in)
 		assert.Contains(t, err.Error(), want, in)
 	}
@@ -207,7 +207,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: ci\n    paths: [ci.yml, \"deploy/**\"]\n    refs: [\"refs/heads/release/*\"]\n    allow: [alice]\n"))
 	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: x\n    paths: [\"{a,b}\"]\n    allow: [group/x]\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		p, err := parsePolicy(data)
+		p, err := Parse(data)
 		if err != nil {
 			return
 		}

@@ -20,9 +20,9 @@ func testSettings() *Settings {
 }
 
 // one parses a policy with one conventional ruleset and the given rules block.
-func one(t *testing.T, rules string) *policy {
+func one(t *testing.T, rules string) *Policy {
 	t.Helper()
-	p, err := parsePolicy([]byte("version: 1\nrulesets:\n  - name: r\n    rules:\n"+indent(rules, 6)), testSettings())
+	p, err := Parse([]byte("version: 1\nrulesets:\n  - name: r\n    rules:\n"+indent(rules, 6)), testSettings())
 	require.NoError(t, err)
 	return p
 }
@@ -37,7 +37,7 @@ func indent(s string, n int) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-func reasons(p *policy, msg string) []string {
+func reasons(p *Policy, msg string) []string {
 	findings := p.lint(commitInfo{message: msg})
 	out := make([]string, 0, len(findings))
 	for _, f := range findings {
@@ -105,7 +105,7 @@ func TestRule(t *testing.T) {
 
 func TestFormatFree(t *testing.T) {
 	free := func(rules string) error {
-		_, err := parsePolicy([]byte("version: 1\nrulesets:\n  - name: r\n    format: free\n    rules:\n"+indent(rules, 6)), testSettings())
+		_, err := Parse([]byte("version: 1\nrulesets:\n  - name: r\n    format: free\n    rules:\n"+indent(rules, 6)), testSettings())
 		return err
 	}
 	for _, r := range []string{"type-enum: {level: error, value: [feat]}", "scope: {level: error, value: required}",
@@ -114,7 +114,7 @@ func TestFormatFree(t *testing.T) {
 		assert.Error(t, free(r), r)
 	}
 	require.NoError(t, free("header-max-length: {level: error, value: 20}\nsubject-full-stop: {level: error, value: forbid}"))
-	p, err := parsePolicy([]byte("version: 1\nrulesets:\n  - name: r\n    format: free\n    rules: {subject-full-stop: {level: error, value: forbid}}\n"), testSettings())
+	p, err := Parse([]byte("version: 1\nrulesets:\n  - name: r\n    format: free\n    rules: {subject-full-stop: {level: error, value: forbid}}\n"), testSettings())
 	require.NoError(t, err)
 	assert.Empty(t, reasons(p, "Update legal_names.py"))
 	assert.NotEmpty(t, reasons(p, "Update legal_names.py."))
@@ -150,35 +150,35 @@ func TestPolicy_Invalid(t *testing.T) {
 		"version: 1\nrulesets: [{name: r, admins: [x]}]\n":                                                               "field admins not found",
 	}
 	for in, want := range cases {
-		_, err := parsePolicy([]byte(in), testSettings())
+		_, err := Parse([]byte(in), testSettings())
 		require.Error(t, err, in)
 		assert.Contains(t, err.Error(), want, in)
 	}
 }
 
 func TestExtends(t *testing.T) {
-	p, err := parsePolicy([]byte("version: 1\nextends: org\nrulesets:\n  - name: r\n    rules:\n      header-max-length: {level: error, value: 20}\n"), testSettings())
+	p, err := Parse([]byte("version: 1\nextends: org\nrulesets:\n  - name: r\n    rules:\n      header-max-length: {level: error, value: 20}\n"), testSettings())
 	require.NoError(t, err)
 	assert.Contains(t, strings.Join(reasons(p, "chore: x"), "\n"), `type-enum: "chore"`, "preset rule applies")
 	assert.Contains(t, strings.Join(reasons(p, "feat: "+strings.Repeat("x", 30)), "\n"), "error: header-max-length", "file rule overrides the preset level and value")
 	assert.Empty(t, p.Validate(t.Context(), nil))
 
-	p, err = parsePolicy([]byte("version: 1\nextends: missing\nrulesets: [{name: r}]\n"), testSettings())
+	p, err = Parse([]byte("version: 1\nextends: missing\nrulesets: [{name: r}]\n"), testSettings())
 	require.NoError(t, err, "an unknown preset does not break the policy on the anchor")
 	assert.Contains(t, p.Validate(t.Context(), nil)[0].Msg, `preset "missing" is not defined`)
-	p, err = parsePolicy([]byte("version: 1\nextends: broken\nrulesets: [{name: r}]\n"), testSettings())
+	p, err = Parse([]byte("version: 1\nextends: broken\nrulesets: [{name: r}]\n"), testSettings())
 	require.NoError(t, err)
 	assert.Contains(t, p.Validate(t.Context(), nil)[0].Msg, `preset "broken" of the server config is invalid`)
 	require.Len(t, testSettings().PresetErrors(), 1)
 	assert.Contains(t, testSettings().PresetErrors()[0], "commitpolicy_presets.broken: line 1: field bogus not found")
 
-	free, err := parsePolicy([]byte("version: 1\nextends: org\nrulesets: [{name: r, format: free}]\n"), testSettings())
+	free, err := Parse([]byte("version: 1\nextends: org\nrulesets: [{name: r, format: free}]\n"), testSettings())
 	require.NoError(t, err, "conventional-only rules of a preset are not applied to a free ruleset")
 	assert.Empty(t, reasons(free, "Anything"))
 }
 
 func TestUnknownRule(t *testing.T) {
-	p, err := parsePolicy([]byte("version: 1\nrulesets: [{name: r, rules: {future-rule: {level: error, threshold: 3}, type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
+	p, err := Parse([]byte("version: 1\nrulesets: [{name: r, rules: {future-rule: {level: error, threshold: 3}, type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
 	require.NoError(t, err, "the anchor version keeps working with the known rules")
 	assert.Equal(t, []string{"future-rule"}, p.rulesets[0].unknown)
 	assert.NotEmpty(t, reasons(p, "fix: x"))
@@ -188,7 +188,7 @@ func TestUnknownRule(t *testing.T) {
 }
 
 func TestMode(t *testing.T) {
-	p, err := parsePolicy([]byte("version: 1\nmode: warn\nrulesets: [{name: r, rules: {type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
+	p, err := Parse([]byte("version: 1\nmode: warn\nrulesets: [{name: r, rules: {type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
 	require.NoError(t, err)
 	assert.Equal(t, []string{`warn: type-enum: "fix" is not one of feat`}, reasons(p, "fix: x"))
 	p = one(t, "type-enum: {level: warn, value: [feat]}")
@@ -196,7 +196,7 @@ func TestMode(t *testing.T) {
 }
 
 func TestExcept_MergeAndRevert(t *testing.T) {
-	p, err := parsePolicy([]byte("version: 1\nrulesets: [{name: r, except: {merge_commits: true, git_reverts: true}, rules: {type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
+	p, err := Parse([]byte("version: 1\nrulesets: [{name: r, except: {merge_commits: true, git_reverts: true}, rules: {type-enum: {level: error, value: [feat]}}}]\n"), testSettings())
 	require.NoError(t, err)
 	merge := []byte("tree t\nparent a\nparent b\nauthor x\n\nMerge branch 'feature' into 'main'\n")
 	assert.Empty(t, p.LintCommit(t.Context(), merge))
@@ -214,7 +214,7 @@ func TestPattern_CompileRE2(t *testing.T) {
 }
 
 func TestPattern_Timeout(t *testing.T) {
-	p, err := parsePolicy([]byte("version: 1\nrulesets: [{name: r, rules: {pattern: {level: warn, value: '(a+)+b'}}}]\n"),
+	p, err := Parse([]byte("version: 1\nrulesets: [{name: r, rules: {pattern: {level: warn, value: '(a+)+b'}}}]\n"),
 		NewSettings(nil, 100*time.Millisecond, 2*time.Second, time.Now))
 	require.NoError(t, err)
 	start := time.Now()
@@ -234,7 +234,7 @@ func TestPattern_CatastrophicBacktracking(t *testing.T) {
 func TestPattern_Budget(t *testing.T) {
 	now := time.Unix(0, 0)
 	clock := func() time.Time { now = now.Add(600 * time.Millisecond); return now }
-	p, err := parsePolicy([]byte("version: 1\nrulesets: [{name: r, rules: {pattern: {level: error, value: 'feat: .*'}}}]\n"),
+	p, err := Parse([]byte("version: 1\nrulesets: [{name: r, rules: {pattern: {level: error, value: 'feat: .*'}}}]\n"),
 		NewSettings(nil, 100*time.Millisecond, time.Second, clock))
 	require.NoError(t, err)
 	b := &budget{left: time.Second, clock: clock}
@@ -304,7 +304,7 @@ func FuzzParsePolicy(f *testing.F) {
 		f.Add([]byte(s), "feat(x): y\n\nRefs: #1\n")
 	}
 	f.Fuzz(func(t *testing.T, data []byte, message string) {
-		p, err := parsePolicy(data, testSettings())
+		p, err := Parse(data, testSettings())
 		if err != nil {
 			return
 		}

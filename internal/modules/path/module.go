@@ -32,7 +32,7 @@ func (*Module) Needs() module.Needs { return module.Needs{Identity: true} }
 
 // Parse decodes a PATHPOLICY file offline.
 func (*Module) Parse(blob []byte) (module.Policy, error) {
-	p, err := parsePolicy(blob)
+	p, err := Parse(blob)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (*Module) SchemaType() any { return schemaFile{} }
 // Validate checks a new version: usernames added in this version exist and
 // are active (D28), and at least one admin is effective, or the new version
 // would lock everyone out (architecture §9.4, §12.2).
-func (p *policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
+func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
 	if v == nil {
 		return nil
 	}
@@ -98,13 +98,24 @@ func countAdmins(ctx context.Context, a module.AccessChecker, admins []string) (
 	return n, module.Confirmed()
 }
 
-// AdminReport implements module.AdminReporter for gitlab-repopolicy admins.
-func (p *policy) AdminReport(ctx context.Context, a module.AccessChecker) ([]module.Admin, module.Status) {
+// Admin is one configured admin as gitlab-repopolicy admins shows it.
+type Admin struct {
+	Username string
+	// Exists and Active come from GitLab; Access is the effective access level in the project.
+	Exists    bool
+	Active    bool
+	Access    int
+	Effective bool
+}
+
+// AdminReport checks every admin for gitlab-repopolicy admins; a status that
+// is not confirmed means GitLab did not answer and the report is incomplete.
+func (p *Policy) AdminReport(ctx context.Context, a module.AccessChecker) ([]Admin, module.Status) {
 	return adminReport(ctx, a, p.admins)
 }
 
-func adminReport(ctx context.Context, a module.AccessChecker, admins []string) ([]module.Admin, module.Status) {
-	report := make([]module.Admin, len(admins))
+func adminReport(ctx context.Context, a module.AccessChecker, admins []string) ([]Admin, module.Status) {
+	report := make([]Admin, len(admins))
 	users, status := a.Users(ctx, admins)
 	if !status.IsConfirmed() {
 		return nil, status
@@ -112,7 +123,7 @@ func adminReport(ctx context.Context, a module.AccessChecker, admins []string) (
 	var ids []int64
 	for i, name := range admins {
 		u, ok := users[strings.ToLower(name)]
-		report[i] = module.Admin{Username: name, Exists: ok, Active: u.Active}
+		report[i] = Admin{Username: name, Exists: ok, Active: u.Active}
 		if u.Active && u.ID != 0 {
 			ids = append(ids, u.ID)
 		}

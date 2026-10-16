@@ -269,21 +269,6 @@ type PrincipalResolver interface {
 	Person(ctx context.Context) (Person, Status)
 }
 
-// LintFinding is a broken rule found by a local lint of a commit message.
-type LintFinding struct {
-	Ruleset string
-	// Error is false for warnings.
-	Error  bool
-	Reason string
-}
-
-// CommitLinter is implemented by policies that check commit messages
-// outside of a push, for gitlab-repopolicy lint-commit.
-type CommitLinter interface {
-	LintMessage(ctx context.Context, message string) []LintFinding
-	LintCommit(ctx context.Context, object []byte) []LintFinding
-}
-
 // VersionValidator is implemented by policies whose acceptance depends on the
 // time or on the version on the anchor, for example TAGPOLICY rejects an
 // expired key only in a new or changed entry (architecture §11.3). The anchor
@@ -298,52 +283,10 @@ type UsernameLister interface {
 	Usernames() []string
 }
 
-// ConfigReporter is implemented by modules that take a part of the server
-// config, so that selftest reports it when it cannot be used.
-type ConfigReporter interface {
-	ConfigErrors() []string
-}
-
 // AccessChecker is what counting admins needs; Validator and Authorizer implement it.
 type AccessChecker interface {
 	Users(ctx context.Context, usernames []string) (map[string]User, Status)
 	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
-}
-
-// Admin is one configured admin as gitlab-repopolicy admins shows it.
-type Admin struct {
-	Username string
-	// Exists and Active come from GitLab; Access is the effective access level in the project.
-	Exists    bool
-	Active    bool
-	Access    int
-	Effective bool
-}
-
-// AdminReporter is implemented by policies with admins (architecture §9.4).
-type AdminReporter interface {
-	// AdminReport checks every admin; a status that is not confirmed means
-	// GitLab did not answer and the report is incomplete.
-	AdminReport(ctx context.Context, a AccessChecker) ([]Admin, Status)
-}
-
-// PathRule is a rule that matches a path, for gitlab-repopolicy explain.
-type PathRule struct {
-	Name string
-	// Refs is the ref scope as written in the policy.
-	Refs string
-	// Applies is false when the scope excludes the ref.
-	Applies bool
-	Allow   []string
-	// Allowed reports whether the user is in allow.
-	Allowed bool
-}
-
-// PathExplainer is implemented by policies with path rules.
-type PathExplainer interface {
-	// ExplainPath returns the rules that match the path; every applying rule
-	// must allow the user (AND).
-	ExplainPath(ctx context.Context, path, ref, username string, refs RefClassifier) ([]PathRule, Status)
 }
 
 // PolicyChange is a policy file that an update changes, as the core accepted it.

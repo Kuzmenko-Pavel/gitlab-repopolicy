@@ -2,24 +2,30 @@ package commit
 
 import (
 	"context"
-
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
+
+// LintFinding is a broken rule found by a local lint of a commit message.
+type LintFinding struct {
+	Ruleset string
+	// Error is false for warnings.
+	Error  bool
+	Reason string
+}
 
 // LintMessage checks one message against every ruleset, whatever their refs
 // (lint-commit has no ref; owner's decision, question 11). except.users does
 // not apply: there is no pusher.
-func (p *policy) LintMessage(_ context.Context, message string) []module.LintFinding {
+func (p *Policy) LintMessage(_ context.Context, message string) []LintFinding {
 	return p.lint(commitInfo{message: message})
 }
 
 // LintCommit checks a raw commit object; merge commits and reverts follow except.
-func (p *policy) LintCommit(_ context.Context, object []byte) []module.LintFinding {
+func (p *Policy) LintCommit(_ context.Context, object []byte) []LintFinding {
 	return p.lint(parseCommit("", object))
 }
 
-func (p *policy) lint(c commitInfo) []module.LintFinding {
-	var out []module.LintFinding
+func (p *Policy) lint(c commitInfo) []LintFinding {
+	var out []LintFinding
 	for _, rs := range p.rulesets {
 		if rs.except.MergeCommits && c.parents > 1 {
 			continue
@@ -33,7 +39,7 @@ func (p *policy) lint(c commitInfo) []module.LintFinding {
 			if p.warnMode && lv == levelError {
 				lv = levelWarn
 			}
-			out = append(out, module.LintFinding{Ruleset: rs.name, Error: lv == levelError, Reason: f.reason})
+			out = append(out, LintFinding{Ruleset: rs.name, Error: lv == levelError, Reason: f.reason})
 		}
 	}
 	return out

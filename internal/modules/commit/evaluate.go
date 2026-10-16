@@ -45,7 +45,7 @@ func isGitRevert(m Message) bool {
 
 // evaluation is the state of one Evaluate call.
 type evaluation struct {
-	p       *policy
+	p       *Policy
 	in      *module.Input
 	budget  *budget
 	commits map[string]commitInfo
@@ -53,7 +53,7 @@ type evaluation struct {
 }
 
 // Evaluate checks the commits entering every ref of the push (architecture §10.4).
-func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
+func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := &evaluation{p: p, in: in, commits: map[string]commitInfo{}, res: &module.Result{}}
 	if p.settings.Clock != nil && p.settings.PatternBudget > 0 {
 		e.budget = &budget{left: p.settings.PatternBudget, clock: p.settings.Clock}

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,23 +15,24 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 )
 
 // maxRangeCommits bounds lint-commit --range.
 const maxRangeCommits = 100_000
 
-// moduleSet builds the modules with the presets of an optional server config.
-func (a App) moduleSet(configPath string) ([]module.Module, error) {
+// moduleSettings are the module settings with the presets of an optional server config.
+func moduleSettings(configPath string) (modules.Settings, error) {
 	s := modules.Settings{PatternTimeout: 100 * time.Millisecond, PatternBudget: 2 * time.Second, Clock: time.Now}
 	if configPath != "" {
 		cfg, err := loadConfig(configPath)
 		if err != nil {
-			return nil, err
+			return s, err
 		}
 		s.CommitPresets = cfg.CommitPolicyPresets
 		s.PatternTimeout, s.PatternBudget = cfg.Timeouts.Pattern.Std(), cfg.Timeouts.PatternBudget.Std()
 	}
-	return a.Modules(s), nil
+	return s, nil
 }
 
 // readPolicyFile reads a policy file up to the size limit of its module.
@@ -77,12 +77,13 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		out.printf("gitlab-repopolicy validate: --online needs --config with gitlab_url and token_file\n")
 		return withOutput(out.err, ExitUsage)
 	}
-	mods, err := a.moduleSet(*configPath)
+	s, err := moduleSettings(*configPath)
 	if err != nil {
 		out.w = stdio.Err
 		out.printf("gitlab-repopolicy validate: %v\n", err)
 		return withOutput(out.err, ExitError)
 	}
+	mods := a.Modules(s)
 	var v module.Validator
 	if *online {
 		ctx2, cancel := context.WithTimeout(ctx, queryTimeout)
@@ -100,7 +101,12 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 	}
 	switch {
 	case *file != "":
-		m := findModule(mods, filepath.Base(*file), *name)
+		var m module.Module
+		for _, c := range mods {
+			if (*name != "" && c.Name() == *name) || (*name == "" && c.File() == filepath.Base(*file)) {
+				m = c
+			}
+		}
 		if m == nil {
 			out.w = stdio.Err
 			out.printf("gitlab-repopolicy validate: %s is not a policy file; use --module with one of %s\n", *file, moduleNames(mods))
@@ -205,15 +211,6 @@ func (noProject) AccessLevels(context.Context, []int64) (map[int64]int, module.S
 	return nil, module.Unknown("--project is not given")
 }
 
-func findModule(mods []module.Module, base, name string) module.Module {
-	for _, m := range mods {
-		if (name != "" && m.Name() == name) || (name == "" && m.File() == base) {
-			return m
-		}
-	}
-	return nil
-}
-
 func moduleNames(mods []module.Module) string {
 	names := make([]string, 0, len(mods))
 	for _, m := range mods {
@@ -240,26 +237,16 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 		errOut.printf("gitlab-repopolicy lint-commit: give exactly one of -m and --range\n")
 		return withOutput(errOut.err, ExitUsage)
 	}
-	mods, err := a.moduleSet(*configPath)
+	s, err := moduleSettings(*configPath)
 	if err != nil {
 		errOut.printf("gitlab-repopolicy lint-commit: %v\n", err)
 		return withOutput(errOut.err, ExitError)
 	}
-	m := findModule(mods, "COMMITPOLICY", "")
-	if m == nil {
-		errOut.printf("gitlab-repopolicy lint-commit: the COMMITPOLICY module is not available\n")
-		return withOutput(errOut.err, ExitError)
-	}
-	data, err := readPolicyFile(*file, m)
-	var linter module.CommitLinter
+	settings := commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)
+	data, err := readPolicyFile(*file, commit.New(settings))
+	var linter *commit.Policy
 	if err == nil {
-		var p module.Policy
-		if p, err = m.Parse(data); err == nil {
-			var ok bool
-			if linter, ok = p.(module.CommitLinter); !ok {
-				err = errors.New("the policy cannot lint commits")
-			}
-		}
+		linter, err = commit.Parse(data, settings)
 	}
 	if err != nil {
 		errOut.printf("gitlab-repopolicy lint-commit: %s: %v\n", *file, err)
@@ -267,7 +254,7 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 	}
 	out := &output{w: stdio.Out}
 	failed := false
-	print := func(label string, findings []module.LintFinding) {
+	print := func(label string, findings []commit.LintFinding) {
 		for _, f := range findings {
 			lv := "warning"
 			if f.Error {
@@ -288,7 +275,7 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 	return withOutput(out.err, ExitOK)
 }
 
-func lintRange(ctx context.Context, env []string, revRange string, linter module.CommitLinter, print func(string, []module.LintFinding)) (err error) {
+func lintRange(ctx context.Context, env []string, revRange string, linter *commit.Policy, print func(string, []commit.LintFinding)) (err error) {
 	path := envValue(env, "PATH")
 	cwd, err := os.Getwd()
 	if err != nil {

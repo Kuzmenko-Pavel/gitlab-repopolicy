@@ -15,7 +15,7 @@ func isPolicyPath(p string) bool { return p == File || strings.HasPrefix(p, File
 
 // evaluation is the state of one Evaluate call.
 type evaluation struct {
-	p   *policy
+	p   *Policy
 	in  *module.Input
 	res *module.Result
 
@@ -23,7 +23,7 @@ type evaluation struct {
 	personErr *module.Status
 }
 
-func newEvaluation(p *policy, in *module.Input) *evaluation {
+func newEvaluation(p *Policy, in *module.Input) *evaluation {
 	return &evaluation{p: p, in: in, res: &module.Result{}}
 }
 
@@ -68,7 +68,7 @@ func (e *evaluation) scopeOf(ctx context.Context, ref string) (module.Scope, mod
 }
 
 // Evaluate checks every branch and tag update of the push (architecture §9, §12).
-func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
+func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := newEvaluation(p, in)
 	for _, u := range in.Updates {
 		if u.Kind() == module.Delete {
@@ -302,7 +302,7 @@ func (e *evaluation) deletionWarning(u module.RefUpdate) {
 // EvaluateAbsent is the bootstrap: without PATHPOLICY on the anchor, adding
 // it to the default branch needs at least Maintainer (architecture §9.4).
 func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Result, error) {
-	e := newEvaluation(&policy{}, in)
+	e := newEvaluation(&Policy{}, in)
 	for _, c := range in.PolicyChanges {
 		if c.File != File || c.Deleted || c.Ref != in.Refs.Default() {
 			continue
@@ -336,7 +336,7 @@ func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Re
 // EvaluateInvalid handles an invalid PATHPOLICY on the anchor: nothing changes
 // except ref deletions and an Owner fixing or removing PATHPOLICY (architecture §14).
 func (*Module) EvaluateInvalid(ctx context.Context, in *module.Input, parseErr error) (*module.Result, error) {
-	e := newEvaluation(&policy{}, in)
+	e := newEvaluation(&Policy{}, in)
 	e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventInvalidPolicy, Code: module.CodeInvalidPolicy, Reason: parseErr.Error()})
 	onlyPolicy := true
 	var refs []module.RefUpdate

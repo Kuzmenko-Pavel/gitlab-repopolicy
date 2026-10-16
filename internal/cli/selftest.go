@@ -17,8 +17,8 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 )
 
 // RequiredScopes are the scopes of the service account token, exactly (architecture §13.2).
@@ -91,10 +91,11 @@ func (a App) checkModules(c *checks, cfg *config.Config) {
 			continue
 		}
 		names = append(names, m.Name())
-		if r, ok := m.(module.ConfigReporter); ok {
-			for _, e := range r.ConfigErrors() {
-				c.fail("modules", "%s", e)
-			}
+	}
+	presets := commit.NewSettings(cfg.CommitPolicyPresets, cfg.Timeouts.Pattern.Std(), cfg.Timeouts.PatternBudget.Std(), time.Now)
+	if cfg.ModuleEnabled(commit.New(presets).Name()) {
+		for _, e := range presets.PresetErrors() {
+			c.fail("modules", "%s", e)
 		}
 	}
 	if len(names) == 0 {

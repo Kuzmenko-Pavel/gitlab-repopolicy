@@ -30,11 +30,11 @@ rules:
     refs: [refs/heads/release/*]
 `
 
-func parsed(t *testing.T, text string) *policy {
+func parsed(t *testing.T, text string) *Policy {
 	t.Helper()
 	p, err := New().Parse([]byte(text))
 	require.NoError(t, err)
-	return p.(*policy)
+	return p.(*Policy)
 }
 
 func TestAdminReport(t *testing.T) {
@@ -42,7 +42,7 @@ func TestAdminReport(t *testing.T) {
 	a := team()
 	report, st := p.AdminReport(context.Background(), a)
 	require.True(t, st.IsConfirmed())
-	assert.Equal(t, []module.Admin{
+	assert.Equal(t, []Admin{
 		{Username: "platform-lead", Exists: true, Active: true, Access: 40, Effective: true},
 		{Username: "ghost"},
 	}, report)
@@ -50,7 +50,7 @@ func TestAdminReport(t *testing.T) {
 	a.users["ghost"] = module.User{ID: 4, Active: false}
 	report, st = p.AdminReport(context.Background(), a)
 	require.True(t, st.IsConfirmed())
-	assert.Equal(t, module.Admin{Username: "ghost", Exists: true}, report[1], "blocked: exists but not active")
+	assert.Equal(t, Admin{Username: "ghost", Exists: true}, report[1], "blocked: exists but not active")
 
 	a.levelsSt = module.Unknown("timeout")
 	_, st = p.AdminReport(context.Background(), a)
@@ -64,7 +64,7 @@ func TestExplainPath(t *testing.T) {
 
 	got, st := p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/feature", "alice", refs)
 	require.True(t, st.IsConfirmed())
-	assert.Equal(t, []module.PathRule{
+	assert.Equal(t, []PathRule{
 		{Name: "ci", Refs: "all", Applies: true, Allow: []string{"platform-lead", "Alice"}, Allowed: true},
 		{Name: "release-ci", Refs: "protected", Applies: false, Allow: []string{"sre-lead"}},
 		{Name: "main-only", Refs: "default", Applies: false, Allow: []string{"alice"}, Allowed: true},
@@ -83,7 +83,7 @@ func TestExplainPath(t *testing.T) {
 	assert.Empty(t, got)
 	got, _ = p.ExplainPath(ctx, File, "refs/heads/main", "Platform-Lead", refs)
 	require.Len(t, got, 1)
-	assert.Equal(t, module.PathRule{Name: "admins of PATHPOLICY", Refs: "all", Applies: true,
+	assert.Equal(t, PathRule{Name: "admins of PATHPOLICY", Refs: "all", Applies: true,
 		Allow: []string{"platform-lead", "ghost"}, Allowed: true}, got[0])
 
 	_, st = p.ExplainPath(ctx, "ci/release/x", "refs/heads/feature", "alice", &fakeRefs{status: module.Unknown("api down")})

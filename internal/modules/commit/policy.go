@@ -71,7 +71,8 @@ const (
 	refsList
 )
 
-type policy struct {
+// Policy is a parsed COMMITPOLICY.
+type Policy struct {
 	warnMode bool
 	rulesets []*ruleset
 	// unknownPreset is the extends value that the server config does not define.
@@ -130,7 +131,8 @@ var catalogue = map[string]struct {
 	"pattern":              {"regexp2", false},
 }
 
-func parsePolicy(data []byte, s *Settings) (*policy, error) {
+// Parse decodes a COMMITPOLICY file offline with the presets of s.
+func Parse(data []byte, s *Settings) (*Policy, error) {
 	var f fileYAML
 	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
@@ -138,7 +140,7 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 	if f.Version != 1 {
 		return nil, fmt.Errorf("version: %d is not supported, use 1", f.Version)
 	}
-	p := &policy{settings: s}
+	p := &Policy{settings: s}
 	switch f.Mode {
 	case "", "enforce":
 	case "warn":

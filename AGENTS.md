@@ -26,7 +26,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `internal/cli` | subcommands, composition root: config, clients, module list |
 | `internal/core` | anchor, policy loading, acceptance, module order, budgets, aggregation |
 | `internal/module` | module contract: `Module`, `Policy`, `Input`, `Result` |
-| `internal/modules` | `Default(Settings)`, the only place that names concrete modules |
+| `internal/modules` | `Default(Settings)`, the module list of the hook |
 | `internal/modules/{path,commit,tag}` | PATHPOLICY, COMMITPOLICY, TAGPOLICY |
 | `internal/{changes,gitx,refs,identity,gitlab,hookenv,config,strictyaml,report,audit}` | core infrastructure |
 | `internal/{install,settings,coverage,token,breakglass}` | operational commands, called only from `cli` |
@@ -37,6 +37,7 @@ Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 - `module` depends only on the standard library and `audit`
 - `modules/*` do not import `core`, `gitx`, `gitlab`, `config`, `cli`; git and the API reach a module only through `Input`, settings through `Settings`
 - `core` does not import `modules/*`
+- `cli` calls `modules/path` and `modules/commit` directly for `explain`, `admins`, `lint-commit` and `selftest`; everything else gets modules from `modules.Default`
 - `regexp2` only in `modules/commit`; `go-crypto` and `x/crypto/ssh` only in `modules/tag`; `yaml` only in `strictyaml`; `doublestar` only in `modules/path`
 - `os.Exit`, `os.Args`, `os.Getenv`, `os.LookupEnv`, `os.Environ` only in `cmd` and `cli`
 - `time.Now` only through the injected clock

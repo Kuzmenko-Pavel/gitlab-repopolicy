@@ -50,7 +50,8 @@ const (
 	refsList
 )
 
-type policy struct {
+// Policy is a parsed PATHPOLICY.
+type Policy struct {
 	admins []string
 	rules  []*rule
 }
@@ -68,7 +69,8 @@ var (
 	ruleName = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)
 )
 
-func parsePolicy(data []byte) (*policy, error) {
+// Parse decodes a PATHPOLICY file offline.
+func Parse(data []byte) (*Policy, error) {
 	var f fileYAML
 	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
@@ -80,7 +82,7 @@ func parsePolicy(data []byte) (*policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &policy{admins: admins}
+	p := &Policy{admins: admins}
 	if len(f.Rules) > maxRules {
 		return nil, fmt.Errorf("rules: %d rules, the limit is %d", len(f.Rules), maxRules)
 	}
@@ -259,7 +261,7 @@ func (r *rule) allows(name string) bool {
 	return false
 }
 
-func (p *policy) isAdmin(name string) bool {
+func (p *Policy) isAdmin(name string) bool {
 	for _, a := range p.admins {
 		if strings.EqualFold(a, name) {
 			return true
@@ -270,13 +272,13 @@ func (p *policy) isAdmin(name string) bool {
 
 // Covers reports whether a rule of p guards the path.
 func (*Module) Covers(p module.Policy, path string) bool {
-	pol, ok := p.(*policy)
+	pol, ok := p.(*Policy)
 	return ok && pol.covers(path)
 }
 
 // covers reports whether a rule guards the path; the core warns about
 // delegated policy files that no rule covers.
-func (p *policy) covers(path string) bool {
+func (p *Policy) covers(path string) bool {
 	for _, r := range p.rules {
 		if r.matches(path) {
 			return true
@@ -286,7 +288,7 @@ func (p *policy) covers(path string) bool {
 }
 
 // Usernames are all principals of the policy, for D28 at acceptance.
-func (p *policy) Usernames() []string {
+func (p *Policy) Usernames() []string {
 	out := append([]string{}, p.admins...)
 	for _, r := range p.rules {
 		out = append(out, r.allow...)
@@ -294,12 +296,25 @@ func (p *policy) Usernames() []string {
 	return out
 }
 
-// ExplainPath implements module.PathExplainer for gitlab-repopolicy explain.
-// PATHPOLICY itself is changed only by admins (architecture §9.4).
-func (p *policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]module.PathRule, module.Status) {
-	var out []module.PathRule
+// PathRule is a rule that matches a path, for gitlab-repopolicy explain.
+type PathRule struct {
+	Name string
+	// Refs is the ref scope as written in the policy.
+	Refs string
+	// Applies is false when the scope excludes the ref.
+	Applies bool
+	Allow   []string
+	// Allowed reports whether the user is in allow.
+	Allowed bool
+}
+
+// ExplainPath returns the rules that match the path, for gitlab-repopolicy
+// explain; every applying rule must allow the user (AND). PATHPOLICY itself
+// is changed only by admins (architecture §9.4).
+func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]PathRule, module.Status) {
+	var out []PathRule
 	if isPolicyPath(path) {
-		out = append(out, module.PathRule{Name: "admins of " + File, Refs: "all", Applies: true,
+		out = append(out, PathRule{Name: "admins of " + File, Refs: "all", Applies: true,
 			Allow: p.admins, Allowed: p.isAdmin(username)})
 	}
 	for _, r := range p.rules {
@@ -310,7 +325,7 @@ func (p *policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		if !st.IsConfirmed() {
 			return nil, st
 		}
-		out = append(out, module.PathRule{Name: r.name, Refs: r.refsText(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
+		out = append(out, PathRule{Name: r.name, Refs: r.refsText(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
 	}
 	return out, module.Confirmed()
 }

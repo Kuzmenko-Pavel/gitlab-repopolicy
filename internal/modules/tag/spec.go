@@ -3,6 +3,7 @@ package tag
 import (
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
@@ -42,7 +43,7 @@ func checks(root *strictyaml.Value) spec.Checks {
 		},
 		"distinct-keys": func(v *strictyaml.Value) error {
 			byFingerprint := map[string]string{}
-			for _, label := range v.Keys {
+			for _, label := range slices.Sorted(slices.Values(v.Keys)) {
 				k, err := parseKey(label, v.Fields[label].Str)
 				if err != nil {
 					return err

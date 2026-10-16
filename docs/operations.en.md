@@ -23,6 +23,7 @@ The hook writes every decision that touched a rule to `audit.file` (default `/va
 | `violations` | rule, code, paths or commits, `reason` |
 | `rules`, `signer`, `fingerprint` | for TAGPOLICY: the rules, the label and the fingerprint of the signing key |
 | `reason` | the reason with API results. It never gets into the message to the user |
+| `truncated` | `true` if `violations` or `reason` were cut so that the event fits in 4 KiB |
 | `api_calls`, `duration_ms` | the cost of the decision |
 | `version`, `git`, `node` | the gitlab-repopolicy version, the git the hook saw, and the node |
 
@@ -38,7 +39,7 @@ A module can write several events for one push: one per branch or tag with viola
 | `policy_recovery` | an Owner changed PATHPOLICY through recovery | **yes, every one** |
 | `invalid_policy` | PATHPOLICY or TAGPOLICY in the default branch is invalid | **yes** |
 | `invalid_commit_policy` | COMMITPOLICY in the default branch is invalid (the check is skipped) | no |
-| `authorization_backend_failure` | the API is unavailable on a protected operation, the token does not work, the service account does not see the project (`reason`: `project_not_visible`, `role_below_maintainer`) | yes, if more than N in 5 minutes |
+| `authorization_backend_failure` | the API is unavailable on a protected operation, the token does not work, the service account does not see the project (`reason`: `project_not_visible`, `role_below_maintainer`) | yes, if there are several in 5 minutes: a short API failure gives one event, a series means an expired token, a group without the service account or an unavailable API. The installation picks the threshold for its load |
 | `unknown_principal` | a deploy key or an unparsable `GL_ID` on a protected path | no |
 | `breakglass` | a break-glass grant is issued (`action: grant`), revoked (`action: revoke`) or used by the hook | **yes** |
 | `settings_drift` | `settings-check` found a difference | **yes** |
@@ -205,7 +206,7 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 | Symptom | Cause | What to do |
 | --- | --- | --- |
 | every push to group projects: `push could not be verified` | the hook cannot read the config or the token (permissions, a 0750 root directory), git is not available | `sudo -u git gitlab-repopolicy selftest` |
-| `the hook configuration on the server is invalid` | an invalid `config.yaml` or an empty `audit.file` | `sudo gitlab-repopolicy selftest` |
+| `the hook configuration on the server is invalid` | an invalid `config.yaml` or an empty `audit.file` (the hook writes only to the file, `audit.stdout` does not apply to it) | `sudo gitlab-repopolicy selftest` |
 | `unable to verify authorization` on protected changes | the API is unavailable, the token expired, the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | the same in a personal project | the project owner is blocked or banned: the service account token does not see such users, and the project is treated as a group project | expected behaviour, fail closed |
 | a merge request or the Web IDE shows only "pre-receive hook declined" without text | another hook in `pre-receive.d/` denied the push without a `GL-HOOK-ERR` line | check the neighbouring files in `pre-receive.d/` |

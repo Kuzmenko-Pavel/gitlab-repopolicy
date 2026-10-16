@@ -56,7 +56,7 @@ COMMITPOLICY - найбезпечніший старт: він не загрож
 - компоненти з CI/CD Catalog фіксуйте на тегах: їхня логіка живе в проєкті компонента і захищається там
 - делегуйте COMMITPOLICY і TAGPOLICY їхнім власникам path-правилами ([examples/delegation/PATHPOLICY](../examples/delegation/PATHPOLICY))
 
-Перевіряйте policy до merge: `gitlab-repopolicy validate --online` і `explain` ([pathpolicy.md](pathpolicy.md#перевірка-без-push)).
+Перевіряйте policy до merge: `gitlab-repopolicy validate --online --config /etc/gitlab-repopolicy/config.yaml --project <проєкт>` і `explain` ([pathpolicy.md](pathpolicy.md#перевірка-без-push)).
 
 ## 6. TAGPOLICY для релізів
 

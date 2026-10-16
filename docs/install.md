@@ -83,7 +83,7 @@ sudo dnf install ./gitlab-repopolicy_1.0.0_linux_amd64.rpm      # RHEL, Rocky, A
 /usr/lib/systemd/system/gitlab-repopolicy-*.{service,timer}   вимкнені таймери
 ```
 
-`<git-user>` - користувач, від якого Gitaly запускає hooks: у Linux package це `git`. Під час першого встановлення пакет бере його зі змінної `GITLAB_REPOPOLICY_USER` (за замовчуванням `git`). Якщо такого користувача ще немає (GitLab не встановлено), пакет лише попереджає, а власників потім виставляє `install-hook --user`.
+`<git-user>` - користувач, від якого Gitaly запускає hooks: у Linux package це `git`. Під час першого встановлення пакет бере його зі змінної `GITLAB_REPOPOLICY_USER` (за замовчуванням `git`). Якщо такого користувача ще немає (GitLab не встановлено), пакет лише попереджає, а власників потім призначає `install-hook --user`.
 
 Оновлення не змінює права, які виставив адміністратор, і не перезаписує змінений `config.yaml`: dpkg запитає, яку версію залишити (з `--force-confold` залишить вашу, а нову покладе поруч як `.dpkg-dist`), rpm залишить вашу, а нову покладе як `.rpmnew`.
 
@@ -130,7 +130,7 @@ curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X POST "$GITLAB/api/v4/groups/
 sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # вставте токен, Enter, Ctrl-D
 ```
 
-Файл отримає режим 0440, а групу користувача git йому виставить `install-hook --user` на кроці 5: разом виходить `root:git 0440`. Hook токен лише читає, змінює його тільки `token rotate` від root.
+Файл отримає режим 0440, а групу користувача git йому призначить `install-hook --user` на кроці 5: разом виходить `root:git 0440`. Hook токен лише читає, змінює його тільки `token rotate` від root.
 
 Нова top-level група - не забудьте додати до неї service account. Без цього захищені зміни в її проєктах отримають відмову `authorization_backend_failure`. Знайти групи без service account допоможе `coverage` з токеном адміністратора (токен на ноді не зберігається):
 
@@ -181,7 +181,7 @@ gitaly['configuration'] = {
 sudo gitlab-ctl reconfigure
 ```
 
-`reconfigure` прописує каталог у конфігурацію Gitaly, але сам каталог не створює. Його створює `install-hook`, якщо існує батьківський каталог (так помилка в шляху не створить зайвий каталог):
+`reconfigure` записує каталог у конфігурацію Gitaly, але сам каталог не створює. Його створює `install-hook`, якщо існує батьківський каталог (так помилка в шляху не створить зайвий каталог):
 
 ```sh
 sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git
@@ -189,7 +189,7 @@ sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_ho
 
 `install-hook`:
 - створює `custom_hooks_dir/pre-receive.d/50-gitlab-repopolicy` - wrapper, який запускає `/usr/bin/gitlab-repopolicy hook pre-receive --config /etc/gitlab-repopolicy/config.yaml`. Власник - `--user`, режим 0755
-- виставляє групу `config.yaml` і токена та власника каталогу audit-логу для `--user`
+- встановлює групу `config.yaml` і токена та власника каталогу audit-логу для `--user`
 - повторний запуск нічого не змінює (`unchanged`). Інші файли в `pre-receive.d/` не чіпає
 
 Gitaly виконує файли `pre-receive.d/` за алфавітом і зупиняється на першому, що завершився з помилкою. Окремий файл `custom_hooks_dir/pre-receive` поруч із `pre-receive.d/` Gitaly не виконує: свої hooks кладіть у `pre-receive.d/`. Файли з `~` у кінці імені Gitaly пропускає.
@@ -235,7 +235,7 @@ info git         git version 2.55.0-rc1.g02bb39c in PATH of selftest; the hook u
 sudo systemctl enable --now gitlab-repopolicy-token-rotate.timer gitlab-repopolicy-settings-check.timer
 ```
 
-Обидві служби працюють від root в обмеженому оточенні systemd (лише свої каталоги на запис, без нових привілеїв).
+Обидві служби працюють від root в обмеженому оточенні systemd: на запис лише свої каталоги, без нових привілеїв, з двома capabilities - `CAP_CHOWN` (власник токена й нового audit-логу) і `CAP_DAC_OVERRIDE` (каталог логу належить користувачу hook).
 
 ## Docker
 

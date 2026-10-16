@@ -23,6 +23,7 @@ Hook пише кожне рішення, яке зачепило правило,
 | `violations` | правило, код, шляхи або коміти, `reason` |
 | `rules`, `signer`, `fingerprint` | для TAGPOLICY: правила, мітка і fingerprint ключа підпису |
 | `reason` | причина з результатами API. У повідомлення користувачу не потрапляє |
+| `truncated` | `true`, якщо `violations` або `reason` обрізано, щоб подія вмістилася в 4 KiB |
 | `api_calls`, `duration_ms` | вартість рішення |
 | `version`, `git`, `node` | версія gitlab-repopolicy, git, який бачив hook, і нода |
 
@@ -38,7 +39,7 @@ Hook пише кожне рішення, яке зачепило правило,
 | `policy_recovery` | Owner змінив PATHPOLICY через recovery | **так, кожна** |
 | `invalid_policy` | PATHPOLICY або TAGPOLICY у default branch невалідна | **так** |
 | `invalid_commit_policy` | COMMITPOLICY у default branch невалідна (перевірку пропущено) | ні |
-| `authorization_backend_failure` | API недоступний на захищеній операції, токен не діє, service account не бачить проєкт (`reason`: `project_not_visible`, `role_below_maintainer`) | так, якщо більше N за 5 хвилин |
+| `authorization_backend_failure` | API недоступний на захищеній операції, токен не діє, service account не бачить проєкт (`reason`: `project_not_visible`, `role_below_maintainer`) | так, якщо їх кілька за 5 хвилин: одну подію дає короткий збій API, серію - прострочений токен, група без service account або недоступний API. Поріг під своє навантаження вибирає інсталяція |
 | `unknown_principal` | deploy key або нерозбірний `GL_ID` на захищеному шляху | ні |
 | `breakglass` | дозвіл break-glass виданий (`action: grant`), відкликаний (`action: revoke`) або використаний hook | **так** |
 | `settings_drift` | `settings-check` знайшов розбіжність | **так** |
@@ -193,7 +194,7 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 
 ## Оновлення і відкат
 
-- Оновлення - пакетним менеджером. Бінарник замінюється атомарно, hook, що вже працюють, доробляють на старій версії
+- Оновлення - пакетним менеджером. Бінарник замінюється атомарно, запущені hook завершують роботу на старій версії
 - на кількох нодах Gitaly версія має бути однаковою; її видно в кожній audit-події (`version`)
 - відкат - встановлення попередньої версії. Схеми PATHPOLICY і TAGPOLICY `version: 1` заморожені, тому відкат не робить їх невалідними. COMMITPOLICY з правилом, якого немає в старій версії, втрачає лише це правило (попередження)
 - якщо причина збою незрозуміла, спершу `mode: audit` ([configuration.md](configuration.md#mode)): push проходять, рішення пишуться в лог
@@ -205,7 +206,7 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 | Симптом | Причина | Що робити |
 | --- | --- | --- |
 | усі push у групові проєкти: `push could not be verified` | hook не може прочитати конфігурацію або токен (права, каталог 0750 root), git недоступний | `sudo -u git gitlab-repopolicy selftest` |
-| `the hook configuration on the server is invalid` | невалідний `config.yaml` або порожній `audit.file` | `sudo gitlab-repopolicy selftest` |
+| `the hook configuration on the server is invalid` | невалідний `config.yaml` або порожній `audit.file` (hook пише лише у файл, `audit.stdout` для нього не діє) | `sudo gitlab-repopolicy selftest` |
 | `unable to verify authorization` на захищених змінах | API недоступний, токен прострочений, service account не учасник групи або роль нижча за Maintainer | `selftest`; у audit `reason` (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | те саме в особистому проєкті | власник проєкту заблокований або забанений: токен service account таких користувачів не бачить, і проєкт вважається груповим | очікувана поведінка, fail closed |
 | у MR або Web IDE лише "pre-receive hook declined" без тексту | відмову дав інший hook у `pre-receive.d/` без рядка `GL-HOOK-ERR` | перевірте сусідні файли в `pre-receive.d/` |

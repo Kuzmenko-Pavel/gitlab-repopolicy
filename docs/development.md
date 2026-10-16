@@ -7,7 +7,7 @@
 
 | Інструмент | Для чого |
 | --- | --- |
-| Go | версію задає `toolchain` у `go.mod`; з `GOTOOLCHAIN=auto` (за замовчуванням) Go завантажить її сам |
+| Go | версію задає директива `go` у `go.mod`. З `GOTOOLCHAIN=auto` (за замовчуванням) Go завантажить її сам |
 | GNU make 4 або новіший | усі операції проєкту. На macOS типовий make 3.81 без `.SHELLFLAGS` не підійде |
 | git | integration-тести роблять справжній push |
 | pipx | `yamllint` у `make code-lint` |
@@ -33,7 +33,7 @@ make code-lint test-unit test-integration
 | --- | --- |
 | `code-fmt` | форматує Go-код |
 | `code-lint` | golangci-lint з правилами залежностей пакетів, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом, мовні пари й посилання документації |
-| `code-lint-commits` | повідомлення комітів від `BASE_REF` за `COMMITPOLICY` з `BASE_REF` |
+| `code-lint-commits` | повідомлення комітів після `BASE_REF` за `COMMITPOLICY`, взятою з `BASE_REF`, а не з гілки |
 | `code-generate` | перегенерує `schemas/` і golden-файли виводу push |
 | `code-build` | бінарник у `bin/gitlab-repopolicy` |
 | `test-unit` | unit-тести з race detector |
@@ -98,7 +98,7 @@ Gitaly має кілька збірок git; hook отримує `gitaly-git-pre
 
 **Корпус сумісності.** `tests/corpus/<модуль>/valid` - файли, які поточна і кожна наступна версія мають приймати, `invalid` - відхиляти. Разом з `examples/` корпус лише поповнюється: файли з `valid` не видаляються і не змінюються. Під час релізу попередня minor-версія перевіряється на тих самих файлах PATHPOLICY і TAGPOLICY. Кожен приклад policy в документації дослівно збігається з файлом з `examples/`: так вимагає тест.
 
-**Fuzz.** Цілі - у пакетах поруч із кодом, корпус - у `testdata/fuzz/`. `make test-fuzz` запускає кожну на `FUZZTIME` (30 s за замовчуванням, у nightly - 10 хвилин). Знайдене падіння лишається в `testdata/fuzz/` разом із виправленням.
+**Fuzz.** Цілі - у пакетах поруч із кодом, корпус - у `testdata/fuzz/`. `make test-fuzz` запускає кожну на `FUZZTIME` (`30s` за замовчуванням, у nightly - `10m`). Знайдене падіння лишається в `testdata/fuzz/` разом із виправленням.
 
 **Навантаження.** `make test-load` - бенчмарки hook на синтетичних репозиторіях: 100 тисяч файлів, diff на 50 тисяч шляхів, merge request на 500 комітів, швидкий шлях без policy.
 
@@ -119,7 +119,7 @@ make test-e2e-down
 | `E2E_NIGHTLY` | порожньо | `1` додає nightly-сценарій з паралельними merge |
 | `COMPOSE_PROJECT_NAME` | з версії GitLab | ім'я стенду; у кожної версії свій |
 
-Одночасно варто тримати один стенд: GitLab CE потребує кількох ГБ пам'яті.
+Не запускайте два стенди одночасно: GitLab CE потребує кількох ГБ пам'яті.
 
 ## Локальна перевірка проєкту його ж інструментом
 

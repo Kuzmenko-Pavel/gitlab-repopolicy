@@ -216,7 +216,7 @@ Warnings of a successful push show in the terminal as `remote:` lines. For a mer
 `lint-commit` applies every ruleset of the file and ignores `refs`: locally it is not known which branch the commit will go to. `except.users` does not apply locally.
 
 ```text
-$ gitlab-repopolicy lint-commit -f COMMITPOLICY -m "Fix deploy."
+$ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
 message: [protected] error: header: expected "type(scope): subject"
 message: [protected] error: trailer-required: missing Signed-off-by in the trailer block
 message: [release] error: header: expected "type(scope): subject"

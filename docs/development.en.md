@@ -7,7 +7,7 @@
 
 | Tool | What for |
 | --- | --- |
-| Go | the version is set by `toolchain` in `go.mod`; with `GOTOOLCHAIN=auto` (the default) Go downloads it itself |
+| Go | the version is set by the `go` directive in `go.mod`. With `GOTOOLCHAIN=auto` (the default) Go downloads it itself |
 | GNU make 4 or newer | every operation of the project. The default make 3.81 on macOS lacks `.SHELLFLAGS` and does not work |
 | git | integration tests make a real push |
 | pipx | `yamllint` in `make code-lint` |
@@ -33,7 +33,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | --- | --- |
 | `code-fmt` | formats Go code |
 | `code-lint` | golangci-lint with the package dependency rules, tidy of every module, actionlint, yamllint, `schemas/` matching the code, documentation language pairs and links |
-| `code-lint-commits` | commit messages since `BASE_REF` against `COMMITPOLICY` from `BASE_REF` |
+| `code-lint-commits` | commit messages after `BASE_REF` against the `COMMITPOLICY` taken from `BASE_REF`, not from the branch |
 | `code-generate` | regenerates `schemas/` and the golden files of push output |
 | `code-build` | the binary in `bin/gitlab-repopolicy` |
 | `test-unit` | unit tests with the race detector |
@@ -98,7 +98,7 @@ Gitaly has several git builds; the hook gets `gitaly-git-prev`. The wrapper pass
 
 **Compatibility corpus.** `tests/corpus/<module>/valid` holds files that the current and every next version must accept, `invalid` holds files they must reject. Together with `examples/` the corpus only grows: files in `valid` are never deleted or changed. A release checks the previous minor version against the same PATHPOLICY and TAGPOLICY files. Every policy example in the documentation matches a file from `examples/` word for word: a test requires it.
 
-**Fuzz.** The targets live in the packages next to the code, the corpus in `testdata/fuzz/`. `make test-fuzz` runs each one for `FUZZTIME` (30 s by default, 10 minutes in nightly). A crash found stays in `testdata/fuzz/` together with the fix.
+**Fuzz.** The targets live in the packages next to the code, the corpus in `testdata/fuzz/`. `make test-fuzz` runs each one for `FUZZTIME` (`30s` by default, `10m` in nightly). A crash found stays in `testdata/fuzz/` together with the fix.
 
 **Load.** `make test-load` runs hook benchmarks on synthetic repositories: 100 thousand files, a diff of 50 thousand paths, a merge request of 500 commits, the fast path without a policy.
 
@@ -119,7 +119,7 @@ make test-e2e-down
 | `E2E_NIGHTLY` | empty | `1` adds the nightly scenario with parallel merges |
 | `COMPOSE_PROJECT_NAME` | from the GitLab version | the stand name; every version has its own |
 
-Keep one stand at a time: GitLab CE needs several GB of memory.
+Do not run two stands at once: GitLab CE needs several GB of memory.
 
 ## The project checks itself with its own tool
 

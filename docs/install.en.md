@@ -235,7 +235,7 @@ The package installs two systemd timers, disabled:
 sudo systemctl enable --now gitlab-repopolicy-token-rotate.timer gitlab-repopolicy-settings-check.timer
 ```
 
-Both services run as root in a restricted systemd environment (write access only to their own directories, no new privileges).
+Both services run as root in a restricted systemd environment: write access only to their own directories, no new privileges, two capabilities - `CAP_CHOWN` (the owner of the token and of a new audit log) and `CAP_DAC_OVERRIDE` (the log directory belongs to the hook user).
 
 ## Docker
 

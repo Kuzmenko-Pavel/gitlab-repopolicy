@@ -216,7 +216,7 @@ COMMITPOLICY - про гігієну, а не про доступ, тому за
 `lint-commit` застосовує всі rulesets файлу і не дивиться на `refs`: локально невідомо, у яку гілку піде коміт. `except.users` локально не діє.
 
 ```text
-$ gitlab-repopolicy lint-commit -f COMMITPOLICY -m "Fix deploy."
+$ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
 message: [protected] error: header: expected "type(scope): subject"
 message: [protected] error: trailer-required: missing Signed-off-by in the trailer block
 message: [release] error: header: expected "type(scope): subject"

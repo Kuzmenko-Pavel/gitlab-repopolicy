@@ -22,9 +22,9 @@ func TestExampleConfig(t *testing.T) {
 	want.Modules = map[string]string{"pathpolicy": ModuleEnabled, "commitpolicy": ModuleEnabled, "tagpolicy": ModuleEnabled}
 	no := false
 	want.SettingsCheck = SettingsCheck{DefaultBranch: "main", ProtectedBranches: []string{"main"}, ProtectedTags: []string{"v*"}, JobTokenPush: &no}
+	assert.Empty(t, cfg.CommitPolicyPresets, "presets are installation values (PROMPT §2.2)")
 	want.CommitPolicyPresets = cfg.CommitPolicyPresets
 	assert.Equal(t, &want, cfg, "the example shows the defaults")
-	assert.Contains(t, cfg.CommitPolicyPresets, "org-conventional")
 }
 
 // TestReleaseVerifyConfig: config/release-verify.yaml of release-verify-tag

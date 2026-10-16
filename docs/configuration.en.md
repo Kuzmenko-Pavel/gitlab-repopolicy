@@ -11,7 +11,7 @@ Unknown keys, YAML anchors and aliases are an error. With an invalid configurati
 
 ## The whole file
 
-This is [config/config.yaml](../config/config.yaml) from the package. The values are the defaults, except the examples in `settings_check` and `commitpolicy_presets`.
+This is [config/config.yaml](../config/config.yaml) from the package. The values are the defaults, except the example in `settings_check`.
 
 ```yaml
 # Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
@@ -70,11 +70,8 @@ settings_check:
   protected_tags: ["v*"]
   job_token_push: false
 
-# Presets for "extends:" in COMMITPOLICY. Example, not a default.
-commitpolicy_presets:
-  org-conventional:
-    rules:
-      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+commitpolicy_presets: {}
 ```
 
 ## Settings
@@ -129,11 +126,27 @@ What `settings-check` expects of every project with PATHPOLICY. An empty value i
 | Key | What is compared |
 | --- | --- |
 | `default_branch` | the default branch of the project |
-| `protected_branches` | these branches are protected (the list must be a subset of the protected ones) |
+| `protected_branches` | every branch in the list is protected. Other protected branches of the project do not matter |
 | `protected_tags` | these tag patterns are protected |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` (`false` means it must be off) |
 
 Regardless of these keys, `settings-check` always checks the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
+
+## `commitpolicy_presets`
+
+Presets are COMMITPOLICY rules shared by many repositories: a file in a project refers to a preset with `extends` ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)). The section is empty in the package, because every installation has its own commit standard. An example:
+
+```yaml
+# /etc/gitlab-repopolicy/config.yaml
+commitpolicy_presets:
+  org-conventional:
+    rules:
+      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      subject-case: { level: error, value: lower-first }
+      header-max-length: { level: warn, value: 100 }
+```
+
+The preset name is the key of the section, `rules` are rules in the same format as in a COMMITPOLICY ruleset. Rules of the project file override the preset rules by name.
 
 ## Other configurations
 

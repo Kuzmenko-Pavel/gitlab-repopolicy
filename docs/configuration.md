@@ -11,7 +11,7 @@
 
 ## Файл повністю
 
-Це [config/config.yaml](../config/config.yaml) з пакета. Значення - типові, крім прикладів у `settings_check` і `commitpolicy_presets`.
+Це [config/config.yaml](../config/config.yaml) з пакета. Значення - типові, крім прикладу в `settings_check`.
 
 ```yaml
 # Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
@@ -70,11 +70,8 @@ settings_check:
   protected_tags: ["v*"]
   job_token_push: false
 
-# Presets for "extends:" in COMMITPOLICY. Example, not a default.
-commitpolicy_presets:
-  org-conventional:
-    rules:
-      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+commitpolicy_presets: {}
 ```
 
 ## Параметри
@@ -129,11 +126,27 @@ gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsoc
 | Ключ | Що звіряється |
 | --- | --- |
 | `default_branch` | default branch проєкту |
-| `protected_branches` | ці гілки захищені (список має бути підмножиною захищених) |
+| `protected_branches` | кожна гілка зі списку захищена. Інші захищені гілки проєкту не заважають |
 | `protected_tags` | ці шаблони тегів захищені |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` (`false` - має бути вимкнений) |
 
 Незалежно від цих ключів `settings-check` завжди перевіряє шлях CI-конфігурації і те, що всі principals із policy-файлів існують. Докладно - [operations.md](operations.md#settings-check).
+
+## `commitpolicy_presets`
+
+Пресети - це правила COMMITPOLICY, спільні для багатьох репозиторіїв: файл у проєкті посилається на пресет через `extends` ([commitpolicy.md](commitpolicy.md#пресети-extends)). У пакеті секція порожня, бо стандарт комітів у кожної інсталяції свій. Приклад:
+
+```yaml
+# /etc/gitlab-repopolicy/config.yaml
+commitpolicy_presets:
+  org-conventional:
+    rules:
+      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      subject-case: { level: error, value: lower-first }
+      header-max-length: { level: warn, value: 100 }
+```
+
+Ім'я пресету - ключ секції, `rules` - правила в тому ж форматі, що й у ruleset COMMITPOLICY. Правила файлу проєкту перекривають правила пресету за іменем.
 
 ## Інші конфігурації
 

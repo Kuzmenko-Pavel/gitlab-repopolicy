@@ -54,8 +54,5 @@ settings_check:
   protected_tags: ["v*"]
   job_token_push: false
 
-# Presets for "extends:" in COMMITPOLICY. Example, not a default.
-commitpolicy_presets:
-  org-conventional:
-    rules:
-      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+commitpolicy_presets: {}

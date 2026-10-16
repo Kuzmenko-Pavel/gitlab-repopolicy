@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,32 @@ type testModule struct {
 func (m testModule) Name() string               { return strings.ToLower(m.file) }
 func (m testModule) File() string               { return m.file }
 func (m testModule) OnInvalid() module.FailMode { return m.mode }
+func (testModule) MaxPolicySize() int           { return module.DefaultMaxPolicySize }
+func (testModule) Needs() module.Needs          { return module.Needs{} }
+
+// EvaluateInvalid denies every change of branch and tag content when the
+// module fails closed and only warns when it fails open.
+func (m testModule) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
+	msg := fmt.Sprintf("%s on the default branch is invalid: %v", m.file, parseErr)
+	ev := audit.Event{Event: audit.EventInvalidPolicy, Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}
+	if m.mode == module.FailOpen {
+		ev.Decision = "warn"
+		return &module.Result{Decision: module.Warn, Touched: true, Events: []audit.Event{ev},
+			Violations: []module.Violation{{Code: module.CodeInvalidPolicy, Message: msg + "\nThe check is skipped until it is fixed."}}}, nil
+	}
+	res := &module.Result{Touched: true}
+	for _, u := range in.Updates {
+		if u.Kind() == module.Delete {
+			continue
+		}
+		res.Decision = module.Deny
+		res.Violations = append(res.Violations, module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref,
+			Message: msg + "\nNothing can change until it is fixed on the default branch."})
+	}
+	ev.Decision = res.Decision.String()
+	res.Events = []audit.Event{ev}
+	return res, nil
+}
 
 func (m testModule) Parse(blob []byte) (module.Policy, error) {
 	var p testPolicy
@@ -46,8 +73,6 @@ func (m testModule) Parse(blob []byte) (module.Policy, error) {
 }
 
 type testPolicy []string
-
-func (p testPolicy) Needs() module.Needs { return module.Needs{} }
 
 func (p testPolicy) Validate(context.Context, module.Validator) []module.Problem {
 	for _, s := range p {

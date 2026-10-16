@@ -18,7 +18,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
-// hooked is a module with the optional entry points of the contract.
+// hooked is a module whose absent and invalid entry points the test sets.
 type hooked struct {
 	testModule
 	absent  func(*module.Input) (*module.Result, error)
@@ -29,7 +29,10 @@ func (h hooked) EvaluateAbsent(_ context.Context, in *module.Input) (*module.Res
 	return h.absent(in)
 }
 
-func (h hooked) EvaluateInvalid(_ context.Context, in *module.Input, err error) (*module.Result, error) {
+func (h hooked) EvaluateInvalid(ctx context.Context, in *module.Input, err error) (*module.Result, error) {
+	if h.invalid == nil {
+		return h.testModule.EvaluateInvalid(ctx, in, err)
+	}
 	return h.invalid(in, err)
 }
 
@@ -54,7 +57,7 @@ func TestAbsentEvaluator(t *testing.T) {
 	assert.Len(t, events(res.audit, audit.EventPolicyChange), 1, "the added file is accepted as a new version")
 }
 
-func TestInvalidEvaluator(t *testing.T) {
+func TestEvaluateInvalid(t *testing.T) {
 	r := newRepo(t)
 	c1 := r.commit(map[string]string{"TESTPOLICY": "garbage\n"})
 	r.publish(c1)
@@ -166,7 +169,6 @@ type listedPolicy struct{ users []string }
 
 func (p listedPolicy) Usernames() []string                                       { return p.users }
 func (listedPolicy) Validate(context.Context, module.Validator) []module.Problem { return nil }
-func (listedPolicy) Needs() module.Needs                                         { return module.Needs{} }
 func (listedPolicy) Evaluate(context.Context, *module.Input) (*module.Result, error) {
 	return &module.Result{}, nil
 }

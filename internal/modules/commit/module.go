@@ -70,6 +70,10 @@ func New(s *Settings) *Module { return &Module{settings: s} }
 func (*Module) Name() string               { return "commitpolicy" }
 func (*Module) File() string               { return File }
 func (*Module) OnInvalid() module.FailMode { return module.FailOpen }
+func (*Module) MaxPolicySize() int         { return module.DefaultMaxPolicySize }
+
+// Needs is empty: COMMITPOLICY gets no authorization backend.
+func (*Module) Needs() module.Needs { return module.Needs{} }
 
 // ConfigErrors reports presets of the server config that cannot be used.
 func (m *Module) ConfigErrors() []string { return m.settings.PresetErrors() }
@@ -96,8 +100,6 @@ func (*Module) EvaluateInvalid(_ context.Context, _ *module.Input, parseErr erro
 
 // SchemaType is the type behind schemas/commitpolicy.schema.json.
 func (*Module) SchemaType() any { return schemaFile{} }
-
-func (p *policy) Needs() module.Needs { return module.Needs{} }
 
 // Validate checks a new version: what Parse leaves to the anchor (unknown
 // rules and presets), pattern examples and the users of except.users.

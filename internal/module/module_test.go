@@ -1,7 +1,6 @@
 package module
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -42,23 +41,6 @@ func TestPrincipal_Kind(t *testing.T) {
 		assert.Equal(t, tt.kind, kind, tt.glid)
 		assert.Equal(t, tt.id, id, tt.glid)
 	}
-}
-
-type sized struct{ plain }
-
-func (sized) MaxPolicySize() int { return 256 << 10 }
-
-type plain struct{}
-
-func (plain) Name() string                     { return "p" }
-func (plain) File() string                     { return "P" }
-func (plain) OnInvalid() FailMode              { return FailClosed }
-func (plain) Parse([]byte) (Policy, error)     { return nil, nil }
-func (plain) Evaluate(context.Context, *Input) {}
-
-func TestMaxPolicySize(t *testing.T) {
-	assert.Equal(t, DefaultMaxPolicySize, MaxPolicySize(plain{}))
-	assert.Equal(t, 256<<10, MaxPolicySize(sized{}))
 }
 
 func TestStatus(t *testing.T) {

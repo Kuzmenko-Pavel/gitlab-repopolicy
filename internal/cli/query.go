@@ -50,7 +50,7 @@ func (a App) anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.C
 	if p.DefaultBranch == "" {
 		return p, nil, nil
 	}
-	data, err := api.RawFile(ctx, p.ID, guard.File(), p.DefaultBranch, module.MaxPolicySize(guard))
+	data, err := api.RawFile(ctx, p.ID, guard.File(), p.DefaultBranch, guard.MaxPolicySize())
 	if gitlab.KindOf(err) == gitlab.NotFound {
 		return p, nil, nil
 	}
@@ -336,7 +336,7 @@ func resolve(ctx context.Context, git *gitx.Repo, rev string) (string, error) {
 
 func needsIdentity(mods []module.Module) bool {
 	for _, m := range mods {
-		if im, ok := m.(module.IdentityModule); ok && im.NeedsIdentity() {
+		if m.Needs().Identity {
 			return true
 		}
 	}

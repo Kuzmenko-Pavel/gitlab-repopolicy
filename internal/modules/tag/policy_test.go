@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
-
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
 const oneRule = `  - name: prod
@@ -98,7 +96,7 @@ func TestParse_Limits(t *testing.T) {
 
 	big := append(policyYAML(oneRule, lead), "# "+strings.Repeat("x", maxPolicySize)+"\n"...)
 	assert.Contains(t, parseErr(t, big), "limit")
-	assert.Equal(t, 256<<10, module.MaxPolicySize(New()))
+	assert.Equal(t, 256<<10, New().MaxPolicySize())
 }
 
 func TestAcceptance_PrivateKey(t *testing.T) {

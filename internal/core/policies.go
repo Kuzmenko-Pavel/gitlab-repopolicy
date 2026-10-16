@@ -101,7 +101,7 @@ func (r *receive) readPolicy(ctx context.Context, commit string, m module.Module
 		f.invalid = fmt.Errorf("%s has mode %s, not a regular file", m.File(), entry.Mode)
 		return f, nil
 	}
-	limit := int64(module.MaxPolicySize(m))
+	limit := int64(m.MaxPolicySize())
 	if entry.Size > limit {
 		f.invalid = fmt.Errorf("%s is %d bytes, the limit is %d", m.File(), entry.Size, limit)
 		return f, nil

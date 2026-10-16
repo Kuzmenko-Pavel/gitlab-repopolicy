@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
@@ -32,15 +33,43 @@ func Modules() []module.Module { return []module.Module{Guard{}, Note{}} }
 func (Guard) Name() string               { return "guardpolicy" }
 func (Guard) File() string               { return "GUARDPOLICY" }
 func (Guard) OnInvalid() module.FailMode { return module.FailClosed }
+func (Guard) MaxPolicySize() int         { return module.DefaultMaxPolicySize }
+func (Guard) Needs() module.Needs        { return module.Needs{} }
 func (Guard) Parse(b []byte) (module.Policy, error) {
 	return parse(b, module.Deny)
+}
+
+// EvaluateInvalid denies every change of branch and tag content.
+func (Guard) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
+	ev := audit.Event{Event: audit.EventInvalidPolicy, Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}
+	res := &module.Result{Touched: true}
+	for _, u := range in.Updates {
+		if u.Kind() == module.Delete {
+			continue
+		}
+		res.Decision = module.Deny
+		res.Violations = append(res.Violations, module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref,
+			Message: "GUARDPOLICY on the default branch is invalid: " + parseErr.Error()})
+	}
+	ev.Decision = res.Decision.String()
+	res.Events = []audit.Event{ev}
+	return res, nil
 }
 
 func (Note) Name() string               { return "notepolicy" }
 func (Note) File() string               { return "NOTEPOLICY" }
 func (Note) OnInvalid() module.FailMode { return module.FailOpen }
+func (Note) MaxPolicySize() int         { return module.DefaultMaxPolicySize }
+func (Note) Needs() module.Needs        { return module.Needs{} }
 func (Note) Parse(b []byte) (module.Policy, error) {
 	return parse(b, module.Warn)
+}
+
+// EvaluateInvalid only warns.
+func (Note) EvaluateInvalid(_ context.Context, _ *module.Input, parseErr error) (*module.Result, error) {
+	return &module.Result{Decision: module.Warn, Touched: true,
+		Violations: []module.Violation{{Code: module.CodeInvalidPolicy, Message: "NOTEPOLICY on the default branch is invalid: " + parseErr.Error()}},
+		Events:     []audit.Event{{Event: audit.EventInvalidPolicy, Decision: "warn", Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}}}, nil
 }
 
 type file struct {
@@ -82,8 +111,6 @@ func parse(b []byte, decision module.Decision) (module.Policy, error) {
 	}
 	return &policy{rules: f.Rules, decision: decision}, nil
 }
-
-func (p *policy) Needs() module.Needs { return module.Needs{} }
 
 // Validate rejects a user named "nobody" offline, so tests can produce an invalid new version.
 func (p *policy) Validate(context.Context, module.Validator) []module.Problem {

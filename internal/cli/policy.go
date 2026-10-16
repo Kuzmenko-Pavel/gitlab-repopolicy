@@ -41,7 +41,7 @@ func readPolicyFile(path string, m module.Module) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	limit := module.MaxPolicySize(m)
+	limit := m.MaxPolicySize()
 	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if cerr := f.Close(); err == nil {
 		err = cerr

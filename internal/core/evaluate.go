@@ -22,12 +22,13 @@ func (r *receive) evaluate(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			in := r.inputFor(needsIdentity(l.mod))
+			in := r.inputFor(l.mod.Needs().Identity)
 			res, err = call(func() (*module.Result, error) { return ev.EvaluateAbsent(ctx, in) })
 		case l.invalid != nil:
-			res, err = r.evaluateInvalid(ctx, l)
+			in := r.inputFor(l.mod.Needs().Identity)
+			res, err = call(func() (*module.Result, error) { return l.mod.EvaluateInvalid(ctx, in, l.invalid) })
 		default:
-			in := r.inputFor(l.policy.Needs().Identity)
+			in := r.inputFor(l.mod.Needs().Identity)
 			res, err = call(func() (*module.Result, error) { return l.policy.Evaluate(ctx, in) })
 		}
 		if err != nil {
@@ -36,11 +37,6 @@ func (r *receive) evaluate(ctx context.Context) {
 		}
 		r.apply(l, res)
 	}
-}
-
-func needsIdentity(m module.Module) bool {
-	im, ok := m.(module.IdentityModule)
-	return ok && im.NeedsIdentity()
 }
 
 // call runs a module entry point; a panic becomes an error.
@@ -55,33 +51,6 @@ func call(fn func() (*module.Result, error)) (res *module.Result, err error) {
 		err = errors.New("module returned no result")
 	}
 	return res, err
-}
-
-// evaluateInvalid handles an invalid policy on the anchor (architecture §14).
-func (r *receive) evaluateInvalid(ctx context.Context, l *loaded) (*module.Result, error) {
-	if ev, ok := l.mod.(module.InvalidEvaluator); ok {
-		in := r.inputFor(needsIdentity(l.mod))
-		return call(func() (*module.Result, error) { return ev.EvaluateInvalid(ctx, in, l.invalid) })
-	}
-	msg := fmt.Sprintf("%s on the default branch is invalid: %v", l.mod.File(), l.invalid)
-	ev := audit.Event{Event: audit.EventInvalidPolicy, Module: l.mod.Name(), Code: module.CodeInvalidPolicy, Reason: l.invalid.Error()}
-	if l.mod.OnInvalid() == module.FailOpen {
-		ev.Decision = "warn"
-		return &module.Result{Decision: module.Warn, Touched: true, Events: []audit.Event{ev},
-			Violations: []module.Violation{{Code: module.CodeInvalidPolicy, Message: msg + "\nThe check is skipped until it is fixed."}}}, nil
-	}
-	res := &module.Result{Touched: true}
-	for _, u := range r.updates {
-		if u.Kind() == module.Delete {
-			continue
-		}
-		res.Decision = module.Deny
-		res.Violations = append(res.Violations, module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref,
-			Message: msg + "\nNothing can change until it is fixed on the default branch."})
-	}
-	ev.Decision = res.Decision.String()
-	res.Events = []audit.Event{ev}
-	return res, nil
 }
 
 // moduleFailed handles an error or panic of a module: FailClosed denies, FailOpen warns.

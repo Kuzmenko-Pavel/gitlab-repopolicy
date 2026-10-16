@@ -115,12 +115,16 @@ func TestDocument_Errors(t *testing.T) {
 
 type providing struct{}
 
-func (providing) Name() string                            { return "samplepolicy" }
-func (providing) File() string                            { return "SAMPLEPOLICY" }
-func (providing) OnInvalid() module.FailMode              { return module.FailOpen }
-func (providing) Parse([]byte) (module.Policy, error)     { return nil, nil }
-func (providing) SchemaType() any                         { return sample{} }
-func (providing) Evaluate(context.Context, *module.Input) {}
+func (providing) Name() string                        { return "samplepolicy" }
+func (providing) File() string                        { return "SAMPLEPOLICY" }
+func (providing) OnInvalid() module.FailMode          { return module.FailOpen }
+func (providing) Parse([]byte) (module.Policy, error) { return nil, nil }
+func (providing) SchemaType() any                     { return sample{} }
+func (providing) MaxPolicySize() int                  { return module.DefaultMaxPolicySize }
+func (providing) Needs() module.Needs                 { return module.Needs{} }
+func (providing) EvaluateInvalid(context.Context, *module.Input, error) (*module.Result, error) {
+	return nil, nil
+}
 
 func TestForModule(t *testing.T) {
 	doc, ok, err := ForModule(providing{})

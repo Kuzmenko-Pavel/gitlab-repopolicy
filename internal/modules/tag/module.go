@@ -31,6 +31,9 @@ func (*Module) OnInvalid() module.FailMode { return module.FailClosed }
 // MaxPolicySize raises the file limit for armored keys.
 func (*Module) MaxPolicySize() int { return maxPolicySize }
 
+// Needs is empty: TAGPOLICY does not use the API.
+func (*Module) Needs() module.Needs { return module.Needs{} }
+
 // Parse decodes a TAGPOLICY file offline.
 func (*Module) Parse(blob []byte) (module.Policy, error) {
 	p, err := parsePolicy(blob)
@@ -42,9 +45,6 @@ func (*Module) Parse(blob []byte) (module.Policy, error) {
 
 // SchemaType is the type behind schemas/tagpolicy.schema.json.
 func (*Module) SchemaType() any { return schemaFile{} }
-
-// Needs: TAGPOLICY does not use the API.
-func (*policy) Needs() module.Needs { return module.Needs{} }
 
 // Validate has nothing to ask GitLab: the keys are checked by Parse and ValidateVersion.
 func (*policy) Validate(context.Context, module.Validator) []module.Problem { return nil }

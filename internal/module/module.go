@@ -13,7 +13,8 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 )
 
-// FailMode is what happens when the policy on the anchor is invalid.
+// FailMode is how a module fails. The core applies it to an error or a panic
+// of the module; EvaluateInvalid follows it for an invalid policy on the anchor.
 type FailMode int
 
 // Fail modes.
@@ -32,21 +33,17 @@ type Module interface {
 	// File is the policy file path at the repository root, for example "PATHPOLICY".
 	File() string
 	OnInvalid() FailMode
+	// MaxPolicySize is the size limit of the file, DefaultMaxPolicySize unless
+	// the format needs more.
+	MaxPolicySize() int
+	// Needs declares which inputs the module uses. It does not depend on the
+	// file, so the core knows it also when the anchor has no valid policy.
+	Needs() Needs
 	// Parse decodes and checks a policy file offline: strict decoding and limits, no network.
 	Parse(blob []byte) (Policy, error)
-}
-
-// SizeLimiter is implemented by modules whose files may exceed DefaultMaxPolicySize.
-type SizeLimiter interface {
-	MaxPolicySize() int
-}
-
-// MaxPolicySize returns the size limit of the module's file.
-func MaxPolicySize(m Module) int {
-	if l, ok := m.(SizeLimiter); ok {
-		return l.MaxPolicySize()
-	}
-	return DefaultMaxPolicySize
+	// EvaluateInvalid decides a push while the file on the anchor does not
+	// parse (architecture §14), for example TAGPOLICY blocks only tags.
+	EvaluateInvalid(ctx context.Context, in *Input, parseErr error) (*Result, error)
 }
 
 // Policy is a parsed policy file.
@@ -54,8 +51,6 @@ type Policy interface {
 	// Validate runs the checks that need GitLab, such as existence of principals.
 	// The core calls it when it accepts a new version of the file.
 	Validate(ctx context.Context, v Validator) []Problem
-	// Needs declares which inputs the policy uses.
-	Needs() Needs
 	Evaluate(ctx context.Context, in *Input) (*Result, error)
 }
 
@@ -236,15 +231,6 @@ var (
 	ErrMissing = errors.New("object missing")
 )
 
-// InvalidEvaluator is implemented by modules whose reaction to an invalid
-// policy on the anchor is narrower than the default, for example TAGPOLICY
-// blocks only tags and PATHPOLICY allows Owner recovery (architecture §14).
-// Without it the core denies every change of branch and tag content for
-// FailClosed modules and only warns for FailOpen modules.
-type InvalidEvaluator interface {
-	EvaluateInvalid(ctx context.Context, in *Input, parseErr error) (*Result, error)
-}
-
 // AbsentEvaluator is implemented by modules that act when the anchor has no
 // policy file, for example the PATHPOLICY bootstrap (architecture §9.4).
 type AbsentEvaluator interface {
@@ -310,12 +296,6 @@ type VersionValidator interface {
 // core checks only usernames that the anchor version does not have (D28).
 type UsernameLister interface {
 	Usernames() []string
-}
-
-// IdentityModule is implemented by modules that need the authorizer when the
-// anchor has no valid policy, for bootstrap and Owner recovery.
-type IdentityModule interface {
-	NeedsIdentity() bool
 }
 
 // ConfigReporter is implemented by modules that take a part of the server

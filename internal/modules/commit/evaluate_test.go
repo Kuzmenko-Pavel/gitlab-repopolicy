@@ -250,9 +250,7 @@ func TestUnknownRule_NewVersion(t *testing.T) {
 }
 
 func TestNeeds_NoIdentity(t *testing.T) {
-	p, err := New(testSettings()).Parse([]byte("version: 1\nrulesets: [{name: r}]\n"))
-	require.NoError(t, err)
-	assert.False(t, p.Needs().Identity, "COMMITPOLICY gets no authorization backend")
+	assert.False(t, New(testSettings()).Needs().Identity, "COMMITPOLICY gets no authorization backend")
 }
 
 type activeUsers map[string]bool

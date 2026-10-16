@@ -308,6 +308,7 @@ linters:
             - "**/tests/integration/internal/**/*.go"
           allow:
             - $gostd
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/cli
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$

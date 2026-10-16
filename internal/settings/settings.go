@@ -198,7 +198,7 @@ func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (mod
 		if ref == "" {
 			continue
 		}
-		data, err := api.RawFile(ctx, p.ID, o.Guard.File(), ref, module.MaxPolicySize(o.Guard))
+		data, err := api.RawFile(ctx, p.ID, o.Guard.File(), ref, o.Guard.MaxPolicySize())
 		if gitlab.KindOf(err) == gitlab.NotFound {
 			continue
 		}
@@ -252,7 +252,7 @@ func checkPrincipals(ctx context.Context, api API, o Options, p gitlab.Project, 
 	var names []string
 	seen := map[string]bool{}
 	for _, m := range o.Modules {
-		data, err := api.RawFile(ctx, p.ID, m.File(), ref, module.MaxPolicySize(m))
+		data, err := api.RawFile(ctx, p.ID, m.File(), ref, m.MaxPolicySize())
 		if gitlab.KindOf(err) == gitlab.NotFound {
 			continue
 		}

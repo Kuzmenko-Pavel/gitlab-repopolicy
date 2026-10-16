@@ -24,9 +24,11 @@ func New() *Module { return &Module{} }
 func (*Module) Name() string               { return "pathpolicy" }
 func (*Module) File() string               { return File }
 func (*Module) OnInvalid() module.FailMode { return module.FailClosed }
+func (*Module) MaxPolicySize() int         { return module.DefaultMaxPolicySize }
 
-// NeedsIdentity gives the module the authorizer also for bootstrap and recovery.
-func (*Module) NeedsIdentity() bool { return true }
+// Needs gives the authorizer: PATHPOLICY decides on access and asks GitLab
+// about people, also for bootstrap and recovery.
+func (*Module) Needs() module.Needs { return module.Needs{Identity: true} }
 
 // Parse decodes a PATHPOLICY file offline.
 func (*Module) Parse(blob []byte) (module.Policy, error) {
@@ -39,9 +41,6 @@ func (*Module) Parse(blob []byte) (module.Policy, error) {
 
 // SchemaType is the type behind schemas/pathpolicy.schema.json.
 func (*Module) SchemaType() any { return schemaFile{} }
-
-// Needs: PATHPOLICY decides on access and asks GitLab about people.
-func (*policy) Needs() module.Needs { return module.Needs{Identity: true} }
 
 // Validate checks a new version: usernames added in this version exist and
 // are active (D28), and at least one admin is effective, or the new version

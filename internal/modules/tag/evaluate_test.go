@@ -431,7 +431,7 @@ func TestModule(t *testing.T) {
 	assert.NotNil(t, m.SchemaType())
 	p, err := m.Parse(policyYAML(twoRules, map[string]string{"release-lead": newSSH(t, "ed25519").line, "dev-lead": newSSH(t, "ed25519").line}))
 	require.NoError(t, err)
-	assert.False(t, p.Needs().Identity, "TAGPOLICY does not use the API")
+	assert.False(t, m.Needs().Identity, "TAGPOLICY does not use the API")
 	assert.Empty(t, p.Validate(context.Background(), nil))
 	_, err = m.Parse([]byte("version: 1\n"))
 	require.Error(t, err)

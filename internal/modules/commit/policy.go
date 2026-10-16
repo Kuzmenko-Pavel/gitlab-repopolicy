@@ -3,7 +3,6 @@ package commit
 import (
 	"errors"
 	"fmt"
-	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -62,15 +61,6 @@ const (
 
 func (l level) String() string { return [...]string{"off", "warn", "error"}[l] }
 
-type refsKind int
-
-const (
-	refsAll refsKind = iota
-	refsDefault
-	refsProtected
-	refsList
-)
-
 // Policy is a parsed COMMITPOLICY.
 type Policy struct {
 	warnMode bool
@@ -82,8 +72,7 @@ type Policy struct {
 
 type ruleset struct {
 	name         string
-	refs         refsKind
-	list         []string
+	refs         module.RefScope
 	conventional bool
 	except       exceptYAML
 	rules        []*rule
@@ -166,7 +155,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 		r, err := parseRuleset(rs, preset)
 		if err != nil {
 			name := rs.Name
-			if !ruleName.MatchString(name) {
+			if !module.ValidRuleName(name) {
 				name = "#" + strconv.Itoa(i+1)
 			}
 			return nil, fmt.Errorf("ruleset %s: %w", name, err)
@@ -181,7 +170,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 }
 
 func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, error) {
-	if !ruleName.MatchString(y.Name) {
+	if !module.ValidRuleName(y.Name) {
 		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
 	}
 	r := &ruleset{name: y.Name, except: y.Except, message: strings.TrimSpace(y.Message)}
@@ -192,9 +181,11 @@ func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, er
 	default:
 		return nil, fmt.Errorf("format: %q is not one of conventional, free", y.Format)
 	}
-	if err := r.parseRefs(y.Refs); err != nil {
+	refs, err := module.ParseRefScope(y.Refs)
+	if err != nil {
 		return nil, err
 	}
+	r.refs = refs
 	if len(y.Except.Users) > maxExceptUsers {
 		return nil, fmt.Errorf("except.users: %d users, the limit is %d", len(y.Except.Users), maxExceptUsers)
 	}
@@ -232,52 +223,6 @@ func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, er
 		}
 	}
 	return r, nil
-}
-
-func (rs *ruleset) parseRefs(v any) error {
-	switch refs := v.(type) {
-	case nil:
-		rs.refs = refsAll
-	case string:
-		switch refs {
-		case "all":
-			rs.refs = refsAll
-		case "default":
-			rs.refs = refsDefault
-		case "protected":
-			rs.refs = refsProtected
-		default:
-			return fmt.Errorf("refs: %q is not one of all, default, protected or a list of refs", refs)
-		}
-	case []any:
-		if len(refs) == 0 {
-			return errors.New("refs: the list is empty")
-		}
-		rs.refs = refsList
-		for _, item := range refs {
-			s, ok := item.(string)
-			if !ok || !strings.HasPrefix(s, "refs/") {
-				return fmt.Errorf("refs: %v is not a ref pattern such as refs/heads/release/*", item)
-			}
-			if _, err := path.Match(s, ""); err != nil {
-				return fmt.Errorf("refs: %q: %w", s, err)
-			}
-			rs.list = append(rs.list, s)
-		}
-	default:
-		return errors.New("refs: expected all, default, protected or a list of refs")
-	}
-	return nil
-}
-
-func (rs *ruleset) matchList(ref string) bool {
-	for _, p := range rs.list {
-		// parseRefs checks the patterns, so Match cannot fail here.
-		if ok, err := path.Match(p, ref); err == nil && ok {
-			return true
-		}
-	}
-	return false
 }
 
 func parseRule(name string, spec map[string]any, conventional bool) (*rule, error) {
@@ -416,6 +361,3 @@ func stringList(v any) ([]string, error) {
 	}
 	return out, nil
 }
-
-// ruleName is the name format shared by the rules of every module (architecture §9.1).
-var ruleName = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)

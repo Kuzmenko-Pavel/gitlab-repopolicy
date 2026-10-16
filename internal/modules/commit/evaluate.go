@@ -83,18 +83,18 @@ func (e *evaluation) warn(v module.Violation) {
 // ruleset applies one ruleset to one ref.
 func (e *evaluation) ruleset(ctx context.Context, rs *ruleset, u module.RefUpdate) error {
 	scope := module.Scope{Class: module.ClassOther, FirstParent: rs.except.MergedCommits}
-	switch rs.refs {
-	case refsDefault:
+	switch rs.refs.Kind {
+	case module.RefsDefault:
 		if u.Ref != e.in.Refs.Default() {
 			return nil
 		}
 		scope.Class = module.ClassDefault
-	case refsList:
-		if !rs.matchList(u.Ref) {
+	case module.RefsList:
+		if !rs.refs.MatchList(u.Ref) {
 			return nil
 		}
-		scope.Class, scope.Key, scope.Protected = module.ClassProtected, "commitpolicy/"+rs.name, rs.matchList
-	case refsProtected:
+		scope.Class, scope.Key, scope.Protected = module.ClassProtected, "commitpolicy/"+rs.name, rs.refs.MatchList
+	case module.RefsProtected:
 		return e.protectedRuleset(ctx, rs, u)
 	}
 	commits, err := e.in.Changes.EnteringCommits(ctx, u, scope, MaxEnteringCommits)

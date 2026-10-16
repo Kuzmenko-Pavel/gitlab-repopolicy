@@ -139,13 +139,13 @@ func (e *evaluation) notCommit(ctx context.Context, u module.RefUpdate) {
 
 // ruleScope returns the scope of a rule for the ref and whether the rule applies to it.
 func (e *evaluation) ruleScope(ctx context.Context, r *rule, u module.RefUpdate) (module.Scope, bool, module.Status) {
-	switch r.refs {
-	case refsList:
-		if !r.matchList(u.Ref) {
+	switch r.refs.Kind {
+	case module.RefsList:
+		if !r.refs.MatchList(u.Ref) {
 			return module.Scope{}, false, module.Confirmed()
 		}
-		return module.Scope{Class: module.ClassProtected, Key: "pathpolicy/" + r.name, Protected: r.matchList}, true, module.Confirmed()
-	case refsDefault:
+		return module.Scope{Class: module.ClassProtected, Key: "pathpolicy/" + r.name, Protected: r.refs.MatchList}, true, module.Confirmed()
+	case module.RefsDefault:
 		if u.Ref != e.in.Refs.Default() {
 			return module.Scope{}, false, module.Confirmed()
 		}
@@ -155,7 +155,7 @@ func (e *evaluation) ruleScope(ctx context.Context, r *rule, u module.RefUpdate)
 	if !st.IsConfirmed() {
 		return module.Scope{}, false, st
 	}
-	if r.refs == refsProtected && scope.Class == module.ClassOther {
+	if r.refs.Kind == module.RefsProtected && scope.Class == module.ClassOther {
 		return module.Scope{}, false, module.Confirmed()
 	}
 	return scope, true, module.Confirmed()

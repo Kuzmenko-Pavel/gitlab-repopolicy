@@ -1,5 +1,7 @@
 package tag
 
+import "github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+
 // The types below describe TAGPOLICY for schemas/tagpolicy.schema.json.
 
 type schemaFile struct {
@@ -30,7 +32,7 @@ func (schemaVersion) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "const": 1}
 }
 func (schemaName) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
+	return map[string]any{"type": "string", "pattern": module.RuleNamePattern}
 }
 func (schemaTags) JSONSchema() map[string]any {
 	return map[string]any{"type": "string", "minLength": 1, "maxLength": maxPatternBytes}

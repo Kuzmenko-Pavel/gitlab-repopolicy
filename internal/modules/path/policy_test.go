@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
 const basePolicy = `version: 1
@@ -32,8 +34,8 @@ func TestParse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"platform-lead", "sre-lead"}, p.admins)
 	require.Len(t, p.rules, 3)
-	assert.Equal(t, refsAll, p.rules[0].refs)
-	assert.Equal(t, refsProtected, p.rules[2].refs)
+	assert.Equal(t, module.RefsAll, p.rules[0].refs.Kind)
+	assert.Equal(t, module.RefsProtected, p.rules[2].refs.Kind)
 	assert.True(t, New().Covers(p, "COMMITPOLICY"))
 	assert.False(t, New().Covers(p, "TAGPOLICY"))
 	assert.Len(t, p.Usernames(), 8)

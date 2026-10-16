@@ -37,7 +37,7 @@ func (schemaVersion) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "const": 1}
 }
 func (schemaName) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
+	return map[string]any{"type": "string", "pattern": module.RuleNamePattern}
 }
 func (schemaMessage) JSONSchema() map[string]any {
 	return map[string]any{"type": "string", "maxLength": 1000}

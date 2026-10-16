@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	pathpkg "path"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -41,15 +39,6 @@ type ruleYAML struct {
 	Message string   `yaml:"message"`
 }
 
-type refsKind int
-
-const (
-	refsAll refsKind = iota
-	refsDefault
-	refsProtected
-	refsList
-)
-
 // Policy is a parsed PATHPOLICY.
 type Policy struct {
 	admins []string
@@ -59,15 +48,10 @@ type Policy struct {
 type rule struct {
 	name    string
 	paths   []string
-	refs    refsKind
-	list    []string
+	refs    module.RefScope
 	allow   []string
 	message string
 }
-
-var (
-	ruleName = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)
-)
 
 // Parse decodes a PATHPOLICY file offline.
 func Parse(data []byte) (*Policy, error) {
@@ -91,7 +75,7 @@ func Parse(data []byte) (*Policy, error) {
 		r, err := parseRule(ry)
 		if err != nil {
 			name := ry.Name
-			if !ruleName.MatchString(name) {
+			if !module.ValidRuleName(name) {
 				name = fmt.Sprintf("#%d", i+1)
 			}
 			return nil, fmt.Errorf("rule %s: %w", name, err)
@@ -106,7 +90,7 @@ func Parse(data []byte) (*Policy, error) {
 }
 
 func parseRule(y ruleYAML) (*rule, error) {
-	if !ruleName.MatchString(y.Name) {
+	if !module.ValidRuleName(y.Name) {
 		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
 	}
 	r := &rule{name: y.Name, message: strings.TrimSpace(y.Message)}
@@ -119,9 +103,11 @@ func parseRule(y ruleYAML) (*rule, error) {
 		}
 	}
 	r.paths = y.Paths
-	if err := r.parseRefs(y.Refs); err != nil {
+	refs, err := module.ParseRefScope(y.Refs)
+	if err != nil {
 		return nil, err
 	}
+	r.refs = refs
 	allow, err := usernames("allow", y.Allow, 1, maxAllow)
 	if err != nil {
 		return nil, err
@@ -154,52 +140,6 @@ func usernames(field string, list []string, low, high int) ([]string, error) {
 		seen[key] = true
 	}
 	return list, nil
-}
-
-func (r *rule) parseRefs(v any) error {
-	switch refs := v.(type) {
-	case nil:
-		r.refs = refsAll
-	case string:
-		switch refs {
-		case "all":
-			r.refs = refsAll
-		case "default":
-			r.refs = refsDefault
-		case "protected":
-			r.refs = refsProtected
-		default:
-			return fmt.Errorf("refs: %q is not one of all, default, protected or a list of refs", refs)
-		}
-	case []any:
-		if len(refs) == 0 {
-			return errors.New("refs: the list is empty")
-		}
-		r.refs = refsList
-		for _, item := range refs {
-			s, ok := item.(string)
-			if !ok || !strings.HasPrefix(s, "refs/") {
-				return fmt.Errorf("refs: %v is not a ref pattern such as refs/heads/release/*", item)
-			}
-			if _, err := pathpkg.Match(s, ""); err != nil {
-				return fmt.Errorf("refs: %q: %w", s, err)
-			}
-			r.list = append(r.list, s)
-		}
-	default:
-		return errors.New("refs: expected all, default, protected or a list of refs")
-	}
-	return nil
-}
-
-func (r *rule) matchList(ref string) bool {
-	for _, p := range r.list {
-		// parseRefs checks the patterns, so Match cannot fail here.
-		if ok, err := pathpkg.Match(p, ref); err == nil && ok {
-			return true
-		}
-	}
-	return false
 }
 
 // validatePattern applies architecture §9.3: relative, no "\", no ".", ".."
@@ -325,19 +265,19 @@ func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		if !st.IsConfirmed() {
 			return nil, st
 		}
-		out = append(out, PathRule{Name: r.name, Refs: r.refsText(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
+		out = append(out, PathRule{Name: r.name, Refs: r.refs.String(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
 	}
 	return out, module.Confirmed()
 }
 
 // appliesTo reports whether the ref scope of the rule includes the ref.
 func (r *rule) appliesTo(ctx context.Context, ref string, refs module.RefClassifier) (bool, module.Status) {
-	switch r.refs {
-	case refsList:
-		return r.matchList(ref), module.Confirmed()
-	case refsDefault:
+	switch r.refs.Kind {
+	case module.RefsList:
+		return r.refs.MatchList(ref), module.Confirmed()
+	case module.RefsDefault:
 		return ref == refs.Default(), module.Confirmed()
-	case refsProtected:
+	case module.RefsProtected:
 		if ref == refs.Default() {
 			return true, module.Confirmed()
 		}
@@ -345,16 +285,4 @@ func (r *rule) appliesTo(ctx context.Context, ref string, refs module.RefClassif
 		return class != module.ClassOther, st
 	}
 	return true, module.Confirmed()
-}
-
-func (r *rule) refsText() string {
-	switch r.refs {
-	case refsList:
-		return strings.Join(r.list, ", ")
-	case refsDefault:
-		return "default"
-	case refsProtected:
-		return "protected"
-	}
-	return "all"
 }

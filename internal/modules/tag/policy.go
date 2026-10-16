@@ -49,7 +49,6 @@ type rule struct {
 }
 
 var (
-	ruleName = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)
 	// keyLabel has the characters of a GitLab username, which is the recommended label.
 	keyLabel = regexp.MustCompile(labelPattern)
 )
@@ -74,7 +73,7 @@ func parsePolicy(data []byte) (*policy, error) {
 		r, err := p.parseRule(ry)
 		if err != nil {
 			name := ry.Name
-			if !ruleName.MatchString(name) {
+			if !module.ValidRuleName(name) {
 				name = fmt.Sprintf("#%d", i+1)
 			}
 			return nil, fmt.Errorf("rule %s: %w", name, err)
@@ -117,7 +116,7 @@ func (p *policy) parseKeys(keys map[string]string) error {
 }
 
 func (p *policy) parseRule(y ruleYAML) (*rule, error) {
-	if !ruleName.MatchString(y.Name) {
+	if !module.ValidRuleName(y.Name) {
 		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
 	}
 	r := &rule{name: y.Name, message: strings.TrimSpace(y.Message)}

@@ -127,7 +127,7 @@ func (schemaVersion) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "const": 1}
 }
 func (schemaName) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
+	return map[string]any{"type": "string", "pattern": module.RuleNamePattern}
 }
 func (schemaMode) JSONSchema() map[string]any   { return enum("warn", "enforce") }
 func (schemaFormat) JSONSchema() map[string]any { return enum("conventional", "free") }

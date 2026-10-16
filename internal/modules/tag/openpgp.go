@@ -30,9 +30,10 @@ type errUnknownSigner struct{ keyID string }
 func (e errUnknownSigner) Error() string { return "the key " + e.keyID + " is not in TAGPOLICY" }
 
 // verifyOpenPGP checks a detached OpenPGP signature of payload by the keys of
-// the file at the moment of the push: the key and the signing subkey are not
-// expired or revoked, the signature is not from more than five minutes after
-// the push and its hash is not weak. It returns the entity of the primary key.
+// the file: the signature is not from more than five minutes after the push,
+// the key and the signing subkey are not expired or revoked at the push (or at
+// the signature, when it is made after the push on a fast clock) and the hash
+// is not weak. It returns the entity of the primary key.
 func verifyOpenPGP(ring openpgp.EntityList, payload, block []byte, push time.Time) (*openpgp.Entity, error) {
 	if !endsWithBlock(block, "-----END PGP ") {
 		return nil, badSignature("the OpenPGP signature block is malformed")
@@ -65,9 +66,16 @@ func verifyOpenPGP(ring openpgp.EntityList, payload, block []byte, push time.Tim
 	if len(ring) == 0 {
 		return nil, errUnknownSigner{keyID: issuer(sig)}
 	}
-	// The checks of go-crypto run at push+skew so that a signature made just
-	// after the push on a fast clock is accepted.
-	config := &packet.Config{Time: func() time.Time { return push.Add(clockSkew) }}
+	if sig.CreationTime.After(push.Add(clockSkew)) {
+		return nil, badSignature("the signature is made after the push")
+	}
+	// go-crypto checks the key and the signature at one moment: the push, or
+	// the signature when it is a little later, so that it is not "in the future".
+	at := push
+	if sig.CreationTime.After(push) {
+		at = sig.CreationTime
+	}
+	config := &packet.Config{Time: func() time.Time { return at }}
 	_, signer, err := openpgp.VerifyDetachedSignature(ring, bytes.NewReader(payload), bytes.NewReader(body), config)
 	switch {
 	case errors.Is(err, pgperrors.ErrUnknownIssuer):
@@ -77,7 +85,7 @@ func verifyOpenPGP(ring openpgp.EntityList, payload, block []byte, push time.Tim
 	case errors.Is(err, pgperrors.ErrKeyRevoked):
 		return nil, badSignature("the signing key is revoked")
 	case errors.Is(err, pgperrors.ErrSignatureExpired):
-		return nil, badSignature("the signature is expired or made after the push")
+		return nil, badSignature("the signature is expired")
 	case err != nil:
 		return nil, badSignature("the OpenPGP signature does not match the tag: %v", err)
 	}

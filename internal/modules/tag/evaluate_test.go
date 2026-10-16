@@ -187,6 +187,37 @@ func TestVerify_ExpiredKey(t *testing.T) {
 	}
 }
 
+// TestVerify_KeyExpiryAtPushTime: the key must be valid at the push, or at the
+// signature when it is made up to five minutes after the push.
+func TestVerify_KeyExpiryAtPushTime(t *testing.T) {
+	payload := tagPayload("v1.2.3-prod", "commit")
+	expiring := func(after time.Duration) *openpgp.Entity {
+		return newPGP(t, pgpOptions{created: now.Add(-24 * time.Hour), lifetime: 24*time.Hour + after})
+	}
+	cases := []struct {
+		name   string
+		key    *openpgp.Entity
+		signed time.Time
+		want   string
+	}{
+		{"valid two minutes after the push", expiring(2 * time.Minute), now.Add(-time.Minute), ""},
+		{"expired a minute before the push", expiring(-time.Minute), now.Add(-2 * time.Minute), "the signing key is expired"},
+		{"signed after the push, valid then", expiring(5 * time.Minute), now.Add(4 * time.Minute), ""},
+		{"signed more than five minutes after the push", expiring(time.Hour), now.Add(6 * time.Minute), "made after the push"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := signPGP(t, c.key, payload, c.signed, crypto.SHA256)
+			_, err := verifyOpenPGP(openpgp.EntityList{c.key}, payload, data[len(payload):], now)
+			if c.want == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, c.want)
+		})
+	}
+}
+
 // A revoked key cannot be accepted into TAGPOLICY, so the revocation is
 // checked on the verification itself.
 func TestVerify_RevokedKey(t *testing.T) {

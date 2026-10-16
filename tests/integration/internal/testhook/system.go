@@ -13,11 +13,16 @@ type testSystem struct{}
 
 func (testSystem) IsRoot() bool { return os.Getenv("REPOPOLICY_TEST_NOT_ROOT") == "" }
 
+// LookupUser: "self" is the test user, any other user an id after it, so
+// that install-hook has owners to change.
 func (testSystem) LookupUser(name string) (int, int, error) {
-	if name == "no-such-user" {
+	switch name {
+	case "no-such-user":
 		return 0, 0, errors.New("unknown user " + name)
+	case "self":
+		return os.Getuid(), os.Getgid(), nil
 	}
-	return os.Getuid(), os.Getgid(), nil
+	return os.Getuid() + 1, os.Getgid() + 1, nil
 }
 
 func (testSystem) CurrentUser() string { return "root" }

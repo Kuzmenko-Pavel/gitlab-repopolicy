@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -83,44 +84,79 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 	return withOutput(out.err, ExitOK)
 }
 
-// ownFiles gives the hook user what it reads and writes: the
-// group of config.yaml and of the token, and the audit log directory. The
-// package does the same at its first installation when the user exists.
+// ownFiles gives the hook user what it reads and writes: the group of
+// config.yaml and of the token, the audit log directory and file. The log is
+// narrowed to 0750 and 0640, because it holds usernames and paths. An owner or
+// a mode that is already right is not touched. The package does the same at
+// its first installation when the user exists.
 func (a App) ownFiles(configPath string, uid, gid int) ([]string, bool) {
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: not read (%v)", configPath, err)}, false
 	}
-	sys := a.system()
-	targets := []struct {
+	type target struct {
 		path     string
 		uid, gid int
-	}{{configPath, -1, gid}, {cfg.TokenFile, -1, gid}}
+		// mode is the widest mode allowed, 0 to keep any.
+		mode fs.FileMode
+	}
+	targets := []target{{configPath, -1, gid, 0}, {cfg.TokenFile, -1, gid, 0}}
 	if cfg.Audit.File != "" {
-		targets = append(targets, struct {
-			path     string
-			uid, gid int
-		}{filepath.Dir(cfg.Audit.File), uid, gid})
+		targets = append(targets, target{filepath.Dir(cfg.Audit.File), uid, gid, 0o750}, target{cfg.Audit.File, uid, gid, 0o640})
 	}
 	var lines []string
 	ok := true
 	for _, t := range targets {
-		switch _, err := os.Lstat(t.path); {
-		case errors.Is(err, fs.ErrNotExist):
-			lines = append(lines, t.path+": does not exist yet")
-		case err != nil:
+		line, err := a.own(t.path, t.uid, t.gid, t.mode)
+		if err != nil {
 			ok = false
-			lines = append(lines, fmt.Sprintf("%s: %v", t.path, err))
-		default:
-			if err := sys.Chown(t.path, t.uid, t.gid); err != nil {
-				ok = false
-				lines = append(lines, fmt.Sprintf("%s: %v", t.path, err))
-				continue
-			}
-			lines = append(lines, fmt.Sprintf("%s: owner set", t.path))
+			line = fmt.Sprintf("%s: %v", t.path, err)
 		}
+		lines = append(lines, line)
 	}
 	return lines, ok
+}
+
+// own sets the owner (-1 keeps it) and narrows the mode of path and says what it did.
+func (a App) own(path string, uid, gid int, mode fs.FileMode) (string, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return path + ": does not exist yet", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", errors.New("the owner cannot be read")
+	}
+	was := fmt.Sprintf("%d:%d", st.Uid, st.Gid)
+	wantUID, wantGID := int(st.Uid), int(st.Gid)
+	if uid >= 0 {
+		wantUID = uid
+	}
+	if gid >= 0 {
+		wantGID = gid
+	}
+	want := fmt.Sprintf("%d:%d", wantUID, wantGID)
+	owner := "owner unchanged (" + was + ")"
+	if want != was {
+		if err := a.system().Chown(path, uid, gid); err != nil {
+			return "", err
+		}
+		owner = "owner set to " + want + " (was " + was + ")"
+	}
+	if mode == 0 {
+		return path + ": " + owner, nil
+	}
+	perm := info.Mode().Perm()
+	if perm&^mode == 0 {
+		return fmt.Sprintf("%s: %s, mode unchanged (%04o)", path, owner, perm), nil
+	}
+	if err := os.Chmod(path, perm&mode); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s: %s, mode set to %04o (was %04o)", path, owner, perm&mode, perm), nil
 }
 
 // runUninstallHook implements "uninstall-hook --hooks-dir DIR": only the wrapper is removed.

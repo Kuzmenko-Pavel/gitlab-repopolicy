@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,7 @@ func TestInstallHook(t *testing.T) {
 	r = s.Run(env, "install-hook")
 	assert.Equal(t, 2, r.Code)
 
+	require.NoError(t, os.Chmod(s.Dir, 0o700), "the umask does not decide the test")
 	r = s.Run(env, args...)
 	require.Equal(t, 0, r.Code, r.Stderr)
 	wrapper := filepath.Join(hooks, "pre-receive.d", "50-gitlab-repopolicy")
@@ -49,14 +51,29 @@ func TestInstallHook(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("#!/bin/sh\nexec %s hook pre-receive --config %s\n", hookBin, s.config), string(data))
 	log, err := os.ReadFile(chownLog)
 	require.NoError(t, err)
-	ids := fmt.Sprintf(" %d:%d\n", os.Getuid(), os.Getgid())
-	group := fmt.Sprintf(" -1:%d\n", os.Getgid())
+	ids := fmt.Sprintf(" %d:%d\n", os.Getuid()+1, os.Getgid()+1)
+	group := fmt.Sprintf(" -1:%d\n", os.Getgid()+1)
 	assert.Equal(t, 3, strings.Count(string(log), ids), "the directory, the wrapper and the log directory belong to --user:\n%s", log)
 	assert.Contains(t, string(log), filepath.Join(hooks, "pre-receive.d")+ids)
 	assert.Contains(t, string(log), s.Dir+ids, "the audit log directory")
 	assert.Contains(t, string(log), s.config+group, "config.yaml gets the group of --user")
 	assert.Contains(t, string(log), filepath.Join(s.Dir, "token")+group)
-	assert.Contains(t, r.Stdout, s.config+": owner set")
+	was := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	assert.Contains(t, r.Stdout, fmt.Sprintf("%s: owner set to %d:%d (was %s)", s.config, os.Getuid(), os.Getgid()+1, was))
+	assert.Contains(t, r.Stdout, fmt.Sprintf("%s: owner set to %d:%d (was %s), mode unchanged (0700)", s.Dir, os.Getuid()+1, os.Getgid()+1, was))
+
+	// Owners that are right are not touched; a wide log is narrowed.
+	require.NoError(t, os.Chmod(s.Dir, 0o755))
+	require.NoError(t, os.WriteFile(s.audit, nil, 0o644))
+	self := []string{"install-hook", "--hooks-dir", hooks, "--user", "self", "--binary", hookBin, "--config", s.config}
+	r = s.Run(env, self...)
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, s.config+": owner unchanged ("+was+")")
+	assert.Contains(t, r.Stdout, s.Dir+": owner unchanged ("+was+"), mode set to 0750 (was 0755)")
+	assert.Contains(t, r.Stdout, s.audit+": owner unchanged ("+was+"), mode set to 0640 (was 0644)")
+	info, err := os.Stat(s.audit)
+	require.NoError(t, err)
+	assert.Equal(t, fs.FileMode(0o640), info.Mode().Perm())
 
 	r = s.Run(env, args...)
 	require.Equal(t, 0, r.Code, r.Stderr)

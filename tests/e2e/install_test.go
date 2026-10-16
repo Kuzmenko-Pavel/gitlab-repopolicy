@@ -44,10 +44,12 @@ func reinstall(t *testing.T) {
 func TestInstall_InContainer(t *testing.T) {
 	out, code := rp(t, "", "install-hook", "--hooks-dir", hooksDir, "--user", "git")
 	require.Zero(t, code, out)
+	// The stand ran install-hook already: everything is in place and left as it is.
 	assert.Contains(t, out, wrapper+": unchanged")
-	assert.Contains(t, out, hookConfig+": owner set")
-	assert.Contains(t, out, hookToken+": owner set")
-	assert.Contains(t, out, "/var/log/gitlab-repopolicy: owner set")
+	assert.Contains(t, out, hookConfig+": owner unchanged")
+	assert.Contains(t, out, hookToken+": owner unchanged")
+	assert.Contains(t, out, "/var/log/gitlab-repopolicy: owner unchanged")
+	assert.Contains(t, out, "mode unchanged (0750)")
 	assert.Contains(t, out, "Next: gitlab-repopolicy selftest")
 
 	out, code = rp(t, "git", "install-hook", "--hooks-dir", hooksDir, "--user", "git")

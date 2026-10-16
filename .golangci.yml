@@ -394,7 +394,7 @@ linters:
           - gosec
           - errcheck
           - forbidigo
-      - path: ^(cmd/gitlab-repopolicy|internal/cli|tests/integration/internal/testhook)/
+      - path: ^(cmd/gitlab-repopolicy|internal/cli|tests/integration/internal/testhook|tools/release-notes)/
         linters:
           - forbidigo
     paths:

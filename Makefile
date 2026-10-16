@@ -99,42 +99,27 @@ $(TOOLS_BIN)/%: tools/%/go.mod tools/%/go.sum
 	go -C tools/$* build -o $(TOOLS_BIN)/ tool
 	touch $@
 
+# release-notes is a program of this repository, not a third-party tool.
+$(TOOLS_BIN)/release-notes: tools/release-notes/go.mod $(wildcard tools/release-notes/*.go)
+	go -C tools/release-notes build -o $(TOOLS_BIN)/ .
+
 .PHONY: code-fmt
 ## Format Go code. | Code
 code-fmt: $(TOOLS_BIN)/golangci-lint
 	golangci-lint fmt
 
 .PHONY: code-lint
-## Lint code, modules, workflows, YAML, documentation language pairs and links.
+## Lint code, modules, workflows and YAML.
 code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 	golangci-lint config verify
 	golangci-lint run
 	golangci-lint fmt --diff
+	cd tools/release-notes && golangci-lint run --config $(CURDIR)/.golangci.yml ./...
 	go mod tidy -diff
-	for t in $(TOOLS); do go -C tools/$$t mod tidy -diff; done
+	for t in $(TOOLS) release-notes; do go -C tools/$$t mod tidy -diff; done
 	go test -count=1 -run '^TestSchemas$$' ./internal/schema
 	actionlint
 	pipx run yamllint==$(YAMLLINT_VERSION) --strict .
-	mkdir -p bin; status=0; \
-	for f in *.md docs/*.md; do \
-		[ -e "$$f" ] || continue; \
-		case "$$f" in AGENTS.md|CLAUDE.md) continue ;; esac; \
-		case "$$f" in *.en.md) pair="$${f%.en.md}.md" ;; *) pair="$${f%.md}.en.md" ;; esac; \
-		if [ ! -f "$$pair" ]; then \
-			echo "docs: $$f has no language pair $$pair" >&2; status=1; continue; \
-		fi; \
-		head -n 2 "$$f" > bin/.switcher; \
-		if ! grep -qF "]($$(basename "$$f"))" bin/.switcher || ! grep -qF "]($$(basename "$$pair"))" bin/.switcher; then \
-			echo "docs: $$f must start with the language switcher linking $$(basename "$$f") and $$(basename "$$pair")" >&2; status=1; \
-		fi; \
-		awk '/^```/ { code = !code; next } !code' "$$f" | { grep -oE '\]\([^)[:space:]]+\)' || true; } | sed 's/^](//; s/)$$//' | \
-		while read -r link; do \
-			case "$$link" in http://* | https://* | mailto:* | '#'*) continue ;; esac; \
-			if [ ! -e "$$(dirname "$$f")/$${link%%#*}" ]; then echo "docs: $$f links to a missing file: $$link" >&2; exit 1; fi; \
-		done || status=1; \
-	done; \
-	rm -f bin/.switcher; \
-	exit $$status
 
 .PHONY: code-lint-commits
 ## Check commit messages and the PR title against COMMITPOLICY from the base.
@@ -207,10 +192,11 @@ clean:
 ## Run unit tests with the race detector. | Tests
 test-unit:
 	go test -race -shuffle=on ./...
+	go -C tools/release-notes test -race -shuffle=on ./...
 
 .PHONY: test-integration
 ## Run integration tests on a real git receive-pack with GIT_BIN.
-test-integration:
+test-integration: $(TOOLS_BIN)/release-notes
 	if [ -z "$$(go list -tags integration ./tests/integration/... 2>/dev/null)" ]; then \
 		echo "test-integration: no integration test packages under tests/integration" >&2; exit 1; \
 	fi
@@ -220,9 +206,7 @@ test-integration:
 		if [ "$(GITHUB_REF_TYPE)" = tag ] && ! git fetch --quiet --force --tags origin; then \
 			echo "test-integration: cannot fetch the tags for the rollback check" >&2; exit 1; \
 		fi; \
-		current="$(VERSION)"; major=$${current%%.*}; rest=$${current#*.}; minor=$${rest%%.*}; \
-		prev=$$(git tag --list 'v*' | sed -n 's/^v\(\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\)$$/\1/p' \
-			| awk -F. -v M="$$major" -v m="$$minor" '$$1 < M || ($$1 == M && $$2 < m)' | sort -V | tail -n 1); \
+		prev=$$(release-notes previous-minor "$(VERSION)"); \
 	fi; \
 	if [ -z "$$prev" ]; then \
 		echo "test-integration: rollback check skipped: no release of a lower minor version than $(VERSION) among the tags v*"; \
@@ -358,7 +342,7 @@ version:
 
 .PHONY: release
 ## Create the signed tag vRELEASE_VERSION on main with a changelog from Conventional Commits.
-release:
+release: $(TOOLS_BIN)/release-notes
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		echo "$(YELLOW)release: there are uncommitted changes; commit them before creating the release tag$(RESET)" >&2; exit 1; \
 	fi
@@ -382,37 +366,8 @@ release:
 	if git rev-parse --quiet --verify "refs/tags/$$tag" > /dev/null; then \
 		echo "$(YELLOW)release: tag $$tag already exists$(RESET)" >&2; exit 1; \
 	fi; \
-	if [[ "$$version" != *-rc.* ]]; then \
-		prev=$$(git describe --abbrev=0 --match 'v*' --exclude 'v*-rc.*' 2>/dev/null || true); \
-	fi; \
-	range=$${prev:+$$prev..}HEAD; \
-	declare -A section=([breaking]="" [feat]="" [fix]="" [perf]="" [deps]="" [other]=""); \
-	for c in $$(git rev-list --reverse --no-merges "$$range"); do \
-		subject=$$(git log -1 --format=%s "$$c"); \
-		line="- $$subject ($$(git rev-parse --short "$$c"))"$$'\n'; \
-		if [[ "$$subject" =~ ^[a-z]+(\([^\)]*\))?!: ]] || git log -1 --format=%B "$$c" | grep -q '^BREAKING CHANGE:'; then \
-			section[breaking]+=$$line; \
-		fi; \
-		case "$$subject" in \
-			feat:*|feat\(*|feat!:*) section[feat]+=$$line ;; \
-			fix:*|fix\(*|fix!:*) section[fix]+=$$line ;; \
-			perf:*|perf\(*|perf!:*) section[perf]+=$$line ;; \
-			*'(deps)'*) section[deps]+=$$line ;; \
-			*) section[other]+=$$line ;; \
-		esac; \
-	done; \
 	mkdir -p bin; notes="bin/release-notes-$$version.txt"; \
-	{ \
-		echo "gitlab-repopolicy $$version"; \
-		for key in breaking feat fix perf deps other; do \
-			[ -n "$${section[$$key]}" ] || continue; \
-			case "$$key" in \
-				breaking) title="Breaking changes" ;; feat) title="Features" ;; fix) title="Fixes" ;; \
-				perf) title="Performance" ;; deps) title="Dependencies" ;; other) title="Other changes" ;; \
-			esac; \
-			printf '\n%s\n\n%s' "$$title" "$${section[$$key]}"; \
-		done; \
-	} > "$$notes"; \
+	release-notes notes "$$version" > "$$notes"; \
 	git tag -s -a -e -F "$$notes" "$$tag"; \
 	echo "$(GREEN)release: created $$tag. Publish it with: git push origin $$tag$(RESET)"
 

@@ -1,8 +1,6 @@
 module github.com/Kuzmenko-Pavel/gitlab-repopolicy/tools/goreleaser
 
-go 1.27.1
-
-toolchain go1.27.2
+go 1.27.2
 
 tool github.com/goreleaser/goreleaser/v2
 

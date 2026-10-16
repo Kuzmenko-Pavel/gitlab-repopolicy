@@ -1,8 +1,6 @@
 module github.com/Kuzmenko-Pavel/gitlab-repopolicy/tools/gitleaks
 
-go 1.26.0
-
-toolchain go1.27.2
+go 1.27.2
 
 tool github.com/zricethezav/gitleaks/v8
 

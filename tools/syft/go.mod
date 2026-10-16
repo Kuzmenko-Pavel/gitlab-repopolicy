@@ -1,8 +1,6 @@
 module github.com/Kuzmenko-Pavel/gitlab-repopolicy/tools/syft
 
-go 1.26.8
-
-toolchain go1.27.2
+go 1.27.2
 
 tool github.com/anchore/syft/cmd/syft
 

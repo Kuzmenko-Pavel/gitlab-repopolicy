@@ -1,8 +1,6 @@
 module github.com/Kuzmenko-Pavel/gitlab-repopolicy
 
-go 1.26.0
-
-toolchain go1.27.2
+go 1.27.2
 
 require (
 	github.com/ProtonMail/go-crypto v1.5.2

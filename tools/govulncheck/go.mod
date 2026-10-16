@@ -1,8 +1,6 @@
 module github.com/Kuzmenko-Pavel/gitlab-repopolicy/tools/govulncheck
 
-go 1.26.0
-
-toolchain go1.27.2
+go 1.27.2
 
 tool golang.org/x/vuln/cmd/govulncheck
 

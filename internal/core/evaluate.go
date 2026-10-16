@@ -18,12 +18,11 @@ func (r *receive) evaluate(ctx context.Context) {
 		)
 		switch {
 		case !l.present:
-			ev, ok := l.mod.(module.AbsentEvaluator)
-			if !ok {
+			if l != r.root {
 				continue
 			}
 			in := r.inputFor(l.mod.Needs().Identity)
-			res, err = call(func() (*module.Result, error) { return ev.EvaluateAbsent(ctx, in) })
+			res, err = call(func() (*module.Result, error) { return r.deps.Root.EvaluateAbsent(ctx, in) })
 		case l.invalid != nil:
 			in := r.inputFor(l.mod.Needs().Identity)
 			res, err = call(func() (*module.Result, error) { return l.mod.EvaluateInvalid(ctx, in, l.invalid) })

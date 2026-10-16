@@ -271,8 +271,11 @@ func (r *repo) run(modules []module.Module, settings Settings, api *fakeAPI, pat
 	a := &memAudit{}
 	env := hookenv.Env{Principal: module.Principal{GLID: "user-2", Username: "alice"}, Protocol: "http",
 		Repository: "project-1", ProjectPath: path, ProjectID: 1}
-	out := Run(context.Background(), settings, Deps{Modules: modules, Git: git, API: api, Audit: a, Clock: time.Now},
-		Request{Env: env, Updates: updates})
+	deps := Deps{Modules: modules, Git: git, API: api, Audit: a, Clock: time.Now}
+	if root, ok := modules[0].(module.Root); ok {
+		deps.Root, deps.Modules = root, modules[1:]
+	}
+	out := Run(context.Background(), settings, deps, Request{Env: env, Updates: updates})
 	return run{out: out, audit: a, api: api}
 }
 

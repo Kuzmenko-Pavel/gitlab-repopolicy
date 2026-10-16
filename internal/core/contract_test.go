@@ -18,12 +18,15 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
-// hooked is a module whose absent and invalid entry points the test sets.
+// hooked is a root module whose absent and invalid entry points the test sets.
 type hooked struct {
 	testModule
 	absent  func(*module.Input) (*module.Result, error)
 	invalid func(*module.Input, error) (*module.Result, error)
 }
+
+// Covers: a root policy guards no path.
+func (hooked) Covers(module.Policy, string) bool { return false }
 
 func (h hooked) EvaluateAbsent(_ context.Context, in *module.Input) (*module.Result, error) {
 	return h.absent(in)
@@ -36,7 +39,7 @@ func (h hooked) EvaluateInvalid(ctx context.Context, in *module.Input, err error
 	return h.invalid(in, err)
 }
 
-func TestAbsentEvaluator(t *testing.T) {
+func TestRoot_EvaluateAbsent(t *testing.T) {
 	r := newRepo(t)
 	c1 := r.commit(map[string]string{"a": "1"})
 	r.publish(c1)
@@ -55,6 +58,26 @@ func TestAbsentEvaluator(t *testing.T) {
 	assert.False(t, res.out.Allow)
 	assert.Contains(t, res.out.Stderr, "new policy has no effective administrators")
 	assert.Len(t, events(res.audit, audit.EventPolicyChange), 1, "the added file is accepted as a new version")
+
+	got = nil
+	res = r.run([]module.Module{open, m}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
+	assert.Nil(t, got, "only the root decides while the anchor has no file")
+	assert.True(t, res.out.Allow)
+}
+
+func TestRoot_CoverageWarning(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"TESTPOLICY": "touch\n"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"TESTPOLICY": "touch\n", "OPENPOLICY": "touch\n"})
+	r.stage(c2)
+	root := hooked{testModule: closed}
+	res := r.run([]module.Module{root, open}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
+	assert.True(t, res.out.Allow)
+	assert.Contains(t, res.out.Stdout, "no TESTPOLICY rule covers OPENPOLICY")
+
+	res = r.run([]module.Module{closed, open}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
+	assert.NotContains(t, res.out.Stdout, "rule covers", "without a root nothing is reported")
 }
 
 func TestEvaluateInvalid(t *testing.T) {

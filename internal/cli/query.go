@@ -43,7 +43,7 @@ func (a App) anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.C
 	if err != nil {
 		return p, nil, fmt.Errorf("project %s: %w", project, err)
 	}
-	guard := modules.Guard(a.enabledModules(cfg))
+	guard, _ := modules.Split(a.enabledModules(cfg))
 	if guard == nil {
 		return p, nil, errors.New("the PATHPOLICY module is disabled in the server config")
 	}
@@ -304,8 +304,9 @@ func (a App) decide(ctx context.Context, cfg *config.Config, git *gitx.Repo, r t
 	hookEnv := hookenv.Env{Principal: module.Principal{GLID: r.glID, Username: r.user}, Protocol: r.protocol,
 		Repository: "project-" + strconv.FormatInt(r.projectID, 10), ProjectPath: r.project, ProjectID: r.projectID,
 		Git: hookenv.GitEnv{Dir: r.dir, Path: r.path}}
+	root, rest := modules.Split(mods)
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{
-		Modules: mods, Git: git, API: api, Audit: &gitAudit{w: w, git: git, ctx: ctx}, Clock: time.Now,
+		Root: root, Modules: rest, Git: git, API: api, Audit: &gitAudit{w: w, git: git, ctx: ctx}, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: []module.RefUpdate{{Old: oldOID, New: newOID, Ref: r.ref}}})
 	write(stdio.Err, out.Stdout)

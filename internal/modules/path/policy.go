@@ -268,9 +268,15 @@ func (p *policy) isAdmin(name string) bool {
 	return false
 }
 
-// Covers reports whether a rule guards the path; the core warns about
+// Covers reports whether a rule of p guards the path.
+func (*Module) Covers(p module.Policy, path string) bool {
+	pol, ok := p.(*policy)
+	return ok && pol.covers(path)
+}
+
+// covers reports whether a rule guards the path; the core warns about
 // delegated policy files that no rule covers.
-func (p *policy) Covers(path string) bool {
+func (p *policy) covers(path string) bool {
 	for _, r := range p.rules {
 		if r.matches(path) {
 			return true

@@ -180,13 +180,9 @@ func (r *receive) validatorFor(l *loaded) module.Validator {
 // coverageWarning is the warning for a new version of a delegated policy file
 // that no rule of the PATHPOLICY on the anchor covers (architecture §12.2).
 func (r *receive) coverageWarning(l *loaded) string {
-	for _, other := range r.policies {
-		if other == l || other.policy == nil {
-			continue
-		}
-		if c, ok := other.policy.(module.PathCoverer); ok && !c.Covers(l.mod.File()) {
-			return fmt.Sprintf("no %s rule covers %s: anyone who can push may change it", other.mod.File(), l.mod.File())
-		}
+	root := r.root
+	if root == nil || root == l || root.policy == nil || r.deps.Root.Covers(root.policy, l.mod.File()) {
+		return ""
 	}
-	return ""
+	return fmt.Sprintf("no %s rule covers %s: anyone who can push may change it", root.mod.File(), l.mod.File())
 }

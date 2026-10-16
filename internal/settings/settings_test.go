@@ -118,7 +118,8 @@ func healthy() *fakeAPI {
 func run(t *testing.T, api *fakeAPI, exp config.SettingsCheck) Report {
 	t.Helper()
 	mods := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
-	rep, err := Run(context.Background(), api, Options{Expected: exp, Guard: modules.Guard(mods), Modules: mods, Workers: 4})
+	root, _ := modules.Split(mods)
+	rep, err := Run(context.Background(), api, Options{Expected: exp, Guard: root, Modules: mods, Workers: 4})
 	require.NoError(t, err)
 	return rep
 }
@@ -205,7 +206,8 @@ func TestRun_ListFailure(t *testing.T) {
 	api := healthy()
 	api.fail["projects"] = errors.New("HTTP 401")
 	mods := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
-	_, err := Run(context.Background(), api, Options{Guard: modules.Guard(mods), Modules: mods})
+	root, _ := modules.Split(mods)
+	_, err := Run(context.Background(), api, Options{Guard: root, Modules: mods})
 	assert.ErrorContains(t, err, "HTTP 401")
 	_, err = Run(context.Background(), api, Options{Modules: mods})
 	assert.ErrorContains(t, err, "PATHPOLICY module is disabled")

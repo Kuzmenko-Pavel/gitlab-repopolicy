@@ -43,9 +43,12 @@ func (r *receive) loadAnchor(ctx context.Context) error {
 
 // loadPolicies reads the file of every module from the anchor (architecture §12.1).
 func (r *receive) loadPolicies(ctx context.Context) error {
-	for _, m := range r.deps.Modules {
+	for i, m := range r.modules() {
 		l := &loaded{mod: m}
 		r.policies = append(r.policies, l)
+		if i == 0 && r.deps.Root != nil {
+			r.root = l
+		}
 		if r.anchor == "" {
 			continue
 		}
@@ -128,9 +131,18 @@ func parse(m module.Module, data []byte) (p module.Policy, err error) {
 	return p, err
 }
 
+// modules are the enabled modules in evaluation order, Root first.
+func (r *receive) modules() []module.Module {
+	if r.deps.Root == nil {
+		return r.deps.Modules
+	}
+	return append([]module.Module{r.deps.Root}, r.deps.Modules...)
+}
+
 func (r *receive) policyFiles() []string {
-	files := make([]string, 0, len(r.deps.Modules))
-	for _, m := range r.deps.Modules {
+	mods := r.modules()
+	files := make([]string, 0, len(mods))
+	for _, m := range mods {
 		files = append(files, m.File())
 	}
 	return files

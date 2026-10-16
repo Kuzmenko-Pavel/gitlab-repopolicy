@@ -87,9 +87,10 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 			mods = append(mods, m)
 		}
 	}
+	root, rest := modules.Split(mods)
 	auditor := &gitAudit{w: writer, git: git, ctx: ctx}
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{
-		Modules: mods, Git: git, API: api, Audit: auditor, Clock: time.Now,
+		Root: root, Modules: rest, Git: git, API: api, Audit: auditor, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: updates})
 	if err := git.Close(); err != nil {

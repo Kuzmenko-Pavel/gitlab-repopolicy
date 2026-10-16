@@ -31,13 +31,15 @@ func Default(s Settings) []module.Module {
 	}
 }
 
-// Guard returns the module that guards paths, PATHPOLICY, from a module list;
-// nil when it is not in the list. settings-check checks the projects that have its file.
-func Guard(mods []module.Module) module.Module {
+// Split separates the trust root, PATHPOLICY, from the other modules of a
+// list; root is nil when the list does not have it.
+func Split(mods []module.Module) (root module.Root, rest []module.Module) {
 	for _, m := range mods {
-		if m.File() == path.File {
-			return m
+		if r, ok := m.(module.Root); ok && root == nil {
+			root = r
+			continue
 		}
+		rest = append(rest, m)
 	}
-	return nil
+	return root, rest
 }

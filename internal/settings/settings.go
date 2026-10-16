@@ -77,7 +77,7 @@ func (r Report) Drifted() []Project {
 type Options struct {
 	Expected config.SettingsCheck
 	// Guard is the PATHPOLICY module; Modules are all enabled modules, for principals.
-	Guard   module.Module
+	Guard   module.Root
 	Modules []module.Module
 	// Workers check projects in parallel.
 	Workers int
@@ -151,7 +151,7 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 	if guard == nil {
 		drift(CheckPolicy, "%s on %s cannot be parsed", o.Guard.File(), ref)
 	} else {
-		checkCIConfig(p, guard, drift)
+		checkCIConfig(p, o.Guard, guard, drift)
 	}
 	if len(exp.ProtectedBranches) > 0 {
 		have, err := api.ProtectedBranches(ctx, p.ID)
@@ -218,7 +218,7 @@ func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (mod
 const defaultCIConfig = ".gitlab-ci.yml"
 
 // checkCIConfig: the CI file is a file of this repository covered by a path rule.
-func checkCIConfig(p gitlab.Project, guard module.Policy, drift func(string, string, ...any)) {
+func checkCIConfig(p gitlab.Project, root module.Root, guard module.Policy, drift func(string, string, ...any)) {
 	if !p.CIConfigPath.Present {
 		drift(CheckCIConfigPath, "the setting is not visible to the service account")
 		return
@@ -231,8 +231,7 @@ func checkCIConfig(p gitlab.Project, guard module.Policy, drift func(string, str
 		drift(CheckCIConfigPath, "%q is outside of the repository", path)
 		return
 	}
-	cov, ok := guard.(module.PathCoverer)
-	if !ok || !cov.Covers(strings.TrimPrefix(path, "/")) {
+	if guard == nil || !root.Covers(guard, strings.TrimPrefix(path, "/")) {
 		drift(CheckCIConfigPath, "%q is not covered by a path rule", path)
 	}
 }

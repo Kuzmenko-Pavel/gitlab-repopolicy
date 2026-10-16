@@ -50,7 +50,9 @@ type Auditor interface {
 
 // Deps are the collaborators of a receive.
 type Deps struct {
-	// Modules are the enabled modules in evaluation order, PATHPOLICY first.
+	// Root is PATHPOLICY, nil when it is disabled. It is evaluated first.
+	Root module.Root
+	// Modules are the other enabled modules in evaluation order.
 	Modules    []module.Module
 	Git        Git
 	API        API
@@ -103,7 +105,9 @@ type receive struct {
 	defaultRef string
 	anchor     string
 	policies   []*loaded
-	input      *module.Input
+	// root is the entry of Deps.Root in policies, nil without it.
+	root  *loaded
+	input *module.Input
 
 	personal *bool
 	// serviceAccount is the outcome of the check of the service account in the project.

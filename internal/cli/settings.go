@@ -41,10 +41,11 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 			mods = append(mods, m)
 		}
 	}
+	root, _ := modules.Split(mods)
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	start := time.Now()
-	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: modules.Guard(mods), Modules: mods, Workers: *workers})
+	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: root, Modules: mods, Workers: *workers})
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}

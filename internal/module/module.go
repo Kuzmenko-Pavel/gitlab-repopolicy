@@ -231,10 +231,16 @@ var (
 	ErrMissing = errors.New("object missing")
 )
 
-// AbsentEvaluator is implemented by modules that act when the anchor has no
-// policy file, for example the PATHPOLICY bootstrap (architecture §9.4).
-type AbsentEvaluator interface {
+// Root is the module of the trust root, PATHPOLICY (architecture §1, D4). It
+// guards the files of the delegated modules and decides a push also while the
+// anchor has no file.
+type Root interface {
+	Module
+	// EvaluateAbsent decides a push while the anchor has no file, the bootstrap (architecture §9.4).
 	EvaluateAbsent(ctx context.Context, in *Input) (*Result, error)
+	// Covers reports whether a rule of p, a policy parsed by this module,
+	// guards the path (architecture §12.2).
+	Covers(p Policy, path string) bool
 }
 
 // SchemaProvider is implemented by modules that publish a JSON Schema of their
@@ -261,12 +267,6 @@ type PrincipalResolver interface {
 	// Person is zero for a deploy key or an unparsable GL_ID; the status is
 	// unknown when GitLab did not answer.
 	Person(ctx context.Context) (Person, Status)
-}
-
-// PathCoverer is implemented by policies that guard paths: the core warns when
-// a new version of a delegated policy file is not covered (architecture §12.2).
-type PathCoverer interface {
-	Covers(path string) bool
 }
 
 // LintFinding is a broken rule found by a local lint of a commit message.

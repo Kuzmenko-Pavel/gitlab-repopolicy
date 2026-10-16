@@ -117,6 +117,17 @@ func TestRoot_CoverageWarning(t *testing.T) {
 
 	res = r.run([]module.Module{closed, open}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 	assert.NotContains(t, res.out.Stdout, "rule covers", "without a root nothing is reported")
+
+	bare := newRepo(t)
+	b1 := bare.commit(map[string]string{"a": "1"})
+	bare.publish(b1)
+	b2 := bare.commit(map[string]string{"OPENPOLICY": "touch\n"})
+	bare.stage(b2)
+	res = bare.run([]module.Module{hooked{testModule: closed, absent: func(*module.Input) (*module.Result, error) {
+		return &module.Result{}, nil
+	}}, open}, enforce, nil, "", module.RefUpdate{Old: b1, New: b2, Ref: "refs/heads/main"})
+	assert.True(t, res.out.Allow)
+	assert.Contains(t, res.out.Stdout, "the project has no TESTPOLICY on the default branch: anyone who can push may change OPENPOLICY")
 }
 
 func TestEvaluateInvalid(t *testing.T) {

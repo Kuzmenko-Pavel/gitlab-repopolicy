@@ -179,10 +179,16 @@ func (r *receive) validatorFor(l *loaded) module.Validator {
 }
 
 // coverageWarning is the warning for a new version of a delegated policy file
-// that no rule of the PATHPOLICY on the anchor covers.
+// that the PATHPOLICY on the anchor does not protect: the project has none, or
+// no rule covers the file.
 func (r *receive) coverageWarning(l *loaded) string {
 	root := r.root
-	if root == nil || root == l || root.policy == nil || r.deps.Root.Covers(root.policy, l.mod.File()) {
+	switch {
+	case root == nil || root == l:
+		return ""
+	case !root.present:
+		return fmt.Sprintf("the project has no %s on the default branch: anyone who can push may change %s", root.mod.File(), l.mod.File())
+	case root.policy == nil || r.deps.Root.Covers(root.policy, l.mod.File()):
 		return ""
 	}
 	return fmt.Sprintf("no %s rule covers %s: anyone who can push may change it", root.mod.File(), l.mod.File())

@@ -94,6 +94,11 @@ func TestInstallHook(t *testing.T) {
 	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "GUARDPOLICY")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 
+	record := filepath.Join(s.Dir, "state", "hooks")
+	data, err = os.ReadFile(record)
+	require.NoError(t, err)
+	assert.Equal(t, hooks+"\n", string(data), "the package removes the hook of this directory")
+
 	other := filepath.Join(hooks, "pre-receive.d", "10-other")
 	require.NoError(t, os.WriteFile(other, []byte("#!/bin/sh\n"), 0o600))
 	r = s.Run(env, "uninstall-hook", "--hooks-dir", hooks)
@@ -101,6 +106,9 @@ func TestInstallHook(t *testing.T) {
 	assert.Contains(t, r.Stdout, wrapper+": removed")
 	assert.NoFileExists(t, wrapper)
 	assert.FileExists(t, other)
+	data, err = os.ReadFile(record)
+	require.NoError(t, err)
+	assert.Empty(t, string(data))
 	r = s.Run(env, "uninstall-hook", "--hooks-dir", hooks)
 	require.Equal(t, 0, r.Code, r.Stderr)
 	assert.Contains(t, r.Stdout, "not installed")

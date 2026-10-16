@@ -41,3 +41,6 @@ func (testSystem) Chown(path string, uid, gid int) error {
 }
 
 func (testSystem) TrustedUID() int { return os.Getuid() }
+
+// StateDir is REPOPOLICY_TEST_STATE_DIR, a directory of the test.
+func (testSystem) StateDir() string { return os.Getenv("REPOPOLICY_TEST_STATE_DIR") }

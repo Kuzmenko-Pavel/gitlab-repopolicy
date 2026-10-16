@@ -152,7 +152,8 @@ func NewStand(t *testing.T, opts ...Option) *Stand {
 	}
 	s.env = []string{"PATH=" + gitPath(), "HOME=" + dir, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=dev", "GIT_AUTHOR_EMAIL=dev@example.com", "GIT_COMMITTER_NAME=dev",
-		"GIT_COMMITTER_EMAIL=dev@example.com", "GOCOVERDIR=" + s.coverDir, "LC_ALL=C"}
+		"GIT_COMMITTER_EMAIL=dev@example.com", "GOCOVERDIR=" + s.coverDir, "LC_ALL=C",
+		"REPOPOLICY_TEST_STATE_DIR=" + filepath.Join(dir, "state")}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "token"), []byte("glpat-test\n"), 0o600))
 	// The service account is a Maintainer of the project unless a test says otherwise.
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{

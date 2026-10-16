@@ -24,6 +24,8 @@ type System interface {
 	Chown(path string, uid, gid int) error
 	// TrustedUID owns the files that only root may write, such as break-glass grants.
 	TrustedUID() int
+	// StateDir holds what the package needs on removal: HooksRecord.
+	StateDir() string
 }
 
 type osSystem struct{}
@@ -57,6 +59,8 @@ func (osSystem) CurrentUser() string {
 func (osSystem) Chown(path string, uid, gid int) error { return os.Lchown(path, uid, gid) }
 
 func (osSystem) TrustedUID() int { return 0 }
+
+func (osSystem) StateDir() string { return "/var/lib/gitlab-repopolicy" }
 
 func (a App) system() System {
 	if a.System == nil {

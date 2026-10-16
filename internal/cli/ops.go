@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -72,6 +73,9 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 	}
 	out := &output{w: stdio.Out}
 	out.printf("%s: %s\n", path, res)
+	if err := a.recordHooks(*hooksDir, true); err != nil {
+		out.printf("%v: removing the package will not remove the hook\n", err)
+	}
 	lines, ok := a.ownFiles(*configPath, uid, gid)
 	for _, line := range lines {
 		out.printf("%s\n", line)
@@ -82,6 +86,55 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 	}
 	out.printf("Next: gitlab-repopolicy selftest\n")
 	return withOutput(out.err, ExitOK)
+}
+
+// HooksRecord lists, one per line, the custom_hooks_dir of every install-hook;
+// removing the package runs uninstall-hook for each of them.
+const HooksRecord = "hooks"
+
+// recordHooks adds the hooks directory to HooksRecord or removes it.
+func (a App) recordHooks(hooksDir string, add bool) error {
+	dir, err := filepath.Abs(hooksDir)
+	if err != nil {
+		return err
+	}
+	state := filepath.Clean(a.system().StateDir())
+	file := filepath.Join(state, HooksRecord)
+	data, err := os.ReadFile(file) //nolint:gosec // G304: a file of the state directory
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	var dirs []string
+	for _, d := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if d != "" && d != dir {
+			dirs = append(dirs, d)
+		}
+	}
+	if add {
+		dirs = append(dirs, dir)
+	}
+	if err := os.MkdirAll(state, 0o750); err != nil {
+		return err
+	}
+	text := strings.Join(dirs, "\n")
+	if text != "" {
+		text += "\n"
+	}
+	tmp, err := os.CreateTemp(state, "."+HooksRecord+"-*")
+	if err != nil {
+		return err
+	}
+	_, err = tmp.WriteString(text)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), file)
+	}
+	if err != nil {
+		return errors.Join(err, os.Remove(tmp.Name()))
+	}
+	return nil
 }
 
 // ownFiles gives the hook user what it reads and writes: the group of
@@ -174,6 +227,9 @@ func (a App) runUninstallHook(_ context.Context, args []string, _ []string, stdi
 	}
 	path, res, err := install.Uninstall(*hooksDir)
 	if err != nil {
+		return fail(stdio.Err, "uninstall-hook", err, ExitError)
+	}
+	if err := a.recordHooks(*hooksDir, false); err != nil {
 		return fail(stdio.Err, "uninstall-hook", err, ExitError)
 	}
 	out := &output{w: stdio.Out}

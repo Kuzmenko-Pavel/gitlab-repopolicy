@@ -142,6 +142,33 @@ func (a App) checkAudit(c *checks, cfg *config.Config) {
 	c.ok("audit", "%s, owner %s", cfg.Audit.File, ownerOf(info))
 }
 
+// hookCanAppend checks from the modes that the owner of the log directory,
+// the user of the hook, can append to the audit file: settings-check runs as
+// root and cannot just try.
+func hookCanAppend(file string) error {
+	dir, err := os.Stat(filepath.Dir(file))
+	if err != nil {
+		return fmt.Errorf("log directory: %w", err)
+	}
+	info, err := os.Lstat(file)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if dir.Mode().Perm()&0o300 != 0o300 {
+			return fmt.Errorf("%s cannot be created: its directory is not writable by the owner %s", file, ownerOf(dir))
+		}
+		return nil
+	case err != nil:
+		return err
+	case !info.Mode().IsRegular():
+		return fmt.Errorf("%s is not a regular file", file)
+	case ownerOf(info) != ownerOf(dir):
+		return fmt.Errorf("%s belongs to %s, the hook user is %s, the owner of the directory", file, ownerOf(info), ownerOf(dir))
+	case info.Mode().Perm()&0o200 == 0:
+		return fmt.Errorf("%s is not writable by its owner, mode %s", file, info.Mode().Perm())
+	}
+	return nil
+}
+
 func ownerOf(info fs.FileInfo) string {
 	if st, ok := info.Sys().(*syscall.Stat_t); ok {
 		return fmt.Sprintf("%d:%d", st.Uid, st.Gid)

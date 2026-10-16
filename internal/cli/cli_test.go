@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,4 +68,21 @@ func TestRun_OutputWriteFailure(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"help"}, nil, {"frobnicate"}, {"version", "extra"}} {
 		assert.Equal(t, ExitError, Run(context.Background(), args, nil, stdio), "args %q", args)
 	}
+}
+
+func TestHookCanAppend(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "audit.log")
+	require.NoError(t, hookCanAppend(file), "a missing file is created by the owner of the directory")
+	require.NoError(t, os.WriteFile(file, nil, 0o640))
+	require.NoError(t, hookCanAppend(file))
+	require.NoError(t, os.Chmod(file, 0o440))
+	assert.ErrorContains(t, hookCanAppend(file), "is not writable by its owner")
+	require.NoError(t, os.Remove(file))
+	require.NoError(t, os.Mkdir(file, 0o750))
+	assert.ErrorContains(t, hookCanAppend(file), "is not a regular file")
+	locked := filepath.Join(dir, "locked")
+	require.NoError(t, os.Mkdir(locked, 0o550))
+	assert.ErrorContains(t, hookCanAppend(filepath.Join(locked, "audit.log")), "cannot be created")
+	assert.ErrorContains(t, hookCanAppend(filepath.Join(dir, "none", "audit.log")), "log directory")
 }

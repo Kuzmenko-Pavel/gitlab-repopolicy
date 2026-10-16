@@ -217,6 +217,27 @@ func TestSettingsCheck(t *testing.T) {
 	assert.Contains(t, r.Stderr, "list projects")
 }
 
+// TestAuditNotWritable: the pusher learns that the audit log is broken, and
+// settings-check reports a log the hook user cannot append to.
+func TestAuditNotWritable(t *testing.T) {
+	s, _ := pathStand(t, pathPolicy, nil)
+	require.NoError(t, os.WriteFile(s.audit, nil, 0o444))
+	s.Commit("feat: app", map[string]string{"app.go": "x"})
+	r := s.Push(alice, "HEAD:refs/heads/feature")
+	assertAllowed(t, r)
+	assert.NotContains(t, r.Output, "audit log is not writable", "a push that touches no rule writes no event")
+
+	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
+	r = s.Push(alice, "HEAD:refs/heads/feature")
+	assertAllowed(t, r)
+	assert.Contains(t, r.Output, "the audit log is not writable, tell your GitLab administrators")
+
+	s.API.Handle("GET", memberProjects, gitlabtest.OK([]any{}))
+	c := s.Run(nil, "settings-check", "--config", s.config)
+	assert.Equal(t, 1, c.Code)
+	assert.Contains(t, c.Stdout, "audit: "+s.audit+" is not writable by its owner, mode -r--r--r--: the hook loses its events")
+}
+
 // TestCoverage: an administrator token finds top-level groups without the
 // service account and the projects with policy there.
 func TestCoverage(t *testing.T) {

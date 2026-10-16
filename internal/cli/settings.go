@@ -54,6 +54,15 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	}
 	log.Info("settings-check done", "checked", len(rep.Checked), "drifted", len(drifted), "skipped", rep.Skipped,
 		"api_calls", api.Calls(), "duration", time.Since(start).Round(time.Millisecond))
+	if cfg.Audit.File != "" {
+		if err := hookCanAppend(cfg.Audit.File); err != nil {
+			out.printf("audit: %v: the hook loses its events\n", err)
+			if werr := w.Write(audit.Event{Event: audit.EventInternalError, Reason: "audit.file: " + err.Error()}); werr != nil {
+				log.Error("audit", "err", werr)
+			}
+			return withOutput(out.err, ExitError)
+		}
+	}
 	if len(drifted) > 0 {
 		return withOutput(out.err, ExitError)
 	}

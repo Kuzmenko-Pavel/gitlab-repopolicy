@@ -85,6 +85,10 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	}
 	write(stdio.Out, out.Stdout)
 	write(stdio.Err, out.Stderr)
+	if out.AuditErr != nil {
+		// The decision stands; the pusher is the first to see the broken log.
+		write(stdio.Err, "gitlab-repopolicy: the audit log is not writable, tell your GitLab administrators\n")
+	}
 	if out.Allow {
 		return ExitOK
 	}

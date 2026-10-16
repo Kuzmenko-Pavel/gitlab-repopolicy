@@ -15,11 +15,6 @@ import (
 // WrapperName is the file the hook owns in pre-receive.d; nothing else is touched.
 const WrapperName = "50-gitlab-repopolicy"
 
-// Owner sets the owner of the files it creates; the CLI implements it with chown.
-type Owner interface {
-	Chown(path string) error
-}
-
 // Options of install-hook.
 type Options struct {
 	// HooksDir is custom_hooks_dir of Gitaly; it must exist.
@@ -27,7 +22,8 @@ type Options struct {
 	// Binary and Config are absolute paths written into the wrapper.
 	Binary string
 	Config string
-	Owner  Owner
+	// Chown sets the owner of the files install creates; the CLI chowns to the git user.
+	Chown func(path string) error
 }
 
 // Result of install-hook and uninstall-hook.
@@ -72,7 +68,7 @@ func Install(o Options) (string, Result, error) {
 	}
 	dir := filepath.Join(o.HooksDir, "pre-receive.d")
 	for _, d := range []string{o.HooksDir, dir} {
-		if err := ensureDir(d, o.Owner); err != nil {
+		if err := ensureDir(d, o.Chown); err != nil {
 			return "", Unchanged, err
 		}
 	}
@@ -95,21 +91,21 @@ func Install(o Options) (string, Result, error) {
 		}
 		result = Updated
 	}
-	if err := writeExecutable(dir, target, want, o.Owner); err != nil {
+	if err := writeExecutable(dir, target, want, o.Chown); err != nil {
 		return "", Unchanged, err
 	}
 	return target, result, nil
 }
 
 // ensureDir creates a missing directory for the git user that Gitaly runs hooks as.
-func ensureDir(dir string, owner Owner) error {
+func ensureDir(dir string, chown func(string) error) error {
 	info, err := os.Lstat(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		if err := os.Mkdir(dir, 0o750); err != nil {
 			return err
 		}
-		return owner.Chown(dir)
+		return chown(dir)
 	case err != nil:
 		return err
 	case !info.IsDir():
@@ -119,7 +115,7 @@ func ensureDir(dir string, owner Owner) error {
 }
 
 // writeExecutable replaces target atomically: Gitaly may start the hook at any moment.
-func writeExecutable(dir, target string, data []byte, owner Owner) error {
+func writeExecutable(dir, target string, data []byte, chown func(string) error) error {
 	tmp, err := os.CreateTemp(dir, "."+WrapperName+"-*")
 	if err != nil {
 		return err
@@ -135,7 +131,7 @@ func writeExecutable(dir, target string, data []byte, owner Owner) error {
 		err = cerr
 	}
 	if err == nil {
-		err = owner.Chown(tmp.Name())
+		err = chown(tmp.Name())
 	}
 	if err == nil {
 		err = os.Rename(tmp.Name(), target)

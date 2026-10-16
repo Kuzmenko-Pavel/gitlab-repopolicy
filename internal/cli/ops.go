@@ -42,14 +42,6 @@ func parse(fs *flag.FlagSet, args []string, stderr io.Writer) bool {
 	return true
 }
 
-// owner chowns the files of install-hook to the git user.
-type owner struct {
-	sys      System
-	uid, gid int
-}
-
-func (o owner) Chown(path string) error { return o.sys.Chown(path, o.uid, o.gid) }
-
 // runInstallHook implements "install-hook --hooks-dir DIR [--user git]" (architecture §18.3).
 func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("install-hook", flag.ContinueOnError)
@@ -72,7 +64,7 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 		return fail(stdio.Err, "install-hook", fmt.Errorf("--user: %w", err), ExitError)
 	}
 	path, res, err := install.Install(install.Options{HooksDir: *hooksDir, Binary: *binary, Config: *configPath,
-		Owner: owner{sys: sys, uid: uid, gid: gid}})
+		Chown: func(path string) error { return sys.Chown(path, uid, gid) }})
 	if err != nil {
 		return fail(stdio.Err, "install-hook", err, ExitError)
 	}

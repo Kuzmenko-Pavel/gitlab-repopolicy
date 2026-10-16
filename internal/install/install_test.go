@@ -23,7 +23,7 @@ func (o *owner) Chown(path string) error {
 func options(t *testing.T, o *owner) Options {
 	t.Helper()
 	return Options{HooksDir: t.TempDir(), Binary: "/usr/bin/gitlab-repopolicy",
-		Config: "/etc/gitlab-repopolicy/config.yaml", Owner: o}
+		Config: "/etc/gitlab-repopolicy/config.yaml", Chown: o.Chown}
 }
 
 func TestInstall(t *testing.T) {

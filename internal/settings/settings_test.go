@@ -119,7 +119,7 @@ func run(t *testing.T, api *fakeAPI, exp config.SettingsCheck) Report {
 	t.Helper()
 	set := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
 	root, mods := set.Root, set.All()
-	rep, err := Run(context.Background(), api, Options{Expected: exp, Guard: root, Modules: mods, Workers: 4})
+	rep, err := Run(context.Background(), api, Options{Expected: exp, Guard: root, Modules: mods})
 	require.NoError(t, err)
 	return rep
 }

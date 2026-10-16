@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
@@ -79,11 +78,10 @@ type Options struct {
 	// Guard is the PATHPOLICY module; Modules are all enabled modules, for principals.
 	Guard   module.Root
 	Modules []module.Module
-	// Workers check projects in parallel.
-	Workers int
 }
 
-// Run checks every project the service account is a member of. Only a failure
+// Run checks every project the service account is a member of, one after
+// another. Only a failure
 // to list the projects is an error; a project GitLab does not answer for is a
 // drift of the check "unavailable", never a silent pass.
 func Run(ctx context.Context, api API, o Options) (Report, error) {
@@ -94,23 +92,9 @@ func Run(ctx context.Context, api API, o Options) (Report, error) {
 	if err != nil {
 		return Report{}, fmt.Errorf("list projects: %w", err)
 	}
-	results := make([]*Project, len(projects))
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for range max(o.Workers, 1) {
-		wg.Go(func() {
-			for i := range jobs {
-				results[i] = check(ctx, api, o, projects[i])
-			}
-		})
-	}
-	for i := range projects {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
 	var rep Report
-	for _, r := range results {
+	for _, p := range projects {
+		r := check(ctx, api, o, p)
 		if r == nil {
 			rep.Skipped++
 			continue

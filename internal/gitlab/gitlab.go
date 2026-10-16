@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -88,7 +87,8 @@ type Options struct {
 	UserAgent string
 }
 
-// Client calls the GitLab API. It is safe for concurrent use.
+// Client calls the GitLab API. It is not safe for concurrent use: the hook and
+// every command call the API one request after another.
 type Client struct {
 	http      *http.Client
 	base      string
@@ -97,7 +97,6 @@ type Client struct {
 	timeout   time.Duration
 	maxCalls  int
 
-	mu    sync.Mutex
 	token string
 	calls int
 }
@@ -147,15 +146,9 @@ func New(o Options) (*Client, error) {
 }
 
 // Calls returns the number of API calls made so far.
-func (c *Client) Calls() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.calls
-}
+func (c *Client) Calls() int { return c.calls }
 
 func (c *Client) readToken(force bool) (string, bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.token != "" && !force {
 		return c.token, false, nil
 	}
@@ -173,8 +166,6 @@ func (c *Client) readToken(force bool) (string, bool, error) {
 }
 
 func (c *Client) take() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.calls >= c.maxCalls {
 		return false
 	}

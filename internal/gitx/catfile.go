@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // Info is the header of an object as cat-file reports it.
@@ -43,8 +42,8 @@ const (
 )
 
 // catFile is the one long-lived "git cat-file --batch-command" of a receive.
+// It is not safe for concurrent use: a receive is sequential.
 type catFile struct {
-	mu     sync.Mutex
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
@@ -87,8 +86,6 @@ func (r *Repo) startCatFile(ctx context.Context, mode bool) (*catFile, error) {
 }
 
 func (c *catFile) close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	closeErr := c.stdin.Close()
 	if err := c.cmd.Wait(); err != nil {
 		if c.stderr.Len() > 0 {
@@ -161,18 +158,14 @@ func (r *Repo) Info(ctx context.Context, spec string) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	cf.mu.Lock()
 	line, err := cf.request("info", spec)
-	cf.mu.Unlock()
 	if err != nil && cf.mode && strings.Contains(err.Error(), "objectmode") {
 		// git without %(objectmode): restart once without it.
 		if cf, err = r.startCatFile(ctx, false); err != nil {
 			return Info{}, err
 		}
 		r.catfile = cf
-		cf.mu.Lock()
 		line, err = cf.request("info", spec)
-		cf.mu.Unlock()
 	}
 	if err != nil {
 		return Info{}, err
@@ -201,8 +194,6 @@ func (r *Repo) Read(ctx context.Context, oid string, max int64) (Info, []byte, e
 		return info, nil, ErrTooLarge
 	}
 	cf := r.catfile
-	cf.mu.Lock()
-	defer cf.mu.Unlock()
 	line, err := cf.request("contents", oid)
 	if err != nil {
 		return Info{}, nil, err

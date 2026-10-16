@@ -6,7 +6,6 @@ package refs
 import (
 	"context"
 	"strings"
-	"sync"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -18,7 +17,8 @@ type API interface {
 	ProtectedTags(ctx context.Context, projectID int64) ([]string, error)
 }
 
-// Classifier implements module.RefClassifier for one receive.
+// Classifier implements module.RefClassifier for one receive. It is not safe
+// for concurrent use: a receive is sequential.
 type Classifier struct {
 	defaultRef string
 	projectID  int64
@@ -30,7 +30,7 @@ type Classifier struct {
 }
 
 type lazyList struct {
-	once     sync.Once
+	loaded   bool
 	patterns []string
 	status   module.Status
 }
@@ -94,21 +94,23 @@ func (c *Classifier) listFor(ref string) (*lazyList, string) {
 }
 
 func (c *Classifier) load(ctx context.Context, list *lazyList) ([]string, module.Status) {
-	list.once.Do(func() {
-		if c.guard != nil {
-			if status, stop := c.guard(ctx); stop {
-				list.status = status
-				return
-			}
+	if list.loaded {
+		return list.patterns, list.status
+	}
+	list.loaded = true
+	if c.guard != nil {
+		if status, stop := c.guard(ctx); stop {
+			list.status = status
+			return nil, status
 		}
-		var err error
-		if list == &c.tags {
-			list.patterns, err = c.api.ProtectedTags(ctx, c.projectID)
-		} else {
-			list.patterns, err = c.api.ProtectedBranches(ctx, c.projectID)
-		}
-		list.status = StatusOf(err)
-	})
+	}
+	var err error
+	if list == &c.tags {
+		list.patterns, err = c.api.ProtectedTags(ctx, c.projectID)
+	} else {
+		list.patterns, err = c.api.ProtectedBranches(ctx, c.projectID)
+	}
+	list.status = StatusOf(err)
 	return list.patterns, list.status
 }
 

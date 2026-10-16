@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"strings"
-	"sync"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
@@ -16,15 +15,16 @@ type API interface {
 }
 
 // Resolver turns GL_ID and GL_USERNAME into the username that policies match,
-// once per receive (architecture §9.2).
+// once per receive (architecture §9.2). It is not safe for concurrent use: a
+// receive is sequential.
 type Resolver struct {
 	api       API
 	principal module.Principal
 	guard     module.Guard
 
-	once   sync.Once
-	person module.Person
-	status module.Status
+	resolved bool
+	person   module.Person
+	status   module.Status
 }
 
 // NewResolver returns a resolver of the pusher.
@@ -36,7 +36,10 @@ func NewResolver(api API, p module.Principal, guard module.Guard) *Resolver {
 // key-<id> only if the key is one of the user's own keys. A deploy key or an
 // unparsable GL_ID gives a zero person (unknown_principal). A failed lookup is unknown.
 func (r *Resolver) Person(ctx context.Context) (module.Person, module.Status) {
-	r.once.Do(func() { r.person, r.status = r.resolve(ctx) })
+	if !r.resolved {
+		r.resolved = true
+		r.person, r.status = r.resolve(ctx)
+	}
 	return r.person, r.status
 }
 

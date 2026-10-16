@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -27,12 +26,12 @@ type Git interface {
 	Refs(ctx context.Context) ([]string, error)
 }
 
-// Set implements module.ChangeSet for one receive.
+// Set implements module.ChangeSet for one receive. It is not safe for
+// concurrent use: a receive is sequential.
 type Set struct {
 	git        Git
 	defaultRef string
 
-	mu    sync.Mutex
 	memo  map[string]memoEntry
 	peels map[string]string
 	refs  []string
@@ -49,24 +48,17 @@ func New(git Git, defaultRef string) *Set {
 }
 
 func (s *Set) cached(key string, compute func() ([]string, error)) ([]string, error) {
-	s.mu.Lock()
-	e, ok := s.memo[key]
-	s.mu.Unlock()
-	if ok {
+	if e, ok := s.memo[key]; ok {
 		return e.list, e.err
 	}
 	list, err := compute()
-	s.mu.Lock()
 	s.memo[key] = memoEntry{list: list, err: err}
-	s.mu.Unlock()
 	return list, err
 }
 
 // peel returns the commit a revision of the push points to.
 func (s *Set) peel(ctx context.Context, rev string) (string, error) {
-	s.mu.Lock()
 	c, ok := s.peels[rev]
-	s.mu.Unlock()
 	if ok {
 		return c, nil
 	}
@@ -77,9 +69,7 @@ func (s *Set) peel(ctx context.Context, rev string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.mu.Lock()
 	s.peels[rev] = c
-	s.mu.Unlock()
 	return c, nil
 }
 
@@ -245,17 +235,13 @@ func (s *Set) EnteringCommits(ctx context.Context, u module.RefUpdate, scope mod
 
 // protectedSet lists the default branch and the existing refs of the protected set.
 func (s *Set) protectedSet(ctx context.Context, scope module.Scope) ([]string, error) {
-	s.mu.Lock()
 	refs := s.refs
-	s.mu.Unlock()
 	if refs == nil {
 		var err error
 		if refs, err = s.git.Refs(ctx); err != nil {
 			return nil, err
 		}
-		s.mu.Lock()
 		s.refs = refs
-		s.mu.Unlock()
 	}
 	exclude := s.withDefault()
 	for _, r := range refs {

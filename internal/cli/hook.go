@@ -6,7 +6,6 @@ import (
 	"flag"
 	"io"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -130,19 +129,20 @@ func reject(stdio Stdio, why string) int {
 
 // gitAudit adds the version of the hook's git to audit events; it is read on the first event.
 type gitAudit struct {
-	w    *audit.Writer
-	git  *gitx.Repo
-	ctx  context.Context
-	once sync.Once
+	w      *audit.Writer
+	git    *gitx.Repo
+	ctx    context.Context
+	loaded bool
 }
 
 func (g *gitAudit) Write(e audit.Event) error {
-	g.once.Do(func() {
+	if !g.loaded {
+		g.loaded = true
 		v, err := g.git.Version(g.ctx)
 		if err != nil {
 			v = "unknown: " + err.Error()
 		}
 		g.w.SetGit(v)
-	})
+	}
 	return g.w.Write(e)
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -70,9 +69,10 @@ type Violation struct {
 	Reason  string   `json:"reason,omitempty"`
 }
 
-// Writer serialises events to a file opened with O_APPEND and, optionally, to stdout.
+// Writer serialises events to a file opened with O_APPEND and, optionally, to
+// stdout. It is not safe for concurrent use; the hook and every command write
+// their events one after another.
 type Writer struct {
-	mu       sync.Mutex
 	path     string
 	stdout   io.Writer
 	enforced bool
@@ -102,16 +102,10 @@ func NewWriter(o Options) *Writer {
 }
 
 // SetGit records the git version once it is known.
-func (w *Writer) SetGit(v string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.git = v
-}
+func (w *Writer) SetGit(v string) { w.git = v }
 
 // Write appends one event as a single line.
 func (w *Writer) Write(e Event) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	e.Time = w.clock().UTC().Format("2006-01-02T15:04:05.000Z")
 	e.Enforced = w.enforced
 	e.Version, e.Git, e.Node = w.version, w.git, w.node

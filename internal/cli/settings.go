@@ -14,8 +14,7 @@ import (
 func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("settings-check", flag.ContinueOnError)
 	configPath := fs.String("config", DefaultConfig, "server config")
-	timeout := fs.Duration("timeout", 10*time.Minute, "deadline of the whole check")
-	workers := fs.Int("workers", 4, "projects checked in parallel")
+	timeout := fs.Duration("timeout", time.Hour, "deadline of the whole check")
 	if !parse(fs, args, stdio.Err) {
 		return ExitUsage
 	}
@@ -36,7 +35,7 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	start := time.Now()
-	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: mods.Root, Modules: mods.All(), Workers: *workers})
+	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: mods.Root, Modules: mods.All()})
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}

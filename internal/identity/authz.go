@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"strings"
-	"sync"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -18,7 +17,8 @@ type AuthzAPI interface {
 }
 
 // Authorizer implements module.Authorizer and module.Validator for one receive.
-// Answers are memoised: within a receive the same question is asked once.
+// Answers are memoised: within a receive the same question is asked once. It
+// is not safe for concurrent use: a receive is sequential.
 type Authorizer struct {
 	api       AuthzAPI
 	projectID int64
@@ -26,7 +26,6 @@ type Authorizer struct {
 	guard     module.Guard
 	known     map[string]bool
 
-	mu     sync.Mutex
 	users  map[string]module.User
 	levels map[int64]int
 }
@@ -74,7 +73,6 @@ func (a *Authorizer) PusherAccess(ctx context.Context) (int, module.Status) {
 func (a *Authorizer) Users(ctx context.Context, usernames []string) (map[string]module.User, module.Status) {
 	out := map[string]module.User{}
 	var ask []string
-	a.mu.Lock()
 	for _, name := range usernames {
 		key := strings.ToLower(name)
 		if u, ok := a.users[key]; ok {
@@ -85,7 +83,6 @@ func (a *Authorizer) Users(ctx context.Context, usernames []string) (map[string]
 		}
 		ask = append(ask, name)
 	}
-	a.mu.Unlock()
 	if len(ask) == 0 {
 		return out, module.Confirmed()
 	}
@@ -96,8 +93,6 @@ func (a *Authorizer) Users(ctx context.Context, usernames []string) (map[string]
 	if err != nil {
 		return nil, refs.StatusOf(err)
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	for _, name := range ask {
 		a.users[strings.ToLower(name)] = module.User{}
 	}
@@ -117,7 +112,6 @@ func (a *Authorizer) Users(ctx context.Context, usernames []string) (map[string]
 func (a *Authorizer) AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, module.Status) {
 	out := map[int64]int{}
 	var ask []int64
-	a.mu.Lock()
 	for _, id := range userIDs {
 		if level, ok := a.levels[id]; ok {
 			out[id] = level
@@ -125,7 +119,6 @@ func (a *Authorizer) AccessLevels(ctx context.Context, userIDs []int64) (map[int
 			ask = append(ask, id)
 		}
 	}
-	a.mu.Unlock()
 	if len(ask) == 0 {
 		return out, module.Confirmed()
 	}
@@ -144,8 +137,6 @@ func (a *Authorizer) AccessLevels(ctx context.Context, userIDs []int64) (map[int
 	if err != nil {
 		return nil, refs.StatusOf(err)
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	for _, id := range ask {
 		a.levels[id] = levels[id]
 		out[id] = levels[id]

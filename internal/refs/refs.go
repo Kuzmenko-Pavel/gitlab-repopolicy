@@ -52,7 +52,7 @@ func (c *Classifier) Class(ctx context.Context, ref string) (module.RefClass, mo
 	if list == nil {
 		return module.ClassOther, module.Confirmed()
 	}
-	patterns, status := c.load(ctx, list, ref)
+	patterns, status := c.load(ctx, list)
 	if !status.IsConfirmed() {
 		return module.ClassOther, status
 	}
@@ -64,11 +64,11 @@ func (c *Classifier) Class(ctx context.Context, ref string) (module.RefClass, mo
 
 // ProtectedScope returns the protected class with the protected branches and tags as its set.
 func (c *Classifier) ProtectedScope(ctx context.Context) (module.Scope, module.Status) {
-	branches, status := c.load(ctx, &c.branches, "refs/heads/")
+	branches, status := c.load(ctx, &c.branches)
 	if !status.IsConfirmed() {
 		return module.Scope{}, status
 	}
-	tags, status := c.load(ctx, &c.tags, "refs/tags/")
+	tags, status := c.load(ctx, &c.tags)
 	if !status.IsConfirmed() {
 		return module.Scope{}, status
 	}
@@ -93,7 +93,7 @@ func (c *Classifier) listFor(ref string) (*lazyList, string) {
 	return nil, ""
 }
 
-func (c *Classifier) load(ctx context.Context, list *lazyList, ref string) ([]string, module.Status) {
+func (c *Classifier) load(ctx context.Context, list *lazyList) ([]string, module.Status) {
 	list.once.Do(func() {
 		if c.guard != nil {
 			if status, stop := c.guard(ctx); stop {

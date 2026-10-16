@@ -28,10 +28,7 @@ type Info struct {
 // Resolve returns the metadata from -ldflags. A build without them, such as
 // go install, falls back to the module version and VCS stamps recorded by Go.
 func Resolve() Info {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		bi = nil
-	}
+	bi, _ := debug.ReadBuildInfo()
 	return resolve(Info{Version: Version, Commit: Commit, Date: Date}, bi)
 }
 

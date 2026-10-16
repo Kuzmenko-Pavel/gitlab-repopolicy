@@ -5,9 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime"
 
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
 
@@ -23,14 +21,6 @@ type Stdio struct {
 	In  io.Reader
 	Out io.Writer
 	Err io.Writer
-}
-
-// Build describes the binary being run.
-type Build struct {
-	Version string
-	Commit  string
-	Date    string
-	Go      string
 }
 
 type command struct {
@@ -101,17 +91,6 @@ func usage(w io.Writer, commands []command) error {
 		out.printf("  %-20s %s\n", c.name, c.summary)
 	}
 	return out.err
-}
-
-// CurrentBuild returns the metadata of the running binary.
-func CurrentBuild() Build {
-	info := buildinfo.Resolve()
-	return Build{
-		Version: info.Version,
-		Commit:  info.Commit,
-		Date:    info.Date,
-		Go:      runtime.Version(),
-	}
 }
 
 // output writes formatted text and keeps the first write error.

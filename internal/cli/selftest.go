@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
@@ -60,7 +61,7 @@ func (a App) runSelftest(ctx context.Context, args []string, _ []string, stdio S
 	ctx, cancel := context.WithTimeout(ctx, selftestTimeout)
 	defer cancel()
 	c := &checks{out: &output{w: stdio.Out}}
-	c.info("version", "gitlab-repopolicy %s", CurrentBuild().Version)
+	c.info("version", "gitlab-repopolicy %s", buildinfo.Resolve().Version)
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		c.fail("config", "%s: %v", *configPath, err)
@@ -240,5 +241,5 @@ func apiClientWithToken(cfg *config.Config, tokenFile string, maxCalls int) (*gi
 		return nil, err
 	}
 	return gitlab.New(gitlab.Options{Socket: ep.Socket, BaseURL: ep.BaseURL, CAFile: cfg.CAFile, TokenFile: tokenFile,
-		Timeout: cfg.Timeouts.HTTP.Std(), MaxCalls: maxCalls, UserAgent: "gitlab-repopolicy/" + CurrentBuild().Version})
+		Timeout: cfg.Timeouts.HTTP.Std(), MaxCalls: maxCalls, UserAgent: "gitlab-repopolicy/" + buildinfo.Resolve().Version})
 }

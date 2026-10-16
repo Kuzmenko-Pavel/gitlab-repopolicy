@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 )
 
 func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -49,7 +51,7 @@ func TestRun(t *testing.T) {
 
 func TestPrintVersion(t *testing.T) {
 	var out bytes.Buffer
-	err := printVersion(&out, Build{Version: "1.0.0-rc.1", Commit: "0123456789ab", Date: "2026-10-13T12:00:00+03:00", Go: "go1.27.2"})
+	err := printVersion(&out, buildinfo.Info{Version: "1.0.0-rc.1", Commit: "0123456789ab", Date: "2026-10-13T12:00:00+03:00"}, "go1.27.2")
 	require.NoError(t, err)
 	want := "gitlab-repopolicy 1.0.0-rc.1\ncommit: 0123456789ab\ndate: 2026-10-13T12:00:00+03:00\ngo: go1.27.2\n"
 	require.Equal(t, want, out.String())

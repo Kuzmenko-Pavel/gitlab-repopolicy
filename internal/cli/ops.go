@@ -13,6 +13,7 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/install"
 )
@@ -161,7 +162,7 @@ func (a App) auditWriter(cfg *config.Config, stdout io.Writer) (*audit.Writer, e
 	if err := a.prepareAuditFile(cfg.Audit.File); err != nil {
 		return nil, err
 	}
-	o := audit.Options{File: cfg.Audit.File, Enforced: cfg.Mode == config.ModeEnforce, Version: CurrentBuild().Version, Clock: time.Now}
+	o := audit.Options{File: cfg.Audit.File, Enforced: cfg.Mode == config.ModeEnforce, Version: buildinfo.Resolve().Version, Clock: time.Now}
 	if cfg.Audit.Stdout {
 		o.Stdout = stdout
 	}

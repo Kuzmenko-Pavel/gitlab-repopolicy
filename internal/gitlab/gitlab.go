@@ -105,11 +105,9 @@ type Client struct {
 // New creates a client; it does not touch the network or the token.
 func New(o Options) (*Client, error) {
 	transport := &http.Transport{
-		ForceAttemptHTTP2:   false,
 		MaxIdleConns:        4,
 		IdleConnTimeout:     30 * time.Second,
 		TLSHandshakeTimeout: o.Timeout,
-		DisableCompression:  false,
 	}
 	if o.Socket != "" {
 		dialer := &net.Dialer{}

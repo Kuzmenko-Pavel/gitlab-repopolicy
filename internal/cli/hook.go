@@ -11,6 +11,7 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/core"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
@@ -65,12 +66,11 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	if err != nil {
 		return reject(stdio, "the hook configuration on the server is invalid")
 	}
-	node, err := os.Hostname()
-	if err != nil {
-		node = ""
+	o := audit.Options{File: cfg.Audit.File, Enforced: cfg.Mode == config.ModeEnforce, Version: buildinfo.Resolve().Version, Clock: time.Now}
+	if node, err := os.Hostname(); err == nil {
+		o.Node = node
 	}
-	writer := audit.NewWriter(audit.Options{File: cfg.Audit.File, Enforced: cfg.Mode == config.ModeEnforce,
-		Version: CurrentBuild().Version, Node: node, Clock: time.Now})
+	writer := audit.NewWriter(o)
 	mods := a.enabledModules(cfg)
 	auditor := &gitAudit{w: writer, git: git, ctx: ctx}
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{

@@ -19,7 +19,8 @@ type API interface {
 	FileExists(ctx context.Context, projectID int64, path, ref string) (bool, error)
 }
 
-// maintainer is the access level the service account needs in every top-level group.
+// maintainer is the access level the service account needs in every top-level
+// group; same as module.AccessMaintainer, which coverage does not import.
 const maintainer = 40
 
 // Gap is a top-level group where the service account is not a Maintainer.

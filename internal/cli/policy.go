@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -223,8 +224,8 @@ func moduleNames(mods []module.Module) string {
 	return strings.Join(names, ", ")
 }
 
-// runLintCommit implements "lint-commit [-m MSG | --range A..B] [-f COMMITPOLICY]
-// [--ruleset NAME]...": the server implementation applied locally. There is no
+// runLintCommit implements "lint-commit [-m MSG | --range A..B [--skip-author EMAIL]...]
+// [-f COMMITPOLICY] [--ruleset NAME]...": the server implementation applied locally. There is no
 // ref, so every ruleset applies unless --ruleset names the ones of a branch.
 func (a App) runLintCommit(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("lint-commit", flag.ContinueOnError)
@@ -233,14 +234,19 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 	revRange := fs.String("range", "", "commits to check: A..B or a single revision for its whole history")
 	file := fs.String("f", "COMMITPOLICY", "COMMITPOLICY file")
 	configPath := fs.String("config", "", "server config with commitpolicy_presets; other keys are not read")
-	var rulesets names
+	var rulesets, skipAuthors names
 	fs.Var(&rulesets, "ruleset", "check only this ruleset; repeat for several")
+	fs.Var(&skipAuthors, "skip-author", "with --range: skip commits of this author email; repeat for several")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
 	errOut := &output{w: stdio.Err}
 	if fs.NArg() > 0 || (*message == "") == (*revRange == "") {
 		errOut.printf("gitlab-repopolicy lint-commit: give exactly one of -m and --range\n")
+		return withOutput(errOut.err, ExitUsage)
+	}
+	if len(skipAuthors) > 0 && *revRange == "" {
+		errOut.printf("gitlab-repopolicy lint-commit: --skip-author needs --range\n")
 		return withOutput(errOut.err, ExitUsage)
 	}
 	s, err := moduleSettings(*configPath)
@@ -274,7 +280,9 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 	}
 	if *message != "" {
 		print("message", linter.LintMessage(ctx, *message))
-	} else if err := lintRange(ctx, env, *revRange, linter, print); err != nil {
+	} else if err := lintRange(ctx, env, *revRange, skipAuthors, linter, print, func(label, email string) {
+		out.printf("%s: skipped, author %s\n", label, email)
+	}); err != nil {
 		errOut.printf("gitlab-repopolicy lint-commit: %v\n", err)
 		return withOutput(errOut.err, ExitError)
 	}
@@ -294,7 +302,8 @@ func (n *names) Set(s string) error {
 	return nil
 }
 
-func lintRange(ctx context.Context, env []string, revRange string, linter *commit.Policy, print func(string, []commit.LintFinding)) (err error) {
+func lintRange(ctx context.Context, env []string, revRange string, skipAuthors []string, linter *commit.Policy,
+	print func(string, []commit.LintFinding), skipped func(string, string)) (err error) {
 	path := envValue(env, "PATH")
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -340,9 +349,28 @@ func lintRange(ctx context.Context, env []string, revRange string, linter *commi
 		if err != nil {
 			return err
 		}
-		print(c[:min(len(c), 9)], linter.LintCommit(ctx, data))
+		label := c[:min(len(c), 9)]
+		if email := authorEmail(data); slices.ContainsFunc(skipAuthors, func(s string) bool { return strings.EqualFold(s, email) }) {
+			skipped(label, email)
+			continue
+		}
+		print(label, linter.LintCommit(ctx, data))
 	}
 	return nil
+}
+
+// authorEmail is the email of the author line of a raw commit object.
+func authorEmail(object []byte) string {
+	header, _, _ := bytes.Cut(object, []byte("\n\n"))
+	for _, line := range bytes.Split(header, []byte("\n")) {
+		if rest, ok := bytes.CutPrefix(line, []byte("author ")); ok {
+			if i, j := bytes.IndexByte(rest, '<'), bytes.IndexByte(rest, '>'); i >= 0 && j > i {
+				return string(rest[i+1 : j])
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 func envValue(env []string, key string) string {

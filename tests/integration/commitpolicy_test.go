@@ -192,6 +192,16 @@ func TestLintCommit(t *testing.T) {
 	hook := s.Push(alice, "HEAD:refs/heads/main")
 	assertDenied(t, hook, `header: expected "type(scope): subject"`)
 
+	bot := "49699333+dependabot[bot]@users.noreply.github.com"
+	s.git(s.Work, "commit", "-q", "--allow-empty", "--author", "dependabot[bot] <"+bot+">", "-m", "build(deps): Bump x from 1 to 2")
+	out, code = s.binary(s.Work, "lint-commit", "--range", "HEAD~1..HEAD", "-f", policy)
+	assert.Equal(t, 1, code, "the bot commit breaks the policy: %s", out)
+	out, code = s.binary(s.Work, "lint-commit", "--range", "HEAD~1..HEAD", "-f", policy, "--skip-author", strings.ToUpper(bot))
+	assert.Equal(t, 0, code, out)
+	assert.Contains(t, out, "skipped, author "+bot)
+	out, code = s.binary(s.Work, "lint-commit", "--range", base+"..HEAD", "-f", policy, "--skip-author", bot)
+	assert.Equal(t, 1, code, "commits of other authors are still linted: %s", out)
+
 	out, code = s.binary(s.Work, "lint-commit", "-m", "fix: ok", "-f", policy)
 	assert.Equal(t, 0, code, out)
 	out, code = s.binary(s.Work, "lint-commit", "-m", "fix: ok.", "-f", policy)

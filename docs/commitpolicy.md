@@ -213,6 +213,7 @@ COMMITPOLICY - про гігієну, а не про доступ, тому за
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | одне повідомлення за `COMMITPOLICY` поточного каталогу |
 | `gitlab-repopolicy lint-commit --range origin/main..HEAD` | коміти діапазону; одна ревізія - уся її історія |
 | `-f FILE` | інший файл COMMITPOLICY |
+| `--skip-author EMAIL` | разом з `--range`: пропустити коміти цього автора; можна повторити. Пропущений коміт друкується рядком `skipped, author EMAIL` |
 | `--ruleset NAME` | лише цей ruleset; можна повторити для кількох. Невідоме ім'я - помилка зі списком rulesets файлу |
 | `--config FILE` | файл з `commitpolicy_presets`, якщо COMMITPOLICY використовує `extends`. Інші ключі конфігурації не потрібні ([configuration.md](configuration.md#commitpolicy_presets)) |
 

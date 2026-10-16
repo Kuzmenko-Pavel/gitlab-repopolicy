@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Endpoints of the operational commands: selftest, token rotate,
@@ -177,12 +178,12 @@ type Group struct {
 // TopLevelGroups returns every top-level group the token can see; for an
 // administrator these are all groups of the instance.
 func (c *Client) TopLevelGroups(ctx context.Context) ([]Group, error) {
-	return pages[Group](ctx, c, "/api/v4/groups?top_level_only=true&all_available=true&order_by=id&sort=asc")
+	return pages[Group](ctx, c, "/api/v4/groups?top_level_only=true&all_available=true&order_by=id&sort=asc", maxListPages)
 }
 
 // GroupProjects returns the projects of a group and its subgroups, archived ones excluded.
 func (c *Client) GroupProjects(ctx context.Context, groupID int64) ([]Project, error) {
-	return pages[Project](ctx, c, fmt.Sprintf("/api/v4/groups/%d/projects?include_subgroups=true&archived=false&order_by=id&sort=asc", groupID))
+	return pages[Project](ctx, c, fmt.Sprintf("/api/v4/groups/%d/projects?include_subgroups=true&archived=false&order_by=id&sort=asc", groupID), maxListPages)
 }
 
 // GroupMemberAccess returns the access level of a direct member of the group; 0 when the user is not one.
@@ -204,12 +205,16 @@ func (c *Client) GroupMemberAccess(ctx context.Context, groupID, userID int64) (
 	return m.AccessLevel, nil
 }
 
-// pages reads an offset-paginated list.
-func pages[T any](ctx context.Context, c *Client, path string) ([]T, error) {
+// pages reads an offset-paginated list of at most limit pages.
+func pages[T any](ctx context.Context, c *Client, path string, limit int) ([]T, error) {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
 	var out []T
-	for page := 1; page <= maxListPages; page++ {
+	for page := 1; page <= limit; page++ {
 		var items []T
-		if err := c.do(ctx, http.MethodGet, path+"&per_page="+strconv.Itoa(perPage)+"&page="+strconv.Itoa(page), nil, &items); err != nil {
+		if err := c.do(ctx, http.MethodGet, path+sep+"per_page="+strconv.Itoa(perPage)+"&page="+strconv.Itoa(page), nil, &items); err != nil {
 			return nil, err
 		}
 		out = append(out, items...)

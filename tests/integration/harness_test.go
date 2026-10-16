@@ -383,6 +383,12 @@ var (
 	devLead = User{Name: "dev-lead", GLID: "user-6"}
 )
 
+// Member scripts the access level of the user with the ID in the project.
+func (s *Stand) Member(id, level int) {
+	s.API.Handle("GET", fmt.Sprintf("/api/v4/projects/1/members/all?per_page=100&user_ids%%5B%%5D=%d", id),
+		gitlabtest.OK([]any{map[string]any{"id": id, "access_level": level, "state": "active"}}))
+}
+
 // Team scripts the fake API with the users of the tests and their roles in
 // the project: alice Maintainer, bob Developer, owner Owner, dev-lead Developer.
 func (s *Stand) Team() {
@@ -395,7 +401,7 @@ func (s *Stand) Team() {
 	nodes := make([]any, 0, len(team))
 	for _, m := range team {
 		nodes = append(nodes, map[string]any{"id": fmt.Sprintf("gid://gitlab/User/%d", m.id), "username": m.name, "state": "active"})
-		s.API.Handle("GET", fmt.Sprintf("/api/v4/projects/1/members/all/%d", m.id), gitlabtest.OK(map[string]any{"access_level": m.level, "state": "active"}))
+		s.Member(m.id, m.level)
 	}
 	s.API.Handle("POST", "/api/graphql", gitlabtest.OK(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": nodes}}}))
 	s.Protected([]string{"main", "release/*"}, nil)

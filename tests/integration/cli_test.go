@@ -303,7 +303,7 @@ func TestCLI_Admins(t *testing.T) {
 	assert.Regexp(t, `(?m)^  alice +effective$`, r.Stdout)
 	assert.Contains(t, r.Stdout, "acme/platform/app: configured 1, effective 1, missing 0\nrecovery not active\n")
 
-	s.API.Handle("GET", "/api/v4/projects/1/members/all/2", gitlabtest.OK(map[string]any{"access_level": 30, "state": "active"}))
+	s.Member(2, 30)
 	r = s.Run(nil, "admins", "--config", s.config, "--project", "acme/platform/app")
 	require.Equal(t, 0, r.Code, r.Stderr)
 	assert.Contains(t, r.Stdout, "missing: access level 30, Maintainer (40) is required")

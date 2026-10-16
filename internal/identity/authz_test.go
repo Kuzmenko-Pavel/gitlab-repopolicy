@@ -25,9 +25,9 @@ func TestAuthorizer(t *testing.T) {
 		map[string]any{"id": "gid://gitlab/User/2", "username": "Alice", "state": "active"},
 		map[string]any{"id": "gid://gitlab/User/8", "username": "dave", "state": "deactivated"},
 	}}}}))
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/2", gitlabtest.OK(map[string]any{"access_level": 50, "state": "active"}))
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2&user_ids%5B%5D=8",
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2",
 		gitlabtest.OK([]any{map[string]any{"id": 2, "access_level": 50, "state": "active"}}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=8", gitlabtest.OK([]any{}))
 	a := identity.NewAuthorizer(client(t, srv), 1, pusher{module.Person{Username: "alice", ID: 2}}, nil)
 	ctx := context.Background()
 
@@ -43,7 +43,7 @@ func TestAuthorizer(t *testing.T) {
 	levels, st := a.AccessLevels(ctx, []int64{2, 8})
 	require.True(t, st.IsConfirmed())
 	assert.Equal(t, map[int64]int{2: 50, 8: 0}, levels, "one level is cached, the other is asked")
-	assert.Equal(t, 1, srv.Calls(http.MethodGet, "/api/v4/projects/1/members/all/2"))
+	assert.Equal(t, 1, srv.Calls(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2"))
 
 	k := a.WithKnown([]string{"Alice"})
 	assert.True(t, k.Known("alice"))
@@ -58,7 +58,7 @@ func TestAuthorizer(t *testing.T) {
 func TestAuthorizer_FailuresAndGuard(t *testing.T) {
 	srv := gitlabtest.NewUnix(t)
 	srv.Handle(http.MethodPost, "/api/graphql", gitlabtest.Status(http.StatusBadGateway))
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/2", gitlabtest.Status(http.StatusTooManyRequests))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2", gitlabtest.Status(http.StatusTooManyRequests))
 	a := identity.NewAuthorizer(client(t, srv), 1, pusher{module.Person{Username: "alice", ID: 2}}, nil)
 	_, st := a.Users(context.Background(), []string{"alice"})
 	assert.False(t, st.IsConfirmed())

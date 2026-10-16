@@ -12,7 +12,6 @@ import (
 // AuthzAPI is the part of the GitLab client the authorizer uses.
 type AuthzAPI interface {
 	UsersByUsernames(ctx context.Context, usernames []string) ([]gitlab.GraphQLUser, error)
-	MemberAccess(ctx context.Context, projectID, userID int64) (int, error)
 	MembersAccess(ctx context.Context, projectID int64, userIDs []int64) (map[int64]int, error)
 }
 
@@ -125,15 +124,7 @@ func (a *Authorizer) AccessLevels(ctx context.Context, userIDs []int64) (map[int
 	if st, stop := a.stop(ctx); stop {
 		return nil, st
 	}
-	var levels map[int64]int
-	var err error
-	if len(ask) == 1 {
-		var level int
-		level, err = a.api.MemberAccess(ctx, a.projectID, ask[0])
-		levels = map[int64]int{ask[0]: level}
-	} else {
-		levels, err = a.api.MembersAccess(ctx, a.projectID, ask)
-	}
+	levels, err := a.api.MembersAccess(ctx, a.projectID, ask)
 	if err != nil {
 		return nil, refs.StatusOf(err)
 	}

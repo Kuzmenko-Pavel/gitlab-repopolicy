@@ -227,19 +227,15 @@ func TestClient_UsersByUsernames(t *testing.T) {
 	assert.ErrorContains(t, err, "unexpected global ID")
 }
 
-func TestClient_MemberAccess(t *testing.T) {
+func TestClient_MembersAccess(t *testing.T) {
 	srv := gitlabtest.NewUnix(t)
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/2", gitlabtest.OK(map[string]any{"access_level": 50, "state": "active"}))
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/3", gitlabtest.Status(http.StatusNotFound))
-	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all/4", gitlabtest.OK(map[string]any{"access_level": 40, "state": "blocked"}))
 	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2&user_ids%5B%5D=4",
 		gitlabtest.OK([]any{map[string]any{"id": 2, "access_level": 40, "state": "active"}, map[string]any{"id": 4, "access_level": 50, "state": "deactivated"}}))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=3", gitlabtest.OK([]any{}))
 	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
-	for uid, want := range map[int64]int{2: 50, 3: 0, 4: 0} {
-		got, err := c.MemberAccess(context.Background(), 1, uid)
-		require.NoError(t, err)
-		assert.Equal(t, want, got, "user %d", uid)
-	}
+	none, err := c.MembersAccess(context.Background(), 1, []int64{3})
+	require.NoError(t, err)
+	assert.Empty(t, none, "a user who is not a member is absent")
 	got, err := c.MembersAccess(context.Background(), 1, []int64{2, 4})
 	require.NoError(t, err)
 	assert.Equal(t, map[int64]int{2: 40}, got, "inactive members do not count")

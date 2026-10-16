@@ -31,20 +31,15 @@ func (c *Client) ProtectedTags(ctx context.Context, projectID int64) ([]string, 
 }
 
 func (c *Client) names(ctx context.Context, path string) ([]string, error) {
-	var names []string
-	for page := 1; page <= maxPages; page++ {
-		var items []named
-		if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s?per_page=%d&page=%d", path, perPage, page), nil, &items); err != nil {
-			return nil, err
-		}
-		for _, it := range items {
-			names = append(names, it.Name)
-		}
-		if len(items) < perPage {
-			return names, nil
-		}
+	items, err := pages[named](ctx, c, path, maxPages)
+	if err != nil {
+		return nil, err
 	}
-	return nil, &Error{Kind: Unexpected, Path: path, Err: errors.New("too many pages")}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		names = append(names, it.Name)
+	}
+	return names, nil
 }
 
 // User is a GitLab user as the users API returns it.
@@ -76,27 +71,11 @@ func (c *Client) UserHasKey(ctx context.Context, userID, keyID int64) (bool, err
 // the higher of the project and the group membership.
 // A project the token cannot see is NotFound.
 func (c *Client) ProjectAccess(ctx context.Context, projectID int64) (int, error) {
-	var p struct {
-		Permissions struct {
-			Project *struct {
-				AccessLevel int `json:"access_level"`
-			} `json:"project_access"`
-			Group *struct {
-				AccessLevel int `json:"access_level"`
-			} `json:"group_access"`
-		} `json:"permissions"`
-	}
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v4/projects/%d", projectID), nil, &p); err != nil {
+	p, err := c.Project(ctx, strconv.FormatInt(projectID, 10))
+	if err != nil {
 		return 0, err
 	}
-	level := 0
-	if p.Permissions.Project != nil {
-		level = p.Permissions.Project.AccessLevel
-	}
-	if p.Permissions.Group != nil {
-		level = max(level, p.Permissions.Group.AccessLevel)
-	}
-	return level, nil
+	return p.Access(), nil
 }
 
 // MaxGraphQLUsers is the number of usernames asked in one GraphQL request.
@@ -161,28 +140,9 @@ func globalID(gid, kind string) (int64, error) {
 	return id, nil
 }
 
-// MemberAccess returns the effective access level of a user in the project,
-// inherited memberships included; 0 when the user is not a member.
-func (c *Client) MemberAccess(ctx context.Context, projectID, userID int64) (int, error) {
-	var m struct {
-		AccessLevel int    `json:"access_level"`
-		State       string `json:"state"`
-	}
-	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v4/projects/%d/members/all/%d", projectID, userID), nil, &m)
-	if KindOf(err) == NotFound {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if m.State != "" && m.State != "active" {
-		return 0, nil
-	}
-	return m.AccessLevel, nil
-}
-
-// MembersAccess returns the effective access levels of several users in one
-// request; users that are not members are absent.
+// MembersAccess returns the effective access levels of users in the project
+// in one request, inherited memberships included; users that are not active
+// members are absent.
 func (c *Client) MembersAccess(ctx context.Context, projectID int64, userIDs []int64) (map[int64]int, error) {
 	out := map[int64]int{}
 	if len(userIDs) == 0 {

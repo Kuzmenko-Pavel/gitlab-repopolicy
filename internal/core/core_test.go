@@ -159,11 +159,6 @@ func (f *fakeAPI) UsersByUsernames(_ context.Context, names []string) ([]gitlab.
 	return out, nil
 }
 
-func (f *fakeAPI) MemberAccess(context.Context, int64, int64) (int, error) {
-	f.calls++
-	return 40, nil
-}
-
 func (f *fakeAPI) MembersAccess(_ context.Context, _ int64, ids []int64) (map[int64]int, error) {
 	f.calls++
 	out := map[int64]int{}

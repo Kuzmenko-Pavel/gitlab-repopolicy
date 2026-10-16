@@ -84,7 +84,7 @@ func (r *receive) checkServiceAccount(ctx context.Context) module.Status {
 }
 
 // objects adapts gitx to module.ObjectReader.
-type objects struct{ git Git }
+type objects struct{ git *gitx.Repo }
 
 func (o objects) Read(ctx context.Context, oid string, max int) (module.Object, error) {
 	info, data, err := o.git.Read(ctx, oid, int64(max))

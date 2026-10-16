@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/changes"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv"
@@ -19,15 +18,6 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/report"
 )
-
-// Git is the part of gitx the core uses.
-type Git interface {
-	changes.Git
-	HeadRef(ctx context.Context) (string, error)
-	Info(ctx context.Context, spec string) (gitx.Info, error)
-	Entry(ctx context.Context, commit, path string) (gitx.Info, bool, error)
-	Read(ctx context.Context, oid string, max int64) (gitx.Info, []byte, error)
-}
 
 // API is the part of the GitLab client the core uses.
 type API interface {
@@ -54,7 +44,7 @@ type Deps struct {
 	Root module.Root
 	// Modules are the other enabled modules in evaluation order.
 	Modules    []module.Module
-	Git        Git
+	Git        *gitx.Repo
 	API        API
 	Audit      Auditor
 	Breakglass Breakglass

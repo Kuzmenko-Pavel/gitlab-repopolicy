@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
@@ -45,9 +47,22 @@ type Config struct {
 	MaxAPICalls   int               `yaml:"max_api_calls"`
 	Modules       map[string]string `yaml:"modules"`
 	SettingsCheck SettingsCheck     `yaml:"settings_check"`
+	Help          Help              `yaml:"help"`
 	// CommitPolicyPresets is kept undecoded; the COMMITPOLICY module parses it.
 	CommitPolicyPresets map[string]any `yaml:"commitpolicy_presets"`
 }
+
+// Help is where a pusher gets help; both are optional and printed in denials.
+type Help struct {
+	// Contact is who to ask about a problem of the server or a broken policy,
+	// for example "#gitlab-support".
+	Contact string `yaml:"contact"`
+	// DocsURL is the documentation of the rules for developers.
+	DocsURL string `yaml:"docs_url"`
+}
+
+// MaxHelp is the length limit of the help values, in characters.
+const MaxHelp = 200
 
 // Audit configures where audit events go.
 type Audit struct {
@@ -212,6 +227,18 @@ func (c *Config) validate() error {
 		if state != ModuleEnabled && state != ModuleDisabled {
 			errs = append(errs, fmt.Errorf("modules.%s: %q is not one of enabled, disabled", name, state))
 		}
+	}
+	for _, h := range []struct{ name, v string }{{"help.contact", c.Help.Contact}, {"help.docs_url", c.Help.DocsURL}} {
+		name, v := h.name, h.v
+		switch {
+		case utf8.RuneCountInString(v) > MaxHelp:
+			errs = append(errs, fmt.Errorf("%s: %d characters, the limit is %d", name, utf8.RuneCountInString(v), MaxHelp))
+		case strings.ContainsFunc(v, unicode.IsControl):
+			errs = append(errs, fmt.Errorf("%s: control characters are not allowed", name))
+		}
+	}
+	if u := c.Help.DocsURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		errs = append(errs, fmt.Errorf("help.docs_url: %q is not an http(s) URL", u))
 	}
 	return errors.Join(errs...)
 }

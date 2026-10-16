@@ -57,5 +57,12 @@ settings_check:
   protected_tags: ["v*"]
   job_token_push: false
 
+# Where a pusher gets help, printed in denials; both are optional. contact is
+# named when the server or a policy in the default branch is at fault, docs_url
+# next to the rules. Up to 200 characters each.
+help:
+  contact: ""
+  docs_url: ""
+
 # Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
 commitpolicy_presets: {}

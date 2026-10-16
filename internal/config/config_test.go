@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,4 +109,19 @@ func TestPresets(t *testing.T) {
 	assert.ErrorContains(t, err, "expected a mapping")
 	_, err = Presets([]byte("commitpolicy_presets: &a {}\n"))
 	assert.ErrorContains(t, err, "anchors are not allowed")
+}
+
+func TestHelp(t *testing.T) {
+	base := "gitlab_url: " + socketURL + "\n"
+	cfg, err := Parse([]byte(base + "help:\n  contact: \"#gitlab-support\"\n  docs_url: https://wiki.example/repopolicy\n"))
+	require.NoError(t, err)
+	assert.Equal(t, Help{Contact: "#gitlab-support", DocsURL: "https://wiki.example/repopolicy"}, cfg.Help)
+	for in, want := range map[string]string{
+		"help:\n  contact: " + strings.Repeat("x", 201) + "\n": "help.contact: 201 characters, the limit is 200",
+		"help:\n  contact: \"a\\tb\"\n":                        "help.contact: control characters are not allowed",
+		"help:\n  docs_url: wiki/repopolicy\n":                 `help.docs_url: "wiki/repopolicy" is not an http(s) URL`,
+	} {
+		_, err := Parse([]byte(base + in))
+		assert.ErrorContains(t, err, want, in)
+	}
 }

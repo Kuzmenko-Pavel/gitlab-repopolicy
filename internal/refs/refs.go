@@ -1,4 +1,4 @@
-// Package refs classifies refs as default, protected or other (architecture §12).
+// Package refs classifies refs as default, protected or other.
 // The default branch is known locally; protected branches and tags come from
 // the API, at most once each per receive and only when a module asks.
 package refs

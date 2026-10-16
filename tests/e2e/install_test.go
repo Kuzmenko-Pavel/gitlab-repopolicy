@@ -39,7 +39,7 @@ func reinstall(t *testing.T) {
 	}
 }
 
-// TestInstall_InContainer covers OP-17: install-hook and selftest run in the
+// TestInstall_InContainer: install-hook and selftest run in the
 // GitLab container the way the documentation installs the hook.
 func TestInstall_InContainer(t *testing.T) {
 	out, code := rp(t, "", "install-hook", "--hooks-dir", hooksDir, "--user", "git")
@@ -64,8 +64,6 @@ func TestInstall_InContainer(t *testing.T) {
 	assert.Contains(t, stat, "root:git 640 "+hookToken)
 	assert.Contains(t, stat, "git:git 750 /var/log/gitlab-repopolicy")
 }
-
-// TestInstall_WrapperProperties covers OP-19 (architecture §18.3).
 func TestInstall_WrapperProperties(t *testing.T) {
 	t.Cleanup(func() {
 		reinstall(t)
@@ -103,7 +101,7 @@ func TestInstall_WrapperProperties(t *testing.T) {
 	assert.Contains(t, out, wrapper+": not installed")
 }
 
-// TestInstall_ChainStopsOnEarlierFailure covers OP-20: Gitaly runs
+// TestInstall_ChainStopsOnEarlierFailure: Gitaly runs
 // pre-receive.d in name order and stops at the first failure.
 func TestInstall_ChainStopsOnEarlierFailure(t *testing.T) {
 	neighbour := hookDir + "/10-e2e-fail"
@@ -127,7 +125,7 @@ func TestInstall_ChainStopsOnEarlierFailure(t *testing.T) {
 	requireEvent(t, p, "allow without the neighbour", decisionOn("refs/heads/chain"))
 }
 
-// TestInstall_SurvivesReconfigure covers OP-18: gitlab-ctl reconfigure keeps
+// TestInstall_SurvivesReconfigure: gitlab-ctl reconfigure keeps
 // custom_hooks_dir in the Gitaly config and the wrapper in it.
 func TestInstall_SurvivesReconfigure(t *testing.T) {
 	before := inContainer(t, "sha256sum "+wrapper)

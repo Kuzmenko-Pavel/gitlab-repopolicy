@@ -9,7 +9,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/settings"
 )
 
-// runSettingsCheck implements "settings-check" (architecture §19.2): a drift
+// runSettingsCheck implements "settings-check": a drift
 // is an audit settings_drift event and exit code 1, for alerting.
 func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("settings-check", flag.ContinueOnError)

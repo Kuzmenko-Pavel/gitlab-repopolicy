@@ -142,7 +142,7 @@ func fullRef(ref, def string) string {
 }
 
 // runAdmins implements "admins --project P": configured, effective and
-// missing admins and whether Owner recovery is active (architecture §9.4).
+// missing admins and whether Owner recovery is active.
 func (a App) runAdmins(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("admins", flag.ContinueOnError)
 	configPath := fs.String("config", DefaultConfig, "server config")

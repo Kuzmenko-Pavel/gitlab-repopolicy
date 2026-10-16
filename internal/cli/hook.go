@@ -23,7 +23,7 @@ import (
 const DefaultConfig = "/etc/gitlab-repopolicy/config.yaml"
 
 // runHook implements "hook pre-receive". In this mode stdout and stderr belong
-// to report only: they reach the pusher (design §7.4). Exit 0 accepts the push.
+// to report only: they reach the pusher. Exit 0 accepts the push.
 func (a App) runHook(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	if len(args) == 0 || args[0] != "pre-receive" {
 		out := &output{w: stdio.Err}

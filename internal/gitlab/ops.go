@@ -11,7 +11,7 @@ import (
 )
 
 // Endpoints of the operational commands: selftest, token rotate,
-// settings-check, coverage, explain and admins (architecture §13.2, §18.7, §19.2).
+// settings-check, coverage, explain and admins.
 
 // TokenUser is the owner of the token as GET /user returns it.
 type TokenUser struct {

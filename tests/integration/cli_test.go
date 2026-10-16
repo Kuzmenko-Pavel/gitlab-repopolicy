@@ -28,7 +28,7 @@ var (
 	}
 )
 
-// TestSelftest_NoToken: without a token file selftest fails (EX-02).
+// TestSelftest_NoToken: without a token file selftest fails.
 func TestSelftest_NoToken(t *testing.T) {
 	s := NewStand(t)
 	require.NoError(t, os.Remove(filepath.Join(s.Dir, "token")))
@@ -39,7 +39,7 @@ func TestSelftest_NoToken(t *testing.T) {
 }
 
 // TestSelftest_WrongScopes: extra scopes, a person instead of a service
-// account and an administrator are errors; the right account passes (EX-03).
+// account and an administrator are errors; the right account passes.
 func TestSelftest_WrongScopes(t *testing.T) {
 	s := NewStand(t)
 	inYear := time.Now().AddDate(1, 0, 0)
@@ -88,7 +88,7 @@ func TestSelftest_WrongScopes(t *testing.T) {
 }
 
 // TestTokenRotate: the new token replaces the file atomically with an explicit
-// expires_at; a refusal keeps the old token and is an audit alert (EX-16).
+// expires_at; a refusal keeps the old token and is an audit alert.
 func TestTokenRotate(t *testing.T) {
 	s := NewStand(t)
 	tokenFile := filepath.Join(s.Dir, "token")
@@ -165,7 +165,7 @@ func settingsProject(ciConfig any, jobTokenPush bool) []map[string]any {
 const memberProjects = "/api/v4/projects?membership=true&archived=false&order_by=id&sort=asc&per_page=100&id_after=0"
 
 // TestSettingsCheck: drifts of settings and principals are settings_drift
-// events and exit code 1 (EX-17).
+// events and exit code 1.
 func TestSettingsCheck(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.Protected([]string{"main", "release/*"}, []string{"v*"})
@@ -218,7 +218,7 @@ func TestSettingsCheck(t *testing.T) {
 }
 
 // TestCoverage: an administrator token finds top-level groups without the
-// service account and the projects with policy there (EX-06).
+// service account and the projects with policy there.
 func TestCoverage(t *testing.T) {
 	s := NewStand(t)
 	adminToken := filepath.Join(s.Dir, "admin-token")
@@ -407,7 +407,7 @@ func TestCLI_Version(t *testing.T) {
 }
 
 // TestHookOutputOnlyReport: in hook mode the pusher sees only the report, no
-// diagnostic log (EX-19).
+// diagnostic log.
 func TestHookOutputOnlyReport(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll, "ci.yml": "x"})
 	s.Commit("readme", map[string]string{"README.md": "x"})
@@ -431,7 +431,7 @@ func TestHookOutputOnlyReport(t *testing.T) {
 	assert.NotRegexp(t, `level=|time=|msg=|config:`, r.Output)
 }
 
-// releaseVerify runs gitlab-repopolicy test as make release-verify-tag does (design §6.2).
+// releaseVerify runs gitlab-repopolicy test as make release-verify-tag does.
 func releaseVerify(t *testing.T, s *Stand, tag, oid string) (CLI, []map[string]any) {
 	t.Helper()
 	cfg, err := filepath.Abs("../../config/release-verify.yaml")
@@ -464,7 +464,7 @@ func TestReleaseVerify_Signed(t *testing.T) {
 	assert.Zero(t, s.API.TotalCalls(), "release-verify does not use the API")
 }
 
-// TestReleaseVerify_Unsigned: an unsigned tag fails the release (ST-01).
+// TestReleaseVerify_Unsigned: an unsigned tag fails the release.
 func TestReleaseVerify_Unsigned(t *testing.T) {
 	s, base, _, _ := tagStand(t)
 	oid := s.makeTag("v1.0.0-prod", "v1.0.0-prod", base, "commit", nil)
@@ -481,7 +481,7 @@ func TestReleaseVerify_Unsigned(t *testing.T) {
 }
 
 // TestReleaseVerify_ForeignKey: a tag signed by a key that TAGPOLICY does not
-// hold fails the release (ST-02).
+// hold fails the release.
 func TestReleaseVerify_ForeignKey(t *testing.T) {
 	s, base, _, _ := tagStand(t)
 	stranger := pgpSigner(t)

@@ -3,15 +3,15 @@ package commit
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
@@ -21,8 +21,9 @@ const (
 	maxExceptUsers = 50
 )
 
-// fileYAML is the decoded file; rules stay raw so that a rule from a newer
-// version is skipped on the anchor instead of breaking the whole policy.
+// fileYAML is what Parse decodes once Spec accepts the file; rules stay raw
+// so that a rule from a newer version is skipped on the anchor instead of
+// breaking the whole policy.
 type fileYAML struct {
 	Version  int           `yaml:"version"`
 	Mode     string        `yaml:"mode"`
@@ -100,43 +101,20 @@ type examplesYAML struct {
 	Invalid []string `yaml:"invalid"`
 }
 
-// catalogue describes the rules of v1 (architecture §10.1): the value kind and
-// whether the rule needs the conventional format.
-var catalogue = map[string]struct {
-	value        string // list, int, enum:<a>|<b>, none, regexp2
-	conventional bool
-}{
-	"type-enum":            {"list", true},
-	"scope":                {"enum:optional|required|forbidden", true},
-	"scope-enum":           {"list", true},
-	"breaking-bang":        {"enum:allow|forbid", true},
-	"header-max-length":    {"int", false},
-	"subject-case":         {"enum:lower-first|sentence|any", false},
-	"subject-full-stop":    {"enum:forbid|require", false},
-	"body-required":        {"none", false},
-	"body-max-line-length": {"int", false},
-	"reference":            {"reference", false},
-	"trailer-required":     {"list", false},
-	"pattern":              {"regexp2", false},
-}
-
 // Parse decodes a COMMITPOLICY file offline with the presets of s.
 func Parse(data []byte, s *Settings) (*Policy, error) {
+	tree, err := strictyaml.DecodeTree(data, module.DefaultMaxPolicySize)
+	if err != nil {
+		return nil, err
+	}
+	if err := spec.Validate(Spec, tree, checks); err != nil {
+		return nil, err
+	}
 	var f fileYAML
 	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
 	}
-	if f.Version != 1 {
-		return nil, fmt.Errorf("version: %d is not supported, use 1", f.Version)
-	}
-	p := &Policy{settings: s}
-	switch f.Mode {
-	case "", "enforce":
-	case "warn":
-		p.warnMode = true
-	default:
-		return nil, fmt.Errorf("mode: %q is not one of warn, enforce", f.Mode)
-	}
+	p := &Policy{settings: s, warnMode: f.Mode == "warn"}
 	var preset map[string]map[string]any
 	if f.Extends != "" {
 		var ok bool
@@ -144,79 +122,40 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 			p.unknownPreset = f.Extends
 		}
 	}
-	if len(f.Rulesets) == 0 {
-		return nil, errors.New("rulesets: at least one ruleset is required")
-	}
-	if len(f.Rulesets) > maxRulesets {
-		return nil, fmt.Errorf("rulesets: %d rulesets, the limit is %d", len(f.Rulesets), maxRulesets)
-	}
-	names := map[string]bool{}
-	for i, rs := range f.Rulesets {
-		r, err := parseRuleset(rs, preset)
+	for _, y := range f.Rulesets {
+		r, err := newRuleset(y, preset)
 		if err != nil {
-			name := rs.Name
-			if !module.ValidRuleName(name) {
-				name = "#" + strconv.Itoa(i+1)
-			}
-			return nil, fmt.Errorf("ruleset %s: %w", name, err)
+			return nil, fmt.Errorf("ruleset %s: %w", y.Name, err)
 		}
-		if names[r.name] {
-			return nil, fmt.Errorf("ruleset %s: the name is used twice", r.name)
-		}
-		names[r.name] = true
 		p.rulesets = append(p.rulesets, r)
 	}
 	return p, nil
 }
 
-func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, error) {
-	if !module.ValidRuleName(y.Name) {
-		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
-	}
-	r := &ruleset{name: y.Name, except: y.Except, message: strings.TrimSpace(y.Message)}
-	switch y.Format {
-	case "", "conventional":
-		r.conventional = true
-	case "free":
-	default:
-		return nil, fmt.Errorf("format: %q is not one of conventional, free", y.Format)
-	}
+// newRuleset builds a ruleset that Spec accepted, with the rules of the preset.
+func newRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, error) {
+	r := &ruleset{name: y.Name, except: y.Except, message: strings.TrimSpace(y.Message), conventional: y.Format != "free"}
 	refs, err := module.ParseRefScope(y.Refs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refs: %w", err)
 	}
 	r.refs = refs
-	if len(y.Except.Users) > maxExceptUsers {
-		return nil, fmt.Errorf("except.users: %d users, the limit is %d", len(y.Except.Users), maxExceptUsers)
-	}
-	for _, u := range y.Except.Users {
-		if !module.ValidUsername(u) {
-			return nil, fmt.Errorf("except.users: %q is not a GitLab username", u)
-		}
-	}
 	// Rules of the preset come first; rules of the file override them by name.
 	merged := map[string]map[string]any{}
-	for name, spec := range preset {
+	for name, raw := range preset {
 		if r.conventional || !catalogue[name].conventional {
-			merged[name] = spec
+			merged[name] = raw
 		}
 	}
-	for name, spec := range y.Rules {
-		merged[name] = spec
-	}
-	names := make([]string, 0, len(merged))
-	for name := range merged {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	maps.Copy(merged, y.Rules)
+	for _, name := range slices.Sorted(maps.Keys(merged)) {
 		if _, known := catalogue[name]; !known {
 			r.unknown = append(r.unknown, name)
 			continue
 		}
-		ru, err := parseRule(name, merged[name], r.conventional)
+		ru, err := newRule(name, merged[name], r.conventional)
 		if err != nil {
-			return nil, fmt.Errorf("rule %s: %w", name, err)
+			return nil, fmt.Errorf("rules.%s: %w", name, err)
 		}
 		if ru.level != levelOff {
 			r.rules = append(r.rules, ru)
@@ -225,139 +164,49 @@ func parseRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, er
 	return r, nil
 }
 
-func parseRule(name string, spec map[string]any, conventional bool) (*rule, error) {
-	def := catalogue[name]
-	if def.conventional && !conventional {
-		return nil, errors.New("needs format: conventional")
+var levels = map[string]level{"error": levelError, "warn": levelWarn, "off": levelOff}
+
+// ruleYAML holds every key a rule of the catalogue may have; the rule spec
+// decides which ones a rule has.
+type ruleYAML struct {
+	Level    string       `yaml:"level"`
+	Types    []string     `yaml:"types"`
+	Value    any          `yaml:"value"`
+	Location string       `yaml:"location"`
+	Pattern  string       `yaml:"pattern"`
+	Keys     []string     `yaml:"keys"`
+	Examples examplesYAML `yaml:"examples"`
+}
+
+// newRule builds a rule that the rule spec of the catalogue accepted.
+func newRule(name string, raw map[string]any, conventional bool) (*rule, error) {
+	var y ruleYAML
+	if err := strictyaml.DecodeValue(raw, &y, module.DefaultMaxPolicySize); err != nil {
+		return nil, err
 	}
-	r := &rule{name: name}
-	allowed := map[string]bool{"level": true, "types": true}
-	switch {
-	case def.value == "reference":
-		allowed["location"], allowed["pattern"], allowed["keys"] = true, true, true
-	case def.value == "regexp2":
-		allowed["value"], allowed["examples"] = true, true
-	case def.value != "none":
-		allowed["value"] = true
+	if len(y.Types) > 0 && !conventional {
+		return nil, errors.New("types: needs format: conventional")
 	}
-	for key := range spec {
-		if !allowed[key] {
-			return nil, fmt.Errorf("unknown key %q", key)
+	r := &rule{name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys, examples: y.Examples}
+	var err error
+	switch name {
+	case "type-enum", "scope-enum", "trailer-required":
+		err = strictyaml.DecodeValue(y.Value, &r.list, module.DefaultMaxPolicySize)
+	case "header-max-length", "body-max-line-length":
+		err = strictyaml.DecodeValue(y.Value, &r.number, module.DefaultMaxPolicySize)
+	case "scope", "breaking-bang", "subject-case", "subject-full-stop":
+		err = strictyaml.DecodeValue(y.Value, &r.enum, module.DefaultMaxPolicySize)
+	case "pattern":
+		var src string
+		if err = strictyaml.DecodeValue(y.Value, &src, module.DefaultMaxPolicySize); err == nil {
+			r.pattern, err = regexp2.Compile(src, regexp2.RE2)
+			r.source = src
 		}
+	case "reference":
+		r.re, err = regexp.Compile(y.Pattern)
 	}
-	lv, ok := spec["level"].(string)
-	switch {
-	case !ok:
-		return nil, errors.New("level: required, one of error, warn, off")
-	case lv == "error":
-		r.level = levelError
-	case lv == "warn":
-		r.level = levelWarn
-	case lv == "off":
-		r.level = levelOff
-	default:
-		return nil, fmt.Errorf("level: %q is not one of error, warn, off", lv)
-	}
-	if t, ok := spec["types"]; ok {
-		if !conventional {
-			return nil, errors.New("types: needs format: conventional")
-		}
-		list, err := stringList(t)
-		if err != nil {
-			return nil, fmt.Errorf("types: %w", err)
-		}
-		r.types = list
-	}
-	value, hasValue := spec["value"]
-	if allowed["value"] && !hasValue {
-		return nil, errors.New("value: required")
-	}
-	switch kind := def.value; {
-	case kind == "list":
-		list, err := stringList(value)
-		if err != nil {
-			return nil, fmt.Errorf("value: %w", err)
-		}
-		r.list = list
-	case kind == "int":
-		n, ok := value.(int)
-		if !ok || n < 1 || n > 10000 {
-			return nil, errors.New("value: a number from 1 to 10000 is expected")
-		}
-		r.number = n
-	case strings.HasPrefix(kind, "enum:"):
-		options := strings.Split(strings.TrimPrefix(kind, "enum:"), "|")
-		s, ok := value.(string)
-		if !ok || !slices.Contains(options, s) {
-			return nil, fmt.Errorf("value: expected one of %s", strings.Join(options, ", "))
-		}
-		r.enum = s
-	case kind == "regexp2":
-		return r, r.parsePattern(value, spec["examples"])
-	case kind == "reference":
-		return r, r.parseReference(spec)
+	if err != nil {
+		return nil, err
 	}
 	return r, nil
-}
-
-func (r *rule) parsePattern(value, examples any) error {
-	src, ok := value.(string)
-	if !ok || src == "" {
-		return errors.New("value: a regular expression is expected")
-	}
-	re, err := regexp2.Compile(src, regexp2.RE2)
-	if err != nil {
-		return fmt.Errorf("value: %w", err)
-	}
-	r.pattern, r.source = re, src
-	if examples != nil {
-		if err := strictyaml.DecodeValue(examples, &r.examples, module.DefaultMaxPolicySize); err != nil {
-			return fmt.Errorf("examples: %w", err)
-		}
-	}
-	return nil
-}
-
-func (r *rule) parseReference(spec map[string]any) error {
-	loc, ok := spec["location"].(string)
-	if !ok || (loc != "trailer" && loc != "body" && loc != "any") {
-		return errors.New("location: required, one of trailer, body, any")
-	}
-	r.location = loc
-	src, ok := spec["pattern"].(string)
-	if !ok || src == "" {
-		return errors.New("pattern: a regular expression (RE2) is required")
-	}
-	re, err := regexp.Compile(src)
-	if err != nil {
-		return fmt.Errorf("pattern: %w", err)
-	}
-	r.re = re
-	if keys, ok := spec["keys"]; ok {
-		if loc != "trailer" {
-			return errors.New("keys: only for location: trailer")
-		}
-		list, err := stringList(keys)
-		if err != nil {
-			return fmt.Errorf("keys: %w", err)
-		}
-		r.keys = list
-	}
-	return nil
-}
-
-func stringList(v any) ([]string, error) {
-	items, ok := v.([]any)
-	if !ok || len(items) == 0 {
-		return nil, errors.New("a non-empty list of strings is expected")
-	}
-	out := make([]string, 0, len(items))
-	for _, it := range items {
-		s, ok := it.(string)
-		if !ok || s == "" {
-			return nil, errors.New("a non-empty list of strings is expected")
-		}
-		out = append(out, s)
-	}
-	return out, nil
 }

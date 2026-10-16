@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Message is a parsed commit message (architecture §10.2).
+// Message is a parsed commit message.
 type Message struct {
 	// Text is the normalised message: "\n" line ends, no trailing empty lines.
 	Text   string

@@ -38,7 +38,8 @@
                 "description": "Usernames whose pushes skip this ruleset, for example a release bot.",
                 "items": {
                   "pattern": "^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$",
-                  "type": "string"
+                  "type": "string",
+                  "x-repopolicy-check": "username"
                 },
                 "maxItems": 50,
                 "type": "array"
@@ -81,7 +82,8 @@
                 "minItems": 1,
                 "type": "array"
               }
-            ]
+            ],
+            "x-repopolicy-check": "refs"
           },
           "rules": {
             "additionalProperties": false,
@@ -98,12 +100,17 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
+                    "maximum": 10000,
+                    "minimum": 1,
                     "type": "integer"
                   }
                 },
@@ -127,8 +134,10 @@
                   "types": {
                     "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   }
                 },
@@ -149,9 +158,12 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
@@ -180,12 +192,17 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
+                    "maximum": 10000,
+                    "minimum": 1,
                     "type": "integer"
                   }
                 },
@@ -225,14 +242,19 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
                     "description": "regexp2 expression in RE2 mode, matched at the start of the message.",
-                    "type": "string"
+                    "minLength": 1,
+                    "type": "string",
+                    "x-repopolicy-check": "regexp2"
                   }
                 },
                 "required": [
@@ -247,8 +269,10 @@
                   "keys": {
                     "description": "Trailer keys to look in, for location: trailer.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "level": {
@@ -269,12 +293,17 @@
                   },
                   "pattern": {
                     "description": "RE2 regular expression of the reference, for example group/project#123.",
-                    "type": "string"
+                    "minLength": 1,
+                    "type": "string",
+                    "x-repopolicy-check": "re2"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   }
                 },
@@ -283,7 +312,8 @@
                   "location",
                   "pattern"
                 ],
-                "type": "object"
+                "type": "object",
+                "x-repopolicy-check": "reference-keys"
               },
               "scope": {
                 "additionalProperties": false,
@@ -297,9 +327,12 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
@@ -329,15 +362,21 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
+                    "description": "Allowed scopes.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   }
                 },
@@ -359,9 +398,12 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
@@ -391,9 +433,12 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
@@ -422,15 +467,21 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
+                    "description": "Trailer keys that every message must have.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   }
                 },
@@ -452,15 +503,21 @@
                     "type": "string"
                   },
                   "types": {
+                    "description": "Apply the rule only to these types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   },
                   "value": {
+                    "description": "Allowed types.",
                     "items": {
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "minItems": 1,
                     "type": "array"
                   }
                 },
@@ -477,9 +534,13 @@
         "required": [
           "name"
         ],
-        "type": "object"
+        "type": "object",
+        "x-repopolicy-check": "conventional"
       },
-      "type": "array"
+      "maxItems": 50,
+      "minItems": 1,
+      "type": "array",
+      "x-repopolicy-check": "unique-names"
     },
     "version": {
       "const": 1,

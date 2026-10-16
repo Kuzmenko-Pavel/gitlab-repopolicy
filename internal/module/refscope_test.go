@@ -25,12 +25,12 @@ func TestParseRefScope(t *testing.T) {
 		assert.Equal(t, tt.want, got, tt.in)
 	}
 	for want, in := range map[string]any{
-		`refs: "main" is not one of all, default, protected or a list of refs`: "main",
-		"refs: the list is empty": []any{},
-		"refs: heads/main is not a ref pattern such as refs/heads/release/*": []any{"heads/main"},
-		"refs: 7 is not a ref pattern such as refs/heads/release/*":          []any{7},
-		`refs: "refs/heads/[": syntax error in pattern`:                      []any{"refs/heads/["},
-		"refs: expected all, default, protected or a list of refs":           map[string]any{},
+		`"main" is not one of all, default, protected or a list of refs`: "main",
+		"the list is empty": []any{},
+		"heads/main is not a ref pattern such as refs/heads/release/*": []any{"heads/main"},
+		"7 is not a ref pattern such as refs/heads/release/*":          []any{7},
+		`"refs/heads/[": syntax error in pattern`:                      []any{"refs/heads/["},
+		"expected all, default, protected or a list of refs":           map[string]any{},
 	} {
 		_, err := ParseRefScope(in)
 		assert.EqualError(t, err, want)

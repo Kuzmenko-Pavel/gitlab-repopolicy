@@ -19,7 +19,7 @@ const (
 	formatSSH
 )
 
-// key is one entry of keys: exactly one public key (D30).
+// key is one entry of keys: exactly one public key.
 type key struct {
 	label  string
 	format keyFormat
@@ -36,7 +36,7 @@ const (
 	pgpPublicEnd   = "-----END PGP PUBLIC KEY BLOCK-----"
 )
 
-// sshKeyTypes are the SSH key types that x/crypto/ssh verifies (architecture §11.3).
+// sshKeyTypes are the SSH key types that x/crypto/ssh verifies.
 var sshKeyTypes = map[string]bool{
 	ssh.KeyAlgoED25519:    true,
 	ssh.KeyAlgoECDSA256:   true,
@@ -147,7 +147,7 @@ func (k *key) parseSSH() error {
 }
 
 // expired reports an OpenPGP key without a signing key valid at now; SSH keys
-// have no expiry and stay valid while they are in the file (D30).
+// have no expiry and stay valid while they are in the file.
 func (k *key) expired(now time.Time) bool {
 	if k.format != formatOpenPGP {
 		return false

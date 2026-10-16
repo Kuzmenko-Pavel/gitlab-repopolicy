@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package e2e runs scenarios against GitLab CE in docker compose (design §8.3).
+// Package e2e runs scenarios against GitLab CE in docker compose.
 // TestMain bootstraps the stand before the tests.
 package e2e
 

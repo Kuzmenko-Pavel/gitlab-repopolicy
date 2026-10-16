@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The scenarios of the row "GitLab operations" of architecture §21: each
+// GitLab operations other than git push: each
 // operation reaches the hook with the identity of the person behind it.
 
 // ciDenied is the GL-HOOK-ERR line of a change of ci/ by someone not in allow.
@@ -31,7 +31,7 @@ func withCIPolicy(t *testing.T, name string) *project {
 	return p
 }
 
-// TestOps_HTTPSPush covers OP-01 and PR-01-e: a user is matched by username
+// TestOps_HTTPSPush: a user is matched by username
 // in any case; bob is refused, alice is allowed.
 func TestOps_HTTPSPush(t *testing.T) {
 	t.Parallel()
@@ -60,8 +60,6 @@ func TestOps_HTTPSPush(t *testing.T) {
 	assert.Equal(t, "http", allow.Protocol)
 	assert.True(t, allow.Enforced)
 }
-
-// TestOps_SSHPersonalKey covers OP-02 and PR-02-e.
 func TestOps_SSHPersonalKey(t *testing.T) {
 	t.Parallel()
 	p := withCIPolicy(t, "ssh")
@@ -76,7 +74,7 @@ func TestOps_SSHPersonalKey(t *testing.T) {
 	assert.True(t, strings.HasPrefix(e.GLID, "key-"), e.GLID)
 }
 
-// TestOps_SSHDeployKey covers OP-03 and PR-03-e: GL_USERNAME of a deploy key
+// TestOps_SSHDeployKey: GL_USERNAME of a deploy key
 // is the admin who created it, and the push is still refused.
 func TestOps_SSHDeployKey(t *testing.T) {
 	t.Parallel()
@@ -104,7 +102,7 @@ func TestOps_SSHDeployKey(t *testing.T) {
 	})
 }
 
-// TestOps_ProjectAccessToken covers OP-09 and PR-04-e: the bot of a project
+// TestOps_ProjectAccessToken: the bot of a project
 // access token is allowed by its username.
 func TestOps_ProjectAccessToken(t *testing.T) {
 	t.Parallel()
@@ -135,7 +133,7 @@ func TestOps_ProjectAccessToken(t *testing.T) {
 
 // protectedRelease creates release/1, protected so that Developers may merge
 // into it. The hook checks a protected ref by the net diff, so a merge needs
-// the right of whoever presses merge (architecture §12); a merge into a
+// the right of whoever presses merge; a merge into a
 // feature branch brings no new commits and is not checked.
 func protectedRelease(t *testing.T, p *project) string {
 	t.Helper()
@@ -146,7 +144,7 @@ func protectedRelease(t *testing.T, p *project) string {
 	return "release/1"
 }
 
-// TestOps_MergeButton covers OP-04 and MS-09: the hook sees who pressed
+// TestOps_MergeButton: the hook sees who pressed
 // merge, and GitLab shows its GL-HOOK-ERR line in the merge request.
 func TestOps_MergeButton(t *testing.T) {
 	t.Parallel()
@@ -184,7 +182,7 @@ const sleepCI = `wait:
     - sleep 20
 `
 
-// TestOps_AutoMerge covers OP-05: the merge made by Sidekiq after the
+// TestOps_AutoMerge: the merge made by Sidekiq after the
 // pipeline carries the identity of who set auto-merge.
 func TestOps_AutoMerge(t *testing.T) {
 	t.Parallel()
@@ -226,7 +224,7 @@ const commitCreate = `mutation($input: CommitCreateInput!) {
   commitCreate(input: $input) { errors commit { sha } }
 }`
 
-// TestOps_WebIDE covers OP-06. The Web IDE runs in a browser; its commit is
+// TestOps_WebIDE: the Web IDE runs in a browser; its commit is
 // the commitCreate mutation, which reaches Gitaly as UserCommitFiles.
 func TestOps_WebIDE(t *testing.T) {
 	t.Parallel()
@@ -253,8 +251,6 @@ func TestOps_WebIDE(t *testing.T) {
 	assert.Equal(t, "allow", e.Decision)
 	assert.Equal(t, "web", e.Protocol)
 }
-
-// TestOps_CommitsAPI covers OP-07.
 func TestOps_CommitsAPI(t *testing.T) {
 	t.Parallel()
 	p := withCIPolicy(t, "commits")
@@ -267,7 +263,7 @@ func TestOps_CommitsAPI(t *testing.T) {
 	assert.Equal(t, "web", e.Protocol)
 }
 
-// TestOps_RevertUI covers OP-08: the revert button and the revert API run
+// TestOps_RevertUI: the revert button and the revert API run
 // the same service and reach the hook as a web operation.
 func TestOps_RevertUI(t *testing.T) {
 	t.Parallel()
@@ -297,7 +293,7 @@ const jobTokenCI = `push:
     - git -c http.sslCAInfo=/etc/gitlab-stand/ca.crt push "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab:PORT/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/out-${CI_COMMIT_BRANCH}"
 `
 
-// TestOps_JobTokenPush covers OP-10 and OP-11: a CI_JOB_TOKEN push reaches the
+// TestOps_JobTokenPush: a CI_JOB_TOKEN push reaches the
 // hook as the user who started the pipeline; when GitLab forbids it, the hook
 // is not called.
 func TestOps_JobTokenPush(t *testing.T) {
@@ -342,7 +338,7 @@ func TestOps_JobTokenPush(t *testing.T) {
 	})
 }
 
-// TestOps_ServiceAccountSeesSubgroups covers OP-12, OP-13 and OP-14: the
+// TestOps_ServiceAccountSeesSubgroups: the
 // service account is a Maintainer of the top-level group only.
 func TestOps_ServiceAccountSeesSubgroups(t *testing.T) {
 	t.Parallel()
@@ -409,7 +405,7 @@ func pushSignedTag(t *testing.T, p *project, tag string) {
 
 const tagDenied = "gitlab-repopolicy: TAGPOLICY [release] tag is not signed. See push output."
 
-// TestOps_TagViaUI covers OP-15: GitLab cannot sign a tag it creates, so a
+// TestOps_TagViaUI: GitLab cannot sign a tag it creates, so a
 // release tag from the UI is refused and the same tag signed by alice passes.
 func TestOps_TagViaUI(t *testing.T) {
 	t.Parallel()
@@ -433,7 +429,7 @@ func TestOps_TagViaUI(t *testing.T) {
 	pushSignedTag(t, p, "v1.0.0")
 }
 
-// TestOps_TagViaReleasesAPI covers OP-16: a release that creates its tag is
+// TestOps_TagViaReleasesAPI: a release that creates its tag is
 // refused like a tag from the UI; a release of a signed tag is created.
 func TestOps_TagViaReleasesAPI(t *testing.T) {
 	t.Parallel()
@@ -453,8 +449,8 @@ func TestOps_TagViaReleasesAPI(t *testing.T) {
 	require.NoError(t, release("v2.0.1"))
 }
 
-// TestOps_WikiAndDesignAllowed covers OP-21: wiki and design repositories are
-// not projects (architecture §6), so a PATHPOLICY in a wiki means nothing and
+// TestOps_WikiAndDesignAllowed: wiki and design repositories are
+// not projects, so a PATHPOLICY in a wiki means nothing and
 // no audit event is written.
 func TestOps_WikiAndDesignAllowed(t *testing.T) {
 	t.Parallel()

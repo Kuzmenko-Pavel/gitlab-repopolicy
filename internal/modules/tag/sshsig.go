@@ -72,7 +72,7 @@ func unarmorSSH(block []byte) ([]byte, error) {
 }
 
 // parseSSHSig checks everything that does not need the key: format, version,
-// namespace git, hash and, for RSA, a SHA-2 signature algorithm (architecture §11.2).
+// namespace git, hash and, for RSA, a SHA-2 signature algorithm.
 func parseSSHSig(block []byte) (*sshSignature, error) {
 	raw, err := unarmorSSH(block)
 	if err != nil {

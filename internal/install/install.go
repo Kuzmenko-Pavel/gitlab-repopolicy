@@ -1,5 +1,5 @@
 // Package install connects the hook to Gitaly: it writes and removes the
-// wrapper in pre-receive.d of custom_hooks_dir (architecture §18.3).
+// wrapper in pre-receive.d of custom_hooks_dir.
 package install
 
 import (

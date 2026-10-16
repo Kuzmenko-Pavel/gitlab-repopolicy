@@ -199,7 +199,7 @@ func (s *stand) ensureUserToken(ctx context.Context, u *standUser, scopes []stri
 	return nil
 }
 
-// ensureServiceAccount creates the hook account of architecture §13.2:
+// ensureServiceAccount creates the service account of the hook:
 // an instance service account with a read_api + self_rotate token.
 func (s *stand) ensureServiceAccount(ctx context.Context) error {
 	sa := s.state.ServiceAccount
@@ -442,7 +442,7 @@ func (s *stand) ensureRunner(ctx context.Context) error {
 	return nil
 }
 
-// Paths of the hook installation in the GitLab container (architecture §18.2, §18.3).
+// Paths of the hook installation in the GitLab container.
 const (
 	hooksDir   = "/var/opt/gitlab/gitaly/custom_hooks"
 	hookConfig = "/etc/gitlab-repopolicy/config.yaml"
@@ -463,7 +463,7 @@ chown root:root ` + hookConfig + ` ` + hookToken + ` /var/log/gitlab-repopolicy
 `
 
 // ensureHook writes the server config and the service account token, then
-// installs the hook with install-hook as in production (design §8.3).
+// installs the hook with install-hook as in production.
 func (s *stand) ensureHook(ctx context.Context) error {
 	cfg, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
 	if err != nil {

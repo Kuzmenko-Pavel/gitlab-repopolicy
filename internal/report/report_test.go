@@ -205,6 +205,6 @@ func TestNoAPIDetails(t *testing.T) {
 	}
 	out := Rejection([]Section{{Name: "PATHPOLICY", Violations: vs}}, alice) + Warnings([]Section{{Name: "PATHPOLICY", Violations: vs}}, nil)
 	for _, r := range secret {
-		assert.NotContains(t, out, r, "results of API calls never reach the pusher (architecture §15)")
+		assert.NotContains(t, out, r, "results of API calls never reach the pusher")
 	}
 }

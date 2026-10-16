@@ -55,7 +55,7 @@ func readPolicyFile(path string, m module.Module) ([]byte, error) {
 
 // runValidate implements "validate [-f FILE] [--module NAME] [--config FILE]
 // [--online [--project P]]": the checks of acceptance; with --online also the
-// principals through the API of the server config (architecture §18.7, D23).
+// principals through the API of the server config.
 func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
@@ -222,7 +222,7 @@ func moduleNames(mods []module.Module) string {
 }
 
 // runLintCommit implements "lint-commit [-m MSG | --range A..B] [-f COMMITPOLICY]":
-// the server implementation applied locally; every ruleset applies (question 11).
+// the server implementation applied locally; every ruleset applies, there is no ref.
 func (a App) runLintCommit(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("lint-commit", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)

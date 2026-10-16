@@ -10,10 +10,11 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
-// Limits of architecture §17.
+// Limits of a PATHPOLICY file.
 const (
 	maxRules        = 100
 	maxPaths        = 50
@@ -24,7 +25,7 @@ const (
 	maxMessage      = 1000
 )
 
-// fileYAML is PATHPOLICY version 1; the schema is frozen (architecture §18.5).
+// fileYAML is what Parse decodes once Spec accepts the file.
 type fileYAML struct {
 	Version int        `yaml:"version"`
 	Admins  []string   `yaml:"admins"`
@@ -55,94 +56,29 @@ type rule struct {
 
 // Parse decodes a PATHPOLICY file offline.
 func Parse(data []byte) (*Policy, error) {
+	tree, err := strictyaml.DecodeTree(data, module.DefaultMaxPolicySize)
+	if err != nil {
+		return nil, err
+	}
+	if err := spec.Validate(Spec, tree, checks); err != nil {
+		return nil, err
+	}
 	var f fileYAML
 	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
 	}
-	if f.Version != 1 {
-		return nil, fmt.Errorf("version: %d is not supported, use 1", f.Version)
-	}
-	admins, err := usernames("admins", f.Admins, 1, maxAdmins)
-	if err != nil {
-		return nil, err
-	}
-	p := &Policy{admins: admins}
-	if len(f.Rules) > maxRules {
-		return nil, fmt.Errorf("rules: %d rules, the limit is %d", len(f.Rules), maxRules)
-	}
-	seen := map[string]bool{}
-	for i, ry := range f.Rules {
-		r, err := parseRule(ry)
+	p := &Policy{admins: f.Admins}
+	for _, y := range f.Rules {
+		refs, err := module.ParseRefScope(y.Refs)
 		if err != nil {
-			name := ry.Name
-			if !module.ValidRuleName(name) {
-				name = fmt.Sprintf("#%d", i+1)
-			}
-			return nil, fmt.Errorf("rule %s: %w", name, err)
+			return nil, fmt.Errorf("rule %s: refs: %w", y.Name, err)
 		}
-		if seen[r.name] {
-			return nil, fmt.Errorf("rule %s: the name is used twice", r.name)
-		}
-		seen[r.name] = true
-		p.rules = append(p.rules, r)
+		p.rules = append(p.rules, &rule{name: y.Name, paths: y.Paths, refs: refs, allow: y.Allow, message: strings.TrimSpace(y.Message)})
 	}
 	return p, nil
 }
 
-func parseRule(y ruleYAML) (*rule, error) {
-	if !module.ValidRuleName(y.Name) {
-		return nil, fmt.Errorf("name: %q must match [a-z0-9-]{1,63}", y.Name)
-	}
-	r := &rule{name: y.Name, message: strings.TrimSpace(y.Message)}
-	if len(y.Paths) == 0 || len(y.Paths) > maxPaths {
-		return nil, fmt.Errorf("paths: 1 to %d patterns are required", maxPaths)
-	}
-	for _, p := range y.Paths {
-		if err := validatePattern(p); err != nil {
-			return nil, fmt.Errorf("paths: %q: %w", p, err)
-		}
-	}
-	r.paths = y.Paths
-	refs, err := module.ParseRefScope(y.Refs)
-	if err != nil {
-		return nil, err
-	}
-	r.refs = refs
-	allow, err := usernames("allow", y.Allow, 1, maxAllow)
-	if err != nil {
-		return nil, err
-	}
-	r.allow = allow
-	if n := utf8.RuneCountInString(r.message); n > maxMessage {
-		return nil, fmt.Errorf("message: %d characters, the limit is %d", n, maxMessage)
-	}
-	return r, nil
-}
-
-// usernames checks a list of principals: only usernames of people or bots,
-// no groups or roles (architecture D29), compared case-insensitively.
-func usernames(field string, list []string, low, high int) ([]string, error) {
-	if len(list) < low || len(list) > high {
-		return nil, fmt.Errorf("%s: %d to %d usernames are required", field, low, high)
-	}
-	seen := map[string]bool{}
-	for _, u := range list {
-		if strings.ContainsAny(u, "/@:") {
-			return nil, fmt.Errorf("%s: %q is not a username; groups and roles are not supported, list the people", field, u)
-		}
-		if !module.ValidUsername(u) {
-			return nil, fmt.Errorf("%s: %q is not a GitLab username", field, u)
-		}
-		key := strings.ToLower(u)
-		if seen[key] {
-			return nil, fmt.Errorf("%s: %q is listed twice", field, u)
-		}
-		seen[key] = true
-	}
-	return list, nil
-}
-
-// validatePattern applies architecture §9.3: relative, no "\", no ".", ".."
+// validatePattern checks a path pattern: relative, no "\", no ".", ".."
 // or empty segments, UTF-8, at most 256 bytes and four "**"; no negation and
 // no {a,b}, unlike gitignore and CODEOWNERS.
 func validatePattern(p string) error {
@@ -227,7 +163,8 @@ func (p *Policy) covers(path string) bool {
 	return false
 }
 
-// Usernames are all principals of the policy, for D28 at acceptance.
+// Usernames are all principals of the policy: at acceptance only the ones
+// that the anchor version does not have are looked up.
 func (p *Policy) Usernames() []string {
 	out := append([]string{}, p.admins...)
 	for _, r := range p.rules {
@@ -250,7 +187,7 @@ type PathRule struct {
 
 // ExplainPath returns the rules that match the path, for gitlab-repopolicy
 // explain; every applying rule must allow the user (AND). PATHPOLICY itself
-// is changed only by admins (architecture §9.4).
+// is changed only by admins.
 func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]PathRule, module.Status) {
 	var out []PathRule
 	if isPolicyPath(path) {

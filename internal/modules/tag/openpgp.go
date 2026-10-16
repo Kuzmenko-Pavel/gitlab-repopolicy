@@ -14,7 +14,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
-// clockSkew is how far a signature may be ahead of the push (architecture §11.2).
+// clockSkew is how far a signature may be ahead of the push.
 const clockSkew = 5 * time.Minute
 
 // weakHashes are the hashes of OpenPGP signatures that are not accepted.

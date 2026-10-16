@@ -1,7 +1,7 @@
 // Package tag is the TAGPOLICY module: a tag whose name matches a rule is
-// accepted only when it is signed by a key that the rule allows (architecture
-// §11). It is FailClosed and does not call the API: the check relies only on
-// the tag object and the public keys in the file itself (D26).
+// accepted only when it is signed by a key that the rule allows. It is
+// FailClosed and does not call the API: the check relies only on the tag object
+// and the public keys in the file itself.
 package tag
 
 import (
@@ -15,7 +15,7 @@ import (
 // File is the policy file of the module.
 const File = "TAGPOLICY"
 
-// maxPolicySize is the size limit of TAGPOLICY: armored OpenPGP keys are large (architecture §12.1).
+// maxPolicySize is the size limit of TAGPOLICY: armored OpenPGP keys are large.
 const maxPolicySize = 256 << 10
 
 // Module is TAGPOLICY.
@@ -43,14 +43,11 @@ func (*Module) Parse(blob []byte) (module.Policy, error) {
 	return p, nil
 }
 
-// SchemaType is the type behind schemas/tagpolicy.schema.json.
-func (*Module) SchemaType() any { return schemaFile{} }
-
 // Validate has nothing to ask GitLab: the keys are checked by Parse and ValidateVersion.
 func (*policy) Validate(context.Context, module.Validator) []module.Problem { return nil }
 
 // EvaluateInvalid denies creating and moving every tag of the project while
-// TAGPOLICY on the anchor is invalid; branches are not affected (architecture §14).
+// TAGPOLICY on the anchor is invalid; branches are not affected.
 func (*Module) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
 	ev := audit.Event{Event: audit.EventInvalidPolicy, Decision: "allow", Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}
 	res := &module.Result{}

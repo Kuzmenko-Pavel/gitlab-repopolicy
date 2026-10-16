@@ -15,7 +15,7 @@ type API interface {
 }
 
 // Resolver turns GL_ID and GL_USERNAME into the username that policies match,
-// once per receive (architecture §9.2). It is not safe for concurrent use: a
+// once per receive. It is not safe for concurrent use: a
 // receive is sequential.
 type Resolver struct {
 	api       API

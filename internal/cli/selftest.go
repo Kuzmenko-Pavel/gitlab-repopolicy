@@ -21,7 +21,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 )
 
-// RequiredScopes are the scopes of the service account token, exactly (architecture §13.2).
+// RequiredScopes are the scopes of the service account token, exactly.
 var RequiredScopes = []string{"read_api", "self_rotate"}
 
 // RotateBefore is the default of token rotate --before; selftest warns from then on.
@@ -51,7 +51,7 @@ func (c *checks) line(level, name, format string, a ...any) {
 
 // runSelftest implements "selftest [--config FILE]": config, token and what it
 // may see, token expiry, API, audit log; the git version is informational,
-// because selftest does not run in the environment of Gitaly (architecture §12.1).
+// because selftest does not run in the environment of Gitaly.
 func (a App) runSelftest(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("selftest", flag.ContinueOnError)
 	configPath := fs.String("config", DefaultConfig, "server config")
@@ -169,7 +169,7 @@ func (a App) checkBreakglass(c *checks, cfg *config.Config) {
 	c.ok("breakglass", "%s, no active grants", cfg.BreakglassDir)
 }
 
-// checkToken checks the token file and the service account behind it (architecture §13.2).
+// checkToken checks the token file and the service account behind it.
 func checkToken(ctx context.Context, c *checks, cfg *config.Config) {
 	info, err := os.Stat(cfg.TokenFile)
 	if err != nil {

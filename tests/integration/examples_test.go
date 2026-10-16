@@ -17,8 +17,8 @@ import (
 // policyModules maps a policy file name to its module.
 var policyModules = map[string]string{"PATHPOLICY": "pathpolicy", "COMMITPOLICY": "commitpolicy", "TAGPOLICY": "tagpolicy"}
 
-// TestExamples covers the examples/ part of the compatibility corpus (design
-// §8.2): every example is a valid policy file of its module.
+// TestExamples covers the examples/ part of the compatibility corpus: every
+// example is a valid policy file of its module.
 func TestExamples(t *testing.T) {
 	root := filepath.Join("..", "..", "examples")
 	seen := map[string]int{}
@@ -47,7 +47,7 @@ func TestExamples(t *testing.T) {
 var exampleBlock = regexp.MustCompile("(?s)```yaml\n# (examples/[^\n]+)\n(.*?)```")
 
 // TestDocsQuoteExamples keeps policy examples of the documentation equal to
-// examples/, which the corpus checks (design §9.1).
+// examples/, which the corpus checks.
 func TestDocsQuoteExamples(t *testing.T) {
 	repo := filepath.Join("..", "..")
 	docs, err := filepath.Glob(filepath.Join(repo, "docs", "*.md"))

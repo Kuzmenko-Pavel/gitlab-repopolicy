@@ -30,7 +30,7 @@ func (e *evaluation) deny(v module.Violation) {
 	e.res.Violations = append(e.res.Violations, v)
 }
 
-// unknown turns an unanswered question into a denial (FailClosed, D15).
+// unknown turns an unanswered question into a denial: PATHPOLICY fails closed.
 func (e *evaluation) unknown(st module.Status, rule, ref string) {
 	code, msg := module.CodeAuthorizationBackend, "GitLab could not confirm the authorization. Retry later; administrators are alerted."
 	if st.IsLimit() {
@@ -55,7 +55,7 @@ func (e *evaluation) scopeOf(ctx context.Context, ref string) (module.Scope, mod
 	return module.Scope{Class: class}, module.Confirmed()
 }
 
-// Evaluate checks every branch and tag update of the push (architecture §9, §12).
+// Evaluate checks every branch and tag update of the push.
 func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := newEvaluation(p, in)
 	for _, u := range in.Updates {
@@ -121,7 +121,7 @@ func (e *evaluation) update(ctx context.Context, u module.RefUpdate) error {
 }
 
 // notCommit denies a tag whose object does not peel to a commit when a rule
-// covers the ref (architecture §12).
+// covers the ref.
 func (e *evaluation) notCommit(ctx context.Context, u module.RefUpdate) {
 	for _, r := range e.p.rules {
 		_, applies, st := e.ruleScope(ctx, r, u)
@@ -212,7 +212,7 @@ func (r *rule) text() string {
 	return "Allowed to change these paths: " + strings.Join(r.allow, ", ") + "."
 }
 
-// policyChange decides on a change of PATHPOLICY itself (architecture §9.4).
+// policyChange decides on a change of PATHPOLICY itself.
 func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 	e.res.Touched = true
 	person, st := e.in.Principals.Person(ctx)
@@ -255,7 +255,7 @@ func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 	}
 }
 
-// recovery records an Owner recovery: allowed, printed and alerted (architecture §9.4, §16).
+// recovery records an Owner recovery: allowed, printed and alerted.
 func (e *evaluation) recovery(u module.RefUpdate, person module.Person, reason string) {
 	e.res.Touched = true
 	e.res.Notices = append(e.res.Notices, fmt.Sprintf("PATHPOLICY recovery by Owner %s on %s: %s.", person.Username, u.Ref, reason))
@@ -264,7 +264,7 @@ func (e *evaluation) recovery(u module.RefUpdate, person module.Person, reason s
 }
 
 // deletionWarning warns when PATHPOLICY is removed while delegated files stay
-// on the anchor: anyone with push may then change them (architecture §12.2).
+// on the anchor: anyone with push may then change them.
 func (e *evaluation) deletionWarning(u module.RefUpdate) {
 	deleted := false
 	for _, c := range e.in.PolicyChanges {
@@ -288,7 +288,7 @@ func (e *evaluation) deletionWarning(u module.RefUpdate) {
 }
 
 // EvaluateAbsent is the bootstrap: without PATHPOLICY on the anchor, adding
-// it to the default branch needs at least Maintainer (architecture §9.4).
+// it to the default branch needs at least Maintainer.
 func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := newEvaluation(&Policy{}, in)
 	for _, c := range in.PolicyChanges {
@@ -322,7 +322,7 @@ func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Re
 }
 
 // EvaluateInvalid handles an invalid PATHPOLICY on the anchor: nothing changes
-// except ref deletions and an Owner fixing or removing PATHPOLICY (architecture §14).
+// except ref deletions and an Owner fixing or removing PATHPOLICY.
 func (*Module) EvaluateInvalid(ctx context.Context, in *module.Input, parseErr error) (*module.Result, error) {
 	e := newEvaluation(&Policy{}, in)
 	e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventInvalidPolicy, Code: module.CodeInvalidPolicy, Reason: parseErr.Error()})

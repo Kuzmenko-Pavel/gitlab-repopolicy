@@ -206,7 +206,7 @@ func TestClient_UsersByUsernames(t *testing.T) {
 	got, err := c.UsersByUsernames(context.Background(), []string{"alice", "dave", "nobody"})
 	require.NoError(t, err)
 	assert.Equal(t, []gitlab.GraphQLUser{{ID: 2, Username: "alice", State: "active"}, {ID: 8, Username: "dave", State: "deactivated"}}, got)
-	assert.Equal(t, 1, srv.TotalCalls(), "one request for all usernames (D28)")
+	assert.Equal(t, 1, srv.TotalCalls(), "one request for all usernames")
 
 	names := make([]string, 150)
 	for i := range names {

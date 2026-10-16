@@ -95,11 +95,11 @@ func TestParse_Limits(t *testing.T) {
 	assert.ErrorContains(t, err, "used twice")
 	for in, want := range map[string]string{
 		"version: 2\nadmins: [a]\n":                                                              "version: 2",
-		"version: 1\nadmins: [a]\ndeny: [x]\n":                                                   "field deny not found",
+		"version: 1\nadmins: [a]\ndeny: [x]\n":                                                   `unknown field "deny"`,
 		"version: 1\nadmins: [a]\nrules: [{name: R, paths: [x], allow: [a]}]\n":                  `name: "R" must match`,
 		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], refs: feature}]\n":   `refs: "feature"`,
 		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], refs: [heads/x]}]\n": "not a ref pattern",
-		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], help_url: y}]\n":     "field help_url not found",
+		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], help_url: y}]\n":     `rule r: unknown field "help_url"`,
 		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [/abs], allow: [a]}]\n":               "remove the leading /",
 		"version: 1\nadmins: &x [a]\n":                                                           "anchors are not allowed",
 	} {
@@ -213,7 +213,7 @@ func FuzzParse(f *testing.F) {
 		if err != nil {
 			return
 		}
-		// A parsed policy keeps the limits of architecture §17.
+		// A parsed policy keeps the limits.
 		if len(p.admins) < 1 || len(p.admins) > maxAdmins || len(p.rules) > maxRules {
 			t.Fatalf("limits not kept: %d admins, %d rules", len(p.admins), len(p.rules))
 		}

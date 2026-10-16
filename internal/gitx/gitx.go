@@ -1,6 +1,6 @@
 // Package gitx runs git for the hook. Every child git gets an explicit
 // environment: the repository and quarantine from Gitaly, isolation from
-// replace refs and from system and global config (architecture §12.1, D22).
+// replace refs and from system and global config.
 package gitx
 
 import (

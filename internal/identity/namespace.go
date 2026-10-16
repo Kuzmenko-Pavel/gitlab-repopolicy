@@ -1,6 +1,5 @@
 // Package identity answers questions about the pusher and the project that
-// need GitLab: the namespace type (architecture §13.2) and, for SSH pushes,
-// whether the key is personal (§9.2).
+// need GitLab: the namespace type and, for SSH pushes, whether the key is personal.
 package identity
 
 import (
@@ -16,7 +15,7 @@ type Users interface {
 }
 
 // IsPersonalProject reports whether the project lives in a personal namespace,
-// which the hook does not check (architecture D25). A path of three or more
+// which the hook does not check. A path of three or more
 // segments is a group project: users have no subgroups. For two segments the
 // first one is looked up as a username; user and group paths do not overlap.
 // A failed lookup, or a blocked or banned owner that the service account

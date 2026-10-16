@@ -1,7 +1,7 @@
-// Package token rotates the token of the service account (architecture §13.2,
-// §18.7). GitLab revokes the old token as soon as it issues the new one, so
-// the new token is written to a temporary file in the same directory, synced
-// and renamed over the old file; if that fails, the temporary file is kept.
+// Package token rotates the token of the service account. GitLab revokes the old
+// token as soon as it issues the new one, so the new token is written to a
+// temporary file in the same directory, synced and renamed over the old file; if
+// that fails, the temporary file is kept.
 package token
 
 import (

@@ -433,7 +433,7 @@ func TestPersonalNamespace(t *testing.T) {
 
 	personal := &fakeAPI{users: []gitlab.User{{ID: 2, Username: "alice"}}}
 	res := r.run([]module.Module{closed}, enforce, personal, "alice/scratch", upd)
-	assert.True(t, res.out.Allow, "personal projects are not checked (D25)")
+	assert.True(t, res.out.Allow, "personal projects are not checked")
 	assert.Empty(t, res.audit.events)
 	assert.Zero(t, personal.calls, "no protected-class request for a personal project")
 	assert.Equal(t, 1, personal.userCalls)

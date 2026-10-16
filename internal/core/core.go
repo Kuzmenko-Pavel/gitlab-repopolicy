@@ -1,6 +1,6 @@
 // Package core runs one receive: anchor, policy loading, acceptance of new
-// policy versions, module evaluation, budgets, mode and aggregation
-// (architecture §6-§8, §12, §14). It knows modules only through the contract.
+// policy versions, module evaluation, budgets, mode and aggregation. It knows
+// modules only through the contract; PATHPOLICY comes as the trust root.
 package core
 
 import (
@@ -28,7 +28,7 @@ type API interface {
 	Calls() int
 }
 
-// Breakglass reports a valid break-glass grant for a project (architecture §18.6).
+// Breakglass reports a valid break-glass grant for a project.
 type Breakglass interface {
 	Active(projectID int64, now time.Time) (reason string, ok bool)
 }
@@ -149,7 +149,7 @@ func (r *receive) run(ctx context.Context) {
 }
 
 // isPersonal resolves the namespace type once; the hook does not check
-// personal projects (architecture D25).
+// personal projects.
 func (r *receive) isPersonal(ctx context.Context) bool {
 	if r.personal == nil {
 		p := identity.IsPersonalProject(ctx, r.deps.API, r.req.Env.ProjectPath)

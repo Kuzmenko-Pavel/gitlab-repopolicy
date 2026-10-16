@@ -80,7 +80,7 @@ TOOLS  := actionlint benchstat cosign gitleaks golangci-lint goreleaser govulnch
 BINARY := bin/gitlab-repopolicy
 # Repository slug for release URLs and keyless signature identity.
 GITHUB_REPOSITORY_SLUG := Kuzmenko-Pavel/gitlab-repopolicy
-# Consumer verification of release assets in the current directory (design §6.4).
+# Consumer verification of release assets in the current directory.
 VERIFY_ASSETS := cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
 	--certificate-identity-regexp '^https://github.com/$(GITHUB_REPOSITORY_SLUG)/\.github/workflows/release\.yml@refs/tags/v' \
 	--certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -172,7 +172,7 @@ code-lint-commits: code-build
 	fi
 
 .PHONY: code-generate
-## Regenerate schemas/ from Go types and the golden files of push output.
+## Regenerate schemas/ from the specs of the modules and the golden files of push output.
 code-generate:
 	go test ./internal/schema -run '^TestSchemas$$' -update
 	go test ./internal/report -run '^TestGolden$$' -update
@@ -230,7 +230,7 @@ test-integration:
 		$(MAKE) --no-print-directory test-integration-compat COMPAT_PREV_VERSION="$$prev"; \
 	fi
 
-# The rollback check of test-integration (design §8.2): the previous minor
+# The rollback check of test-integration: the previous minor
 # release, verified like a consumer does, accepts every valid PATHPOLICY and
 # TAGPOLICY of the corpus and of examples/.
 .PHONY: test-integration-compat

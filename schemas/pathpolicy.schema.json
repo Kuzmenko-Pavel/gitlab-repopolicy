@@ -6,12 +6,14 @@
       "description": "1 to 5 usernames that may change PATHPOLICY itself.",
       "items": {
         "pattern": "^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$",
-        "type": "string"
+        "type": "string",
+        "x-repopolicy-check": "username"
       },
       "maxItems": 5,
       "minItems": 1,
       "type": "array",
-      "uniqueItems": true
+      "uniqueItems": true,
+      "x-repopolicy-check": "usernames"
     },
     "rules": {
       "description": "Path rules; every rule that matches a path must be satisfied (AND).",
@@ -22,12 +24,14 @@
             "description": "1 to 50 usernames that may change the paths; no groups or roles.",
             "items": {
               "pattern": "^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$",
-              "type": "string"
+              "type": "string",
+              "x-repopolicy-check": "username"
             },
             "maxItems": 50,
             "minItems": 1,
             "type": "array",
-            "uniqueItems": true
+            "uniqueItems": true,
+            "x-repopolicy-check": "usernames"
           },
           "message": {
             "description": "Text shown when a change is denied, up to 1000 characters.",
@@ -43,8 +47,9 @@
             "items": {
               "maxLength": 256,
               "minLength": 1,
-              "pattern": "^[^/!\\\\{}]",
-              "type": "string"
+              "pattern": "^[^/!\\\\{}][^\\\\{}]*$",
+              "type": "string",
+              "x-repopolicy-check": "path-pattern"
             },
             "maxItems": 50,
             "minItems": 1,
@@ -69,7 +74,8 @@
                 "minItems": 1,
                 "type": "array"
               }
-            ]
+            ],
+            "x-repopolicy-check": "refs"
           }
         },
         "required": [
@@ -79,7 +85,9 @@
         ],
         "type": "object"
       },
-      "type": "array"
+      "maxItems": 100,
+      "type": "array",
+      "x-repopolicy-check": "unique-names"
     },
     "version": {
       "const": 1,

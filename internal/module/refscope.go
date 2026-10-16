@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// RuleNamePattern is the name format shared by the rules of every module (architecture §9.1).
+// RuleNamePattern is the name format shared by the rules of every module.
 const RuleNamePattern = `^[a-z0-9-]{1,63}$`
 
 var ruleNameFormat = regexp.MustCompile(RuleNamePattern)
@@ -28,7 +28,7 @@ const (
 )
 
 // RefScope is the refs field of a rule: all, default, protected or a list of
-// ref globs (architecture §9.1). Which changes a scope covers is up to the module.
+// ref globs. Which changes a scope covers is up to the module.
 type RefScope struct {
 	Kind RefKind
 	// List holds the ref globs of RefsList.
@@ -49,25 +49,25 @@ func ParseRefScope(v any) (RefScope, error) {
 		case "protected":
 			return RefScope{Kind: RefsProtected}, nil
 		}
-		return RefScope{}, fmt.Errorf("refs: %q is not one of all, default, protected or a list of refs", refs)
+		return RefScope{}, fmt.Errorf("%q is not one of all, default, protected or a list of refs", refs)
 	case []any:
 		if len(refs) == 0 {
-			return RefScope{}, errors.New("refs: the list is empty")
+			return RefScope{}, errors.New("the list is empty")
 		}
 		s := RefScope{Kind: RefsList}
 		for _, item := range refs {
 			p, ok := item.(string)
 			if !ok || !strings.HasPrefix(p, "refs/") {
-				return RefScope{}, fmt.Errorf("refs: %v is not a ref pattern such as refs/heads/release/*", item)
+				return RefScope{}, fmt.Errorf("%v is not a ref pattern such as refs/heads/release/*", item)
 			}
 			if _, err := path.Match(p, ""); err != nil {
-				return RefScope{}, fmt.Errorf("refs: %q: %w", p, err)
+				return RefScope{}, fmt.Errorf("%q: %w", p, err)
 			}
 			s.List = append(s.List, p)
 		}
 		return s, nil
 	}
-	return RefScope{}, errors.New("refs: expected all, default, protected or a list of refs")
+	return RefScope{}, errors.New("expected all, default, protected or a list of refs")
 }
 
 // MatchList reports whether the ref matches a glob of the list.

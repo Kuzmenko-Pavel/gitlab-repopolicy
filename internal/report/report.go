@@ -1,4 +1,4 @@
-// Package report renders what the pusher sees (architecture §15). A rejection
+// Package report renders what the pusher sees. A rejection
 // goes to stderr as a full block for the terminal followed by GL-HOOK-ERR
 // lines for the GitLab UI; warnings and notices of a successful push go to
 // stdout. Results of API calls are never printed: Violation.Reason is audit only.

@@ -1,5 +1,5 @@
 // Package path is the PATHPOLICY module: who may change which paths of the
-// repository (architecture §9). It is FailClosed and the root of trust: it
+// repository. It is FailClosed and the root of trust: it
 // also guards itself through admins and the files of the other modules
 // through its ordinary rules.
 package path
@@ -39,12 +39,9 @@ func (*Module) Parse(blob []byte) (module.Policy, error) {
 	return p, nil
 }
 
-// SchemaType is the type behind schemas/pathpolicy.schema.json.
-func (*Module) SchemaType() any { return schemaFile{} }
-
 // Validate checks a new version: usernames added in this version exist and
-// are active (D28), and at least one admin is effective, or the new version
-// would lock everyone out (architecture §9.4, §12.2).
+// are active, and at least one admin is effective, or the new version
+// would lock everyone out.
 func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
 	if v == nil {
 		return nil
@@ -81,9 +78,9 @@ func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 	return problems
 }
 
-// countAdmins is count_effective_admins of architecture §9.4: admins that are
+// countAdmins counts effective admins: admins that are
 // active users with effective access of at least Maintainer. A failure is
-// unknown and never zero (D15).
+// unknown and never zero.
 func countAdmins(ctx context.Context, a module.AccessChecker, admins []string) (int, module.Status) {
 	report, status := adminReport(ctx, a, admins)
 	if !status.IsConfirmed() {

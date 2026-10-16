@@ -1,6 +1,6 @@
 // Package settings implements settings-check: it compares the settings of
 // projects with PATHPOLICY against the expectations of the server config and
-// checks that the principals of their policies still exist (architecture §19.2).
+// checks that the principals of their policies still exist.
 // Settings live in the database of Rails, the hook never sees them change, so
 // this is detection, not prevention.
 package settings
@@ -230,7 +230,7 @@ func missingFrom(want, have []string) []string {
 	return missing
 }
 
-// checkPrincipals checks the usernames of every policy file on ref (D7, §19.3).
+// checkPrincipals checks that the usernames of every policy file on ref are active users.
 func checkPrincipals(ctx context.Context, api API, o Options, p gitlab.Project, ref string, drift func(string, string, ...any)) error {
 	var names []string
 	seen := map[string]bool{}

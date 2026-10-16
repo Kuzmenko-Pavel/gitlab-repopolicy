@@ -73,7 +73,7 @@ func (c *Client) UserHasKey(ctx context.Context, userID, keyID int64) (bool, err
 }
 
 // ProjectAccess returns the access level of the token's user in the project:
-// the higher of the project and the group membership (architecture §13.2).
+// the higher of the project and the group membership.
 // A project the token cannot see is NotFound.
 func (c *Client) ProjectAccess(ctx context.Context, projectID int64) (int, error) {
 	var p struct {
@@ -109,9 +109,9 @@ type GraphQLUser struct {
 	State    string
 }
 
-// UsersByUsernames looks usernames up with one GraphQL request per 100 names
-// (architecture D28). Users that do not exist, and for a token without
-// administrator rights blocked and banned users, are not in the result.
+// UsersByUsernames looks usernames up with one GraphQL request per 100 names.
+// Users that do not exist, and for a token without administrator rights blocked
+// and banned users, are not in the result.
 func (c *Client) UsersByUsernames(ctx context.Context, usernames []string) ([]GraphQLUser, error) {
 	var out []GraphQLUser
 	for start := 0; start < len(usernames); start += MaxGraphQLUsers {

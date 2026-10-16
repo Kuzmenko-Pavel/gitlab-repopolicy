@@ -46,7 +46,7 @@ func (u RefUpdate) IsBranch() bool { return strings.HasPrefix(u.Ref, "refs/heads
 // IsTag reports whether the ref is under refs/tags/.
 func (u RefUpdate) IsTag() bool { return strings.HasPrefix(u.Ref, "refs/tags/") }
 
-// RefClass is the class of a ref (architecture §12).
+// RefClass is the class of a ref.
 type RefClass int
 
 // Ref classes.
@@ -91,7 +91,7 @@ type RefClassifier interface {
 	ProtectedScope(ctx context.Context) (Scope, Status)
 }
 
-// ChangeSet gives modules three views of a push, computed lazily (architecture §12).
+// ChangeSet gives modules three views of a push, computed lazily.
 // Lists of commits stop with ErrLimitExceeded when longer than max.
 type ChangeSet interface {
 	// CandidatePaths is a local superset of Paths for any class of the ref.
@@ -150,7 +150,7 @@ func (p Principal) Kind() (PrincipalKind, int64) {
 }
 
 // Status is the outcome of a question to GitLab: confirmed or unknown with a reason.
-// It replaces (bool, error) so that a failure cannot be read as "no" (architecture D15).
+// It replaces (bool, error) so that a failure cannot be read as "no".
 // The zero value is unknown.
 type Status struct {
 	confirmed bool

@@ -14,7 +14,7 @@ import (
 // tokenRotateTimeout bounds token rotate.
 const tokenRotateTimeout = time.Minute
 
-// runToken implements "token rotate [--before 30d]" (architecture §18.7): only
+// runToken implements "token rotate [--before 30d]": only
 // root, by a timer. A failure is an audit internal_error and exit code 1, for
 // alerting; when GitLab refuses, the current token stays valid.
 func (a App) runToken(ctx context.Context, args []string, _ []string, stdio Stdio) int {

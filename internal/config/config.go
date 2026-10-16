@@ -1,4 +1,4 @@
-// Package config parses and validates the server config, config.yaml (architecture §18.4).
+// Package config parses and validates the server config, config.yaml.
 package config
 
 import (

@@ -12,7 +12,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
 
-// runCoverage implements "coverage --token-file FILE" (architecture §13.2): an
+// runCoverage implements "coverage --token-file FILE": an
 // administrator's token lists every top-level group; the token is only read.
 // Gaps are exit code 1.
 func (a App) runCoverage(ctx context.Context, args []string, _ []string, stdio Stdio) int {

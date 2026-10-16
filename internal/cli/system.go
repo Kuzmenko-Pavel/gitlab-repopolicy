@@ -68,7 +68,7 @@ func (a App) system() System {
 // errNotRoot is returned by commands that only root may run.
 var errNotRoot = errors.New("this command must run as root")
 
-// logger is the diagnostic log of commands other than the hook (design §7.4).
+// logger is the diagnostic log of commands other than the hook.
 func logger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }

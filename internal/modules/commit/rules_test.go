@@ -124,30 +124,30 @@ func TestPolicy_Invalid(t *testing.T) {
 	cases := map[string]string{
 		"version: 2\nrulesets: [{name: r}]\n":                                                                            "version: 2",
 		"version: 1\nmode: strict\nrulesets: [{name: r}]\n":                                                              `mode: "strict"`,
-		"version: 1\nrulesets: []\n":                                                                                     "at least one ruleset",
+		"version: 1\nrulesets: []\n":                                                                                     "rulesets: 1 to 50 rulesets are required",
 		"version: 1\nrulesets: [{name: r}, {name: r}]\n":                                                                 "used twice",
-		"version: 1\nrulesets: [{refs: all}]\n":                                                                          `name: "" must match [a-z0-9-]{1,63}`,
+		"version: 1\nrulesets: [{refs: all}]\n":                                                                          "ruleset #1: name: required",
 		"version: 1\nrulesets: [{name: Release}]\n":                                                                      `ruleset #1: name: "Release" must match`,
 		"version: 1\nrulesets: [{name: r, refs: feature}]\n":                                                             `refs: "feature"`,
 		"version: 1\nrulesets: [{name: r, refs: [heads/x]}]\n":                                                           "not a ref pattern",
 		"version: 1\nrulesets: [{name: r, refs: ['refs/heads/[']}]\n":                                                    "syntax error",
 		"version: 1\nrulesets: [{name: r, format: angular}]\n":                                                           `format: "angular"`,
 		"version: 1\nrulesets: [{name: r, except: {users: ['bad user']}}]\n":                                             "not a GitLab username",
-		"version: 1\nrulesets: [{name: r, except: {bots: true}}]\n":                                                      "field bots not found",
+		"version: 1\nrulesets: [{name: r, except: {bots: true}}]\n":                                                      `ruleset r: except: unknown field "bots"`,
 		"version: 1\nrulesets: [{name: r, rules: {type-enum: {value: [a]}}}]\n":                                          "level: required",
 		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: high, value: [a]}}}]\n":                             `level: "high"`,
-		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: error}}}]\n":                                        "value: required",
+		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: error}}}]\n":                                        "rules.type-enum.value: a non-empty list is required",
 		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: error, value: []}}}]\n":                             "non-empty list",
 		"version: 1\nrulesets: [{name: r, rules: {header-max-length: {level: error, value: 0}}}]\n":                      "from 1 to 10000",
-		"version: 1\nrulesets: [{name: r, rules: {scope: {level: error, value: maybe}}}]\n":                              "expected one of optional, required, forbidden",
-		"version: 1\nrulesets: [{name: r, rules: {body-required: {level: error, value: true}}}]\n":                       `unknown key "value"`,
-		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: error, value: [a], max: 1}}}]\n":                    `unknown key "max"`,
+		"version: 1\nrulesets: [{name: r, rules: {scope: {level: error, value: maybe}}}]\n":                              `rules.scope.value: "maybe" is not one of optional, required, forbidden`,
+		"version: 1\nrulesets: [{name: r, rules: {body-required: {level: error, value: true}}}]\n":                       `rules.body-required: unknown field "value"`,
+		"version: 1\nrulesets: [{name: r, rules: {type-enum: {level: error, value: [a], max: 1}}}]\n":                    `rules.type-enum: unknown field "max"`,
 		"version: 1\nrulesets: [{name: r, rules: {reference: {level: error, pattern: x}}}]\n":                            "location: required",
-		"version: 1\nrulesets: [{name: r, rules: {reference: {level: error, location: body}}}]\n":                        "pattern: a regular expression",
+		"version: 1\nrulesets: [{name: r, rules: {reference: {level: error, location: body}}}]\n":                        "rules.reference.pattern: required",
 		"version: 1\nrulesets: [{name: r, rules: {reference: {level: error, location: body, pattern: '('}}}]\n":          "missing closing",
 		"version: 1\nrulesets: [{name: r, rules: {reference: {level: error, location: body, pattern: x, keys: [a]}}}]\n": "only for location: trailer",
 		"version: 1\nrulesets: [{name: r, rules: {pattern: {level: error, value: '(?<'}}}]\n":                            "value:",
-		"version: 1\nrulesets: [{name: r, admins: [x]}]\n":                                                               "field admins not found",
+		"version: 1\nrulesets: [{name: r, admins: [x]}]\n":                                                               `ruleset r: unknown field "admins"`,
 	}
 	for in, want := range cases {
 		_, err := Parse([]byte(in), testSettings())
@@ -170,7 +170,7 @@ func TestExtends(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, p.Validate(t.Context(), nil)[0].Msg, `preset "broken" of the server config is invalid`)
 	require.Len(t, testSettings().PresetErrors(), 1)
-	assert.Contains(t, testSettings().PresetErrors()[0], "commitpolicy_presets.broken: line 1: field bogus not found")
+	assert.Contains(t, testSettings().PresetErrors()[0], `commitpolicy_presets.broken: line 1: unknown field "bogus"`)
 
 	free, err := Parse([]byte("version: 1\nextends: org\nrulesets: [{name: r, format: free}]\n"), testSettings())
 	require.NoError(t, err, "conventional-only rules of a preset are not applied to a free ruleset")
@@ -258,12 +258,12 @@ func TestPattern_Examples(t *testing.T) {
 	assert.Contains(t, got[1].Msg, `pattern matches the example "feat: z"`)
 }
 
-// TestAppendixA reproduces the commitizen schema check of architecture
-// appendix A on regexp2 v2 in RE2 mode, after normalisation.
-func TestAppendixA(t *testing.T) {
+// TestCommitizenSchema reproduces a commitizen schema check of a real
+// project on regexp2 v2 in RE2 mode, after normalisation.
+func TestCommitizenSchema(t *testing.T) {
 	const schema = `(?=([\s\S]+(ref|refs|Refs|Issue|issue):\s[a-zA-Z0-9_\/-]*#\d+[\s\S]*$))(?=(^((?P<change_type>build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert|bump)(?:\((?P<scope>[^()\r\n]*)\)|\()?):\s(?P<subject>[^\n]{0,72})(?:(?P<body>(?:\n(?!(ref|refs|Refs|Issue|issue):)[^\n]*)*)(?:\n(?P<footer>(?:(ref|refs|Refs|Issue|issue):\s[a-zA-Z0-9_\/-]*#\d+))?))?$))`
-	r := &rule{name: "pattern", level: levelError}
-	require.NoError(t, r.parsePattern(schema, nil))
+	r, err := newRule("pattern", map[string]any{"level": "error", "value": schema}, true)
+	require.NoError(t, err)
 	cases := []struct {
 		msg   string
 		match bool

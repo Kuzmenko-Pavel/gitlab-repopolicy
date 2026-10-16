@@ -12,9 +12,8 @@ type LintFinding struct {
 	Reason string
 }
 
-// LintMessage checks one message against every ruleset, whatever their refs
-// (lint-commit has no ref; owner's decision, question 11). except.users does
-// not apply: there is no pusher.
+// LintMessage checks one message against every ruleset, whatever their refs:
+// lint-commit has no ref. except.users does not apply: there is no pusher.
 func (p *Policy) LintMessage(_ context.Context, message string) []LintFinding {
 	return p.lint(commitInfo{message: message})
 }

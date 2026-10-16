@@ -40,7 +40,7 @@ func TestValidate(t *testing.T) {
 
 	code, out, _ = run(t, "validate", "-f", "broken.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code)
-	assert.Contains(t, out, "at least one ruleset")
+	assert.Contains(t, out, "rulesets: 1 to 50 rulesets are required")
 
 	code, out, _ = run(t, "validate", "-f", "extends.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code, "a preset is unknown without the server config")

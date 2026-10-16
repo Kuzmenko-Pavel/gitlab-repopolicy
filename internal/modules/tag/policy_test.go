@@ -63,7 +63,7 @@ func TestParse(t *testing.T) {
 		"label":           {policyYAML("", map[string]string{"lead lead": lead}), "label"},
 		"message":         {policyYAML("  - name: prod\n    tags: v.*\n    signers: [lead]\n    message: "+strings.Repeat("я", 1001)+"\n", map[string]string{"lead": lead}), "message: 1001"},
 		"not a key":       {policyYAML(oneRule, map[string]string{"lead": "hello"}), "not an OpenPGP"},
-		"key not string":  {[]byte("version: 1\nkeys:\n  lead: [a]\n"), "cannot unmarshal"},
+		"key not string":  {[]byte("version: 1\nkeys:\n  lead: [a]\n"), "keys.lead: expected a string, got a list"},
 		"duplicate label": {[]byte("version: 1\nkeys:\n  lead: " + lead + "\n  lead: " + lead + "\n"), "lead"},
 	}
 	for name, c := range cases {
@@ -191,7 +191,7 @@ func TestAcceptance_DuplicateFingerprint(t *testing.T) {
 	e := newPGP(t, pgpOptions{})
 	ed := newSSH(t, "ed25519")
 	msg := parseErr(t, policyYAML(oneRule, map[string]string{"lead": armorPublic(t, e), "other": armorPublic(t, e)}))
-	assert.Contains(t, msg, "keys.other: the same key as keys.lead")
+	assert.Contains(t, msg, "keys: keys.other is the same key as keys.lead")
 	msg = parseErr(t, policyYAML(oneRule, map[string]string{"lead": ed.line, "other": strings.TrimSuffix(ed.line, " ed25519") + " another comment"}))
 	assert.Contains(t, msg, "the same key as keys.lead")
 }

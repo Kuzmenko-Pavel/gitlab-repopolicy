@@ -1,5 +1,5 @@
 # Config of "make release-verify-tag": gitlab-repopolicy test checks the
-# signature of the release tag against TAGPOLICY of this repository (design §6.2).
+# signature of the release tag against TAGPOLICY of this repository.
 mode: enforce
 
 # Only TAGPOLICY runs and it does not use the API, so gitlab_url and token_file

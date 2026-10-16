@@ -1,4 +1,4 @@
-// Package audit defines audit events and writes them as JSON lines (architecture §16).
+// Package audit defines audit events and writes them as JSON lines.
 package audit
 
 import (

@@ -200,7 +200,7 @@ func TestValidator_KnowsAnchorUsernames(t *testing.T) {
 	r := &receive{deps: Deps{API: &fakeAPI{}}, req: Request{Env: hookenv.Env{ProjectID: 1, ProjectPath: "a/b/c"}}}
 	r.input = r.newInput()
 	v := r.validatorFor(&loaded{policy: listedPolicy{users: []string{"Alice"}}})
-	assert.True(t, v.Known("alice"), "usernames of the anchor version are not checked again (D28)")
+	assert.True(t, v.Known("alice"), "usernames of the anchor version are not checked again")
 	assert.False(t, v.Known("bob"))
 	assert.False(t, r.validatorFor(&loaded{}).Known("alice"))
 }

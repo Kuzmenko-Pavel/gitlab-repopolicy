@@ -13,8 +13,8 @@ import (
 // maxTagObject is the largest tag object that is read; a larger one is not a release tag.
 const maxTagObject = 1 << 20
 
-// Evaluate checks every created or moved tag whose name matches a rule
-// (architecture §11.2). Deleting a tag is not regulated.
+// Evaluate checks every created or moved tag whose name matches a rule. Deleting
+// a tag is not regulated.
 func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	res := &module.Result{}
 	push := in.Clock()
@@ -37,7 +37,7 @@ func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 	return res, nil
 }
 
-// check runs steps 1-6 of architecture §11.2 for one tag.
+// check verifies one tag: the tag object, its signature and its signer.
 func (p *policy) check(ctx context.Context, in *module.Input, u module.RefUpdate, rules []*rule, push time.Time, res *module.Result) error {
 	name := tagName(u.Ref)
 	deny := func(code, msg, reason string) {

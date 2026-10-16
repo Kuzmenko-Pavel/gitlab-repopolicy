@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Benchmarks of architecture §17: the hook process is run the way Gitaly
+// Benchmarks of the hook limits: the hook process is run the way Gitaly
 // runs it, on synthetic repositories built once per test binary with
 // git fast-import. They use the product binary without -cover.
 
@@ -114,7 +114,7 @@ func inline(w *bytes.Buffer, path, content string) {
 	fmt.Fprintf(w, "M 100644 inline %s\ndata %d\n%s\n", path, len(content), content)
 }
 
-// largePathPolicy has 100 rules, about 15 KiB: the worst case of the measurement in §17.
+// largePathPolicy has 100 rules, about 15 KiB: the largest policy of the limits.
 func largePathPolicy() string {
 	var b strings.Builder
 	b.WriteString("version: 1\nadmins: [alice]\nrules:\n")
@@ -160,7 +160,7 @@ func measure(b *testing.B, r *benchRepo, repository string) {
 }
 
 // BenchmarkLargeRepo: 100k files and PATHPOLICY with 100 rules; the push
-// changes one file outside the rules (PF-01).
+// changes one file outside the rules.
 func BenchmarkLargeRepo(b *testing.B) {
 	r := fastImport(b, "large-repo", func(w *bytes.Buffer) {
 		blob(w, 1, "x")
@@ -175,7 +175,7 @@ func BenchmarkLargeRepo(b *testing.B) {
 	measure(b, r, "project-1")
 }
 
-// BenchmarkLargeDiff: a push that changes 50k paths, none under a rule (PF-02).
+// BenchmarkLargeDiff: a push that changes 50k paths, none under a rule.
 func BenchmarkLargeDiff(b *testing.B) {
 	r := fastImport(b, "large-diff", func(w *bytes.Buffer) {
 		blob(w, 1, "x")
@@ -196,7 +196,7 @@ func BenchmarkLargeDiff(b *testing.B) {
 }
 
 // BenchmarkMR500Commits: 500 commits enter main and COMMITPOLICY of this
-// repository checks every message (PF-03).
+// repository checks every message.
 func BenchmarkMR500Commits(b *testing.B) {
 	policy, err := os.ReadFile("../../COMMITPOLICY")
 	require.NoError(b, err)
@@ -214,7 +214,7 @@ func BenchmarkMR500Commits(b *testing.B) {
 	measure(b, r, "project-1")
 }
 
-// BenchmarkFastPath: the paths of §17 without API calls (PF-04).
+// BenchmarkFastPath: the paths of a push without API calls.
 func BenchmarkFastPath(b *testing.B) {
 	noPolicy := func(w *bytes.Buffer) {
 		commit(w, "refs/heads/main", "", "chore: base", func(w *bytes.Buffer) { inline(w, "README.md", "x") })

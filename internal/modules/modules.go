@@ -1,4 +1,4 @@
-// Package modules builds the module list of the hook (architecture §20). The
+// Package modules builds the module list of the hook. The
 // core works with the list it returns.
 package modules
 
@@ -23,7 +23,7 @@ type Settings struct {
 
 // Set is the module list: the trust root and the other modules in evaluation order.
 type Set struct {
-	// Root is PATHPOLICY; it guards the files of the other modules (architecture §8).
+	// Root is PATHPOLICY; it guards the files of the other modules.
 	Root    module.Root
 	Modules []module.Module
 }

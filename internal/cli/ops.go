@@ -42,7 +42,7 @@ func parse(fs *flag.FlagSet, args []string, stderr io.Writer) bool {
 	return true
 }
 
-// runInstallHook implements "install-hook --hooks-dir DIR [--user git]" (architecture §18.3).
+// runInstallHook implements "install-hook --hooks-dir DIR [--user git]".
 func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("install-hook", flag.ContinueOnError)
 	hooksDir := fs.String("hooks-dir", "", "custom_hooks_dir of Gitaly")
@@ -82,7 +82,7 @@ func (a App) runInstallHook(_ context.Context, args []string, _ []string, stdio 
 	return withOutput(out.err, ExitOK)
 }
 
-// ownFiles gives the hook user what it reads and writes (question 16): the
+// ownFiles gives the hook user what it reads and writes: the
 // group of config.yaml and of the token, and the audit log directory. The
 // package does the same at its first installation when the user exists.
 func (a App) ownFiles(configPath string, uid, gid int) ([]string, bool) {
@@ -164,7 +164,7 @@ func (a App) auditWriter(cfg *config.Config, stdout io.Writer) (*audit.Writer, e
 	return audit.NewWriter(o), nil
 }
 
-// runBreakglass implements "breakglass grant|revoke|list" (architecture §18.6).
+// runBreakglass implements "breakglass grant|revoke|list".
 func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio Stdio) int {
 	if len(args) == 0 || (args[0] != "grant" && args[0] != "revoke" && args[0] != "list") {
 		return fail(stdio.Err, "breakglass", fmt.Errorf("expected grant, revoke or list"), ExitUsage)

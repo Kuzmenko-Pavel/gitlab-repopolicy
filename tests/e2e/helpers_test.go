@@ -272,7 +272,7 @@ func inContainer(t *testing.T, script string) string {
 	return out
 }
 
-// auditEvent is the part of an audit event the tests check (architecture §16).
+// auditEvent is the part of an audit event the tests check.
 type auditEvent struct {
 	Event       string `json:"event"`
 	Module      string `json:"module"`

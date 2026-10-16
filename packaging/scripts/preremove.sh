@@ -1,7 +1,7 @@
 #!/bin/sh
 # preremove of the deb and rpm packages: on removal, not on upgrade, the
 # timers stop. The hook wrapper stays: the administrator removes it with
-# "gitlab-repopolicy uninstall-hook" (architecture §18.3).
+# "gitlab-repopolicy uninstall-hook".
 set -e
 
 case "$1" in

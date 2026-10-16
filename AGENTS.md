@@ -30,7 +30,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `internal/modules/{path,commit,tag}` | PATHPOLICY, COMMITPOLICY, TAGPOLICY |
 | `internal/{changes,gitx,refs,identity,gitlab,hookenv,config,strictyaml,report,audit}` | core infrastructure |
 | `internal/{install,settings,coverage,token,breakglass}` | operational commands, called only from `cli` |
-| `internal/{schema,buildinfo}` | JSON Schema generation, build metadata |
+| `internal/{spec,schema,buildinfo}` | format of policy files and its validator, JSON Schema generation, build metadata |
 
 Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 

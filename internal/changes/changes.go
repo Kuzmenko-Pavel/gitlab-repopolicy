@@ -1,6 +1,6 @@
 // Package changes computes the views of a push that modules use: changed paths,
-// new commits and entering commits, depending on the class of the ref
-// (architecture §12). Everything is lazy and memoised for the receive.
+// new commits and entering commits, depending on the class of the ref.
+// Everything is lazy and memoised for the receive.
 package changes
 
 import (
@@ -13,8 +13,8 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
-// MaxPathCommits bounds the commits whose paths are listed (architecture §17:
-// 50 000 new commits); above it path views fail with module.ErrLimitExceeded.
+// MaxPathCommits bounds the commits whose paths are listed; above it path views
+// fail with module.ErrLimitExceeded.
 const MaxPathCommits = 50_000
 
 // Git is the part of gitx the change set uses.

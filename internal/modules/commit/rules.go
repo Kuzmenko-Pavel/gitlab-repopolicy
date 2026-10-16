@@ -25,7 +25,7 @@ type budget struct {
 }
 
 // defaultPatternTimeout bounds a match without a configured timeout, such as
-// the examples of a policy (architecture §10.3, §17).
+// the examples of a policy.
 const defaultPatternTimeout = 100 * time.Millisecond
 
 // errBudget is returned when the pattern budget of the receive is spent.

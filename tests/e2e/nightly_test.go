@@ -17,7 +17,7 @@ import (
 // parallelMerges is the number of merge requests merged at once.
 const parallelMerges = 8
 
-// TestNightly_ParallelMerges covers OP-22 and PF-05: merges pressed at the
+// TestNightly_ParallelMerges: merges pressed at the
 // same time on one node. GitLab lets one merge per target update win and
 // answers 422 to the others (FACTS); the hook must allow every attempt it
 // sees within its time limit, and retries merge the rest.
@@ -79,5 +79,5 @@ func TestNightly_ParallelMerges(t *testing.T) {
 	slices.Sort(durations)
 	p99 := durations[(len(durations)*99+99)/100-1]
 	t.Logf("hook on main: %d calls, p50 %d ms, p99 %d ms", len(durations), durations[len(durations)/2], p99)
-	assert.Less(t, p99, int64(10_000), "the hook time limit of architecture §17")
+	assert.Less(t, p99, int64(10_000), "the time limit of the hook")
 }

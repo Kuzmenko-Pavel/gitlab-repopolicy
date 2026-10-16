@@ -1,5 +1,5 @@
 // Package gitlab is the client of the GitLab REST API v4 and GraphQL used by
-// the hook (architecture §13.3). Every call has a timeout and counts against
+// the hook. Every call has a timeout and counts against
 // the call budget of the receive; failures are classified, never hidden.
 package gitlab
 

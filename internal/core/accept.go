@@ -11,7 +11,7 @@ import (
 )
 
 // accept validates every policy file that a push changes, on any ref, as a new
-// version (architecture §12.2, D23). It runs whether or not the anchor has policies.
+// version. It runs whether or not the anchor has policies.
 func (r *receive) accept(ctx context.Context) error {
 	for _, u := range r.updates {
 		if u.Kind() == module.Delete {
@@ -168,7 +168,7 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 	return nil
 }
 
-// validatorFor is the authorizer that knows the usernames of the anchor version (D28).
+// validatorFor is the authorizer that knows the usernames of the anchor version.
 func (r *receive) validatorFor(l *loaded) module.Validator {
 	var known []string
 	if lister, ok := l.policy.(module.UsernameLister); ok {
@@ -178,7 +178,7 @@ func (r *receive) validatorFor(l *loaded) module.Validator {
 }
 
 // coverageWarning is the warning for a new version of a delegated policy file
-// that no rule of the PATHPOLICY on the anchor covers (architecture §12.2).
+// that no rule of the PATHPOLICY on the anchor covers.
 func (r *receive) coverageWarning(l *loaded) string {
 	root := r.root
 	if root == nil || root == l || root.policy == nil || r.deps.Root.Covers(root.policy, l.mod.File()) {

@@ -1,5 +1,5 @@
 // Package coverage finds the top-level groups where the service account is
-// not a Maintainer (architecture §13.2). The service account cannot see these
+// not a Maintainer. The service account cannot see these
 // gaps itself, so an administrator runs it with their own token, which is not
 // stored.
 package coverage

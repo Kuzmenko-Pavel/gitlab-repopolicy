@@ -1,5 +1,5 @@
 // Package commit is the COMMITPOLICY module: the format of every commit
-// message that enters a ref, by independent rules (architecture §10).
+// message that enters a ref, by independent rules.
 package commit
 
 import (
@@ -11,13 +11,14 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
 // File is the policy file of the module.
 const File = "COMMITPOLICY"
 
-// MaxEnteringCommits is the limit of commits checked per ref (architecture §17).
+// MaxEnteringCommits is the limit of commits checked per ref.
 const MaxEnteringCommits = 10_000
 
 // Settings come from the server config.
@@ -39,7 +40,14 @@ func NewSettings(rawPresets map[string]any, timeout, budget time.Duration, clock
 		PatternTimeout: timeout, PatternBudget: budget, Clock: clock}
 	for name, raw := range rawPresets {
 		var p presetYAML
-		if err := strictyaml.DecodeValue(raw, &p, module.DefaultMaxPolicySize); err != nil {
+		tree, err := strictyaml.DecodeValueTree(raw, module.DefaultMaxPolicySize)
+		if err == nil {
+			err = spec.Validate(presetSpec, tree, checks)
+		}
+		if err == nil {
+			err = strictyaml.DecodeValue(raw, &p, module.DefaultMaxPolicySize)
+		}
+		if err != nil {
 			s.presetErrors[name] = err
 			continue
 		}
@@ -95,9 +103,6 @@ func (*Module) EvaluateInvalid(_ context.Context, _ *module.Input, parseErr erro
 	}, nil
 }
 
-// SchemaType is the type behind schemas/commitpolicy.schema.json.
-func (*Module) SchemaType() any { return schemaFile{} }
-
 // Validate checks a new version: what Parse leaves to the anchor (unknown
 // rules and presets), pattern examples and the users of except.users.
 func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Problem {
@@ -141,7 +146,8 @@ func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 	return problems
 }
 
-// Usernames are the principals of the policy, for D28 at acceptance.
+// Usernames are the principals of the policy: at acceptance only the ones
+// that the anchor version does not have are looked up.
 func (p *Policy) Usernames() []string {
 	var out []string
 	for _, rs := range p.rulesets {
@@ -150,7 +156,7 @@ func (p *Policy) Usernames() []string {
 	return out
 }
 
-// checkExamples runs the examples of a pattern rule (architecture §10.3).
+// checkExamples runs the examples of a pattern rule.
 func (r *rule) checkExamples(rs *ruleset) []module.Problem {
 	if r.pattern == nil {
 		return nil

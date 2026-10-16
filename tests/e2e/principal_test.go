@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The e2e part of the PATHPOLICY rows of architecture §21: principals,
-// admins and Owner recovery against the real members API.
+// The e2e part of PATHPOLICY: principals, admins and Owner recovery against
+// the real members API.
 
 const adminDenied = "gitlab-repopolicy: PATHPOLICY policy change denied. See push output."
 
@@ -29,7 +29,7 @@ func changePolicy(t *testing.T, u *standUser, p *project, policy string) error {
 	return err
 }
 
-// TestAcceptance_UnknownUsername covers PR-07-e: a username that does not
+// TestAcceptance_UnknownUsername: a username that does not
 // exist makes the new policy version invalid.
 func TestAcceptance_UnknownUsername(t *testing.T) {
 	t.Parallel()
@@ -44,7 +44,7 @@ func TestAcceptance_UnknownUsername(t *testing.T) {
 	assert.Contains(t, e.Violations[0].Reason, ghost)
 }
 
-// TestAdmins_DeveloperIsNotAdmin covers AR-01-e: bob is listed in admins but
+// TestAdmins_DeveloperIsNotAdmin: bob is listed in admins but
 // has the Developer role.
 func TestAdmins_DeveloperIsNotAdmin(t *testing.T) {
 	t.Parallel()
@@ -78,7 +78,7 @@ func removeMember(t *testing.T) func(*project, *standUser) {
 	}
 }
 
-// requireRecovery checks an Owner recovery by u (architecture §14).
+// requireRecovery checks an Owner recovery by u.
 func requireRecovery(t *testing.T, p *project, u *standUser) {
 	t.Helper()
 	require.NoError(t, changePolicy(t, u, p, policyWithAdmins("alice")))
@@ -95,8 +95,6 @@ func owner(t *testing.T, p *project) *standUser {
 	addMember(t, p, owen, accessOwner)
 	return owen
 }
-
-// TestRecovery_OwnerDeniedWhenAdminsAlive covers AR-02-e.
 func TestRecovery_OwnerDeniedWhenAdminsAlive(t *testing.T) {
 	t.Parallel()
 	p := withCIPolicy(t, "admins-alive")
@@ -106,14 +104,12 @@ func TestRecovery_OwnerDeniedWhenAdminsAlive(t *testing.T) {
 	assert.Equal(t, "policy_admin_violation", e.Code)
 }
 
-// TestRecovery_LastAdminRemoved covers AR-03-e: the only admin left the project.
+// TestRecovery_LastAdminRemoved: the only admin left the project.
 func TestRecovery_LastAdminRemoved(t *testing.T) {
 	t.Parallel()
 	p := lostAdmin(t, "admin-removed", removeMember(t))
 	requireRecovery(t, p, owner(t, p))
 }
-
-// TestRecovery_LastAdminBlocked covers AR-04-e.
 func TestRecovery_LastAdminBlocked(t *testing.T) {
 	t.Parallel()
 	p := lostAdmin(t, "admin-blocked", func(_ *project, admin *standUser) {
@@ -122,7 +118,7 @@ func TestRecovery_LastAdminBlocked(t *testing.T) {
 	requireRecovery(t, p, owner(t, p))
 }
 
-// TestRecovery_OwnerViaParentGroup covers AR-10-e: olga is an Owner of the
+// TestRecovery_OwnerViaParentGroup: olga is an Owner of the
 // top-level group and not a member of the project or its subgroup.
 func TestRecovery_OwnerViaParentGroup(t *testing.T) {
 	t.Parallel()
@@ -130,7 +126,7 @@ func TestRecovery_OwnerViaParentGroup(t *testing.T) {
 	requireRecovery(t, p, user("olga"))
 }
 
-// TestRecovery_NonOwnerDenied covers AR-11-e: in recovery a Maintainer is
+// TestRecovery_NonOwnerDenied: in recovery a Maintainer is
 // refused, and the push output names the recovery condition.
 func TestRecovery_NonOwnerDenied(t *testing.T) {
 	t.Parallel()

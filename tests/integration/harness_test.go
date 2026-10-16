@@ -2,7 +2,7 @@
 
 // Package integration pushes with a real git into a bare repository whose
 // pre-receive hook runs the binary the way the install-hook wrapper does:
-// git creates the quarantine, passes stdin and calls the hook (design §8.2).
+// git creates the quarantine, passes stdin and calls the hook.
 package integration
 
 import (

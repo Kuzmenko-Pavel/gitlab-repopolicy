@@ -1,4 +1,4 @@
-// Package module is the contract between the core and policy modules (architecture §8).
+// Package module is the contract between the core and policy modules.
 // The core does not know what a module checks; a module does not know how
 // changes and identity were obtained.
 package module
@@ -23,7 +23,7 @@ const (
 	FailOpen
 )
 
-// DefaultMaxPolicySize is the size limit of a policy file (architecture §17).
+// DefaultMaxPolicySize is the size limit of a policy file.
 const DefaultMaxPolicySize = 64 << 10
 
 // Module is one policy kind with its own file.
@@ -42,7 +42,7 @@ type Module interface {
 	// Parse decodes and checks a policy file offline: strict decoding and limits, no network.
 	Parse(blob []byte) (Policy, error)
 	// EvaluateInvalid decides a push while the file on the anchor does not
-	// parse (architecture §14), for example TAGPOLICY blocks only tags.
+	// parse, for example TAGPOLICY blocks only tags.
 	EvaluateInvalid(ctx context.Context, in *Input, parseErr error) (*Result, error)
 }
 
@@ -87,7 +87,7 @@ type User struct {
 // AccessChecker answers questions about users of the project; Validator and
 // Authorizer build on it.
 type AccessChecker interface {
-	// Users looks usernames up in one request (D28). The map is keyed by the
+	// Users looks usernames up in one request. The map is keyed by the
 	// lowercased username; a missing key means the user does not exist or is
 	// not visible (blocked, banned).
 	Users(ctx context.Context, usernames []string) (map[string]User, Status)
@@ -104,12 +104,12 @@ type Guard func(ctx context.Context) (Status, bool)
 type Validator interface {
 	AccessChecker
 	// Known reports whether the username is in the version on the anchor:
-	// such usernames are not checked for existence again (D28).
+	// such usernames are not checked for existence again.
 	Known(username string) bool
 }
 
 // Authorizer answers questions about the pusher and the project for modules
-// that declare Needs().Identity (architecture §13). Answers are three-valued:
+// that declare Needs().Identity. Answers are three-valued:
 // a status that is not confirmed is never "no".
 type Authorizer interface {
 	// PusherAccess is the effective access level of the pushing person; 0 is
@@ -128,7 +128,7 @@ type Input struct {
 	// Principal is the identity of the pusher as GL_ID and GL_USERNAME.
 	Principal Principal
 	// Principals resolves the pusher to a person; an SSH key is checked to be
-	// personal (architecture §9.2). It calls the API lazily.
+	// personal. It calls the API lazily.
 	Principals PrincipalResolver
 	// Authz is set only for modules with Needs().Identity.
 	Authz Authorizer
@@ -177,7 +177,7 @@ type Result struct {
 	Signatures []Signature
 }
 
-// Signature is the signer of a tag that a module verified (architecture §11.2).
+// Signature is the signer of a tag that a module verified.
 type Signature struct {
 	Ref string
 	// Rules are the rules whose names matched the tag.
@@ -210,7 +210,7 @@ type Item struct {
 	Commit bool
 }
 
-// Violation codes of architecture §15.
+// Violation codes; they are a public contract.
 const (
 	CodeProtectedPath        = "protected_path_violation"
 	CodePolicyAdmin          = "policy_admin_violation"
@@ -241,29 +241,16 @@ var (
 	ErrMissing = errors.New("object missing")
 )
 
-// Root is the module of the trust root, PATHPOLICY (architecture §1, D4). It
+// Root is the module of the trust root, PATHPOLICY. It
 // guards the files of the delegated modules and decides a push also while the
 // anchor has no file.
 type Root interface {
 	Module
-	// EvaluateAbsent decides a push while the anchor has no file, the bootstrap (architecture §9.4).
+	// EvaluateAbsent decides a push while the anchor has no file, the bootstrap.
 	EvaluateAbsent(ctx context.Context, in *Input) (*Result, error)
 	// Covers reports whether a rule of p, a policy parsed by this module,
-	// guards the path (architecture §12.2).
+	// guards the path.
 	Covers(p Policy, path string) bool
-}
-
-// SchemaProvider is implemented by modules that publish a JSON Schema of their
-// file in schemas/ for editors (architecture §22).
-type SchemaProvider interface {
-	// SchemaType returns a zero value of the Go type the file is decoded into.
-	SchemaType() any
-}
-
-// JSONSchemaer is implemented by types of a policy schema whose JSON Schema
-// the reflection of their Go type cannot express, such as enums or durations.
-type JSONSchemaer interface {
-	JSONSchema() map[string]any
 }
 
 // Person is the pusher as a GitLab user.
@@ -282,14 +269,14 @@ type PrincipalResolver interface {
 
 // VersionValidator is implemented by policies whose acceptance depends on the
 // time or on the version on the anchor, for example TAGPOLICY rejects an
-// expired key only in a new or changed entry (architecture §11.3). The anchor
+// expired key only in a new or changed entry. The anchor
 // policy is nil when the anchor has no valid version of the file.
 type VersionValidator interface {
 	ValidateVersion(anchor Policy, now time.Time) []Problem
 }
 
 // UsernameLister is implemented by policies with principals. At acceptance the
-// core checks only usernames that the anchor version does not have (D28).
+// core checks only usernames that the anchor version does not have.
 type UsernameLister interface {
 	Usernames() []string
 }

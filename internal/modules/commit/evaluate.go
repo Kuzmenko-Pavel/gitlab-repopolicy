@@ -52,7 +52,7 @@ type evaluation struct {
 	res     *module.Result
 }
 
-// Evaluate checks the commits entering every ref of the push (architecture §10.4).
+// Evaluate checks the commits entering every ref of the push.
 func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := &evaluation{p: p, in: in, commits: map[string]commitInfo{}, res: &module.Result{}}
 	if p.settings.Clock != nil && p.settings.PatternBudget > 0 {
@@ -113,7 +113,7 @@ func (e *evaluation) ruleset(ctx context.Context, rs *ruleset, u module.RefUpdat
 }
 
 // protectedRuleset checks the candidates first and asks GitLab for the class
-// of the ref only when some commit breaks a rule (architecture §12).
+// of the ref only when some commit breaks a rule.
 func (e *evaluation) protectedRuleset(ctx context.Context, rs *ruleset, u module.RefUpdate) error {
 	candidates, err := e.in.Changes.CandidateCommits(ctx, u, MaxEnteringCommits)
 	if done, err := e.listFailed(rs, u, err); done {
@@ -164,7 +164,7 @@ func (e *evaluation) protectedRuleset(ctx context.Context, rs *ruleset, u module
 	return e.report(ctx, rs, u, kept)
 }
 
-// listFailed turns the limit of entering commits into a violation (architecture §10.5).
+// listFailed turns the limit of entering commits into a violation.
 func (e *evaluation) listFailed(rs *ruleset, u module.RefUpdate, err error) (bool, error) {
 	switch {
 	case err == nil:

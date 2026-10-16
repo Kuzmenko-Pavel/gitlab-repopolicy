@@ -17,7 +17,7 @@ import (
 
 const notRoot = "REPOPOLICY_TEST_NOT_ROOT=1"
 
-// TestInstallHook installs the wrapper, pushes through it, and removes it (EX-01).
+// TestInstallHook installs the wrapper, pushes through it, and removes it.
 func TestInstallHook(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll, "ci.yml": "x"})
 	hooks := filepath.Join(s.Dir, "custom_hooks")
@@ -51,7 +51,7 @@ func TestInstallHook(t *testing.T) {
 	group := fmt.Sprintf(" -1:%d\n", os.Getgid())
 	assert.Equal(t, 3, strings.Count(string(log), ids), "the directory, the wrapper and the log directory belong to --user:\n%s", log)
 	assert.Contains(t, string(log), filepath.Join(hooks, "pre-receive.d")+ids)
-	assert.Contains(t, string(log), s.Dir+ids, "the audit log directory (question 16)")
+	assert.Contains(t, string(log), s.Dir+ids, "the audit log directory")
 	assert.Contains(t, string(log), s.config+group, "config.yaml gets the group of --user")
 	assert.Contains(t, string(log), filepath.Join(s.Dir, "token")+group)
 	assert.Contains(t, r.Stdout, s.config+": owner set")
@@ -97,7 +97,7 @@ func breakglassStand(t *testing.T) *Stand {
 }
 
 // TestBreakglass_Valid: a grant lets the push through with a warning and an
-// audit event; revoke ends it; the TTL is at most 24h (EX-14).
+// audit event; revoke ends it; the TTL is at most 24h.
 func TestBreakglass_Valid(t *testing.T) {
 	s := breakglassStand(t)
 	grant := []string{"breakglass", "grant", "--config", s.config, "--project-id", "1", "--ttl", "30m", "--reason", "INC-123 policy lockout"}
@@ -143,7 +143,7 @@ func TestBreakglass_Valid(t *testing.T) {
 }
 
 // TestBreakglass_ExpiredIgnored: an expired grant, one longer than 24h and one
-// that others may write are ignored (EX-13).
+// that others may write are ignored.
 func TestBreakglass_ExpiredIgnored(t *testing.T) {
 	now := time.Now().UTC()
 	for name, tc := range map[string]struct {

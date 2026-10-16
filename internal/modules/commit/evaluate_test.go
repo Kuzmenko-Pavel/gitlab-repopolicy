@@ -281,7 +281,7 @@ func TestValidate_ExceptUsers(t *testing.T) {
 	assert.Len(t, p.Validate(context.Background(), activeUsers{"release-bot": false}), 1, "a blocked or deactivated user is not active")
 	known, err := New(testSettings()).Parse([]byte(strings.Replace(exceptPolicy, "release-bot", "anchor-bot", 1)))
 	require.NoError(t, err)
-	assert.Empty(t, known.Validate(context.Background(), activeUsers{}), "usernames of the anchor version are not checked again (D28)")
+	assert.Empty(t, known.Validate(context.Background(), activeUsers{}), "usernames of the anchor version are not checked again")
 	assert.Equal(t, []string{"release-bot"}, p.(module.UsernameLister).Usernames())
 }
 

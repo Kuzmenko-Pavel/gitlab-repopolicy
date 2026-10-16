@@ -37,7 +37,7 @@ func (r *receive) newInput() *module.Input {
 	}
 }
 
-// inputFor gives the authorizer only to modules that declare identity (architecture §20).
+// inputFor gives the authorizer only to modules that declare identity.
 func (r *receive) inputFor(identityNeeded bool) *module.Input {
 	if !identityNeeded {
 		return r.input
@@ -50,7 +50,7 @@ func (r *receive) inputFor(identityNeeded bool) *module.Input {
 // guard runs before the first API call of a receive. A personal project is
 // not checked, so no question about it goes to GitLab; a project the service
 // account cannot see, or sees below Maintainer, answers every question with
-// unknown, as an API failure does (architecture §13.2).
+// unknown, as an API failure does.
 func (r *receive) guard(ctx context.Context) (module.Status, bool) {
 	if r.isPersonal(ctx) {
 		return module.Unknown("personal namespace"), true

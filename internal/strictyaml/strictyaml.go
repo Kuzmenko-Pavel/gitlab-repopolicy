@@ -32,28 +32,7 @@ func (e *Error) Error() string {
 // aliases, merge keys, explicit tags, duplicate keys, nesting deeper than 32
 // and keys that out does not define.
 func Decode(data []byte, out any, maxBytes int) error {
-	if len(data) > maxBytes {
-		return &Error{Msg: fmt.Sprintf("document is %d bytes, the limit is %d", len(data), maxBytes)}
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err != nil {
-		if errors.Is(err, io.EOF) {
-			return &Error{Msg: "document is empty"}
-		}
-		return syntaxError(err)
-	}
-	var next yaml.Node
-	if err := dec.Decode(&next); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return syntaxError(err)
-		}
-		return &Error{Line: next.Line, Msg: "only one YAML document is allowed"}
-	}
-	if len(doc.Content) == 0 || doc.Content[0].Kind == yaml.ScalarNode && doc.Content[0].Tag == "!!null" {
-		return &Error{Msg: "document is empty"}
-	}
-	if err := check(&doc, 0); err != nil {
+	if _, err := document(data, maxBytes); err != nil {
 		return err
 	}
 	strict := yaml.NewDecoder(bytes.NewReader(data))
@@ -62,6 +41,35 @@ func Decode(data []byte, out any, maxBytes int) error {
 		return syntaxError(err)
 	}
 	return nil
+}
+
+// document parses data and applies the checks of Decode that do not depend on out.
+func document(data []byte, maxBytes int) (*yaml.Node, error) {
+	if len(data) > maxBytes {
+		return nil, &Error{Msg: fmt.Sprintf("document is %d bytes, the limit is %d", len(data), maxBytes)}
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, &Error{Msg: "document is empty"}
+		}
+		return nil, syntaxError(err)
+	}
+	var next yaml.Node
+	if err := dec.Decode(&next); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, syntaxError(err)
+		}
+		return nil, &Error{Line: next.Line, Msg: "only one YAML document is allowed"}
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind == yaml.ScalarNode && doc.Content[0].Tag == "!!null" {
+		return nil, &Error{Msg: "document is empty"}
+	}
+	if err := check(&doc, 0); err != nil {
+		return nil, err
+	}
+	return doc.Content[0], nil
 }
 
 func check(n *yaml.Node, depth int) error {

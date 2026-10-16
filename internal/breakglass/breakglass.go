@@ -1,6 +1,6 @@
-// Package breakglass grants, revokes and checks break-glass for a project
-// (architecture §18.6). A grant is a file that only root may write; while it
-// is valid the hook does not enforce policies for the project.
+// Package breakglass grants, revokes and checks break-glass for a project. A
+// grant is a file that only root may write; while it is valid the hook does not
+// enforce policies for the project.
 package breakglass
 
 import (

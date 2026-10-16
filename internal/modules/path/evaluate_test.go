@@ -307,7 +307,7 @@ func TestRecovery_APIFailures(t *testing.T) {
 			if st.IsLimit() {
 				want = module.CodeLimitExceeded
 			}
-			assert.Equal(t, []string{want}, codes(res), "UNKNOWN never enables recovery (D15)")
+			assert.Equal(t, []string{want}, codes(res), "UNKNOWN never enables recovery")
 			assert.Empty(t, res.Notices)
 		})
 	}

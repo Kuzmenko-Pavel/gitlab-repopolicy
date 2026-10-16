@@ -1,5 +1,5 @@
 // Package hookenv parses the pre-receive environment and stdin that Gitaly passes
-// to custom hooks (architecture §12.1, §13.1). Push options are never read.
+// to custom hooks. Push options are never read.
 package hookenv
 
 import (

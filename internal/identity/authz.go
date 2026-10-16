@@ -36,7 +36,7 @@ func NewAuthorizer(api AuthzAPI, projectID int64, pusher module.PrincipalResolve
 		users: map[string]module.User{}, levels: map[int64]int{}}
 }
 
-// WithKnown returns a copy that reports the usernames as present on the anchor (D28).
+// WithKnown returns a copy that reports the usernames as present on the anchor.
 func (a *Authorizer) WithKnown(usernames []string) *Authorizer {
 	known := map[string]bool{}
 	for _, u := range usernames {

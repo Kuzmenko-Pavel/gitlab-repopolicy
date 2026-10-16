@@ -41,7 +41,7 @@ func (r *receive) loadAnchor(ctx context.Context) error {
 	return nil
 }
 
-// loadPolicies reads the file of every module from the anchor (architecture §12.1).
+// loadPolicies reads the file of every module from the anchor.
 func (r *receive) loadPolicies(ctx context.Context) error {
 	for i, m := range r.modules() {
 		l := &loaded{mod: m}

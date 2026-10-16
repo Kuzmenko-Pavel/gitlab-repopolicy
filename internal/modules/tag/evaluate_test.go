@@ -428,7 +428,6 @@ func TestModule(t *testing.T) {
 	assert.Equal(t, "tagpolicy", m.Name())
 	assert.Equal(t, "TAGPOLICY", m.File())
 	assert.Equal(t, module.FailClosed, m.OnInvalid())
-	assert.NotNil(t, m.SchemaType())
 	p, err := m.Parse(policyYAML(twoRules, map[string]string{"release-lead": newSSH(t, "ed25519").line, "dev-lead": newSSH(t, "ed25519").line}))
 	require.NoError(t, err)
 	assert.False(t, m.Needs().Identity, "TAGPOLICY does not use the API")

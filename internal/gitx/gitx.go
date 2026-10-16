@@ -24,15 +24,12 @@ type Env struct {
 	AlternateObjectDirs string
 	// Path is searched for git; Gitaly puts its own git first.
 	Path string
-	// NoObjectMode disables the %(objectmode) fast path even when git supports it.
-	NoObjectMode bool
 }
 
 // Repo runs git commands against one repository.
 type Repo struct {
 	git     string
 	env     []string
-	noMode  bool
 	catfile *catFile
 }
 
@@ -86,7 +83,7 @@ func Open(env Env) (*Repo, error) {
 	if env.AlternateObjectDirs != "" {
 		vars = append(vars, "GIT_ALTERNATE_OBJECT_DIRECTORIES="+env.AlternateObjectDirs)
 	}
-	return &Repo{git: git, env: vars, noMode: env.NoObjectMode}, nil
+	return &Repo{git: git, env: vars}, nil
 }
 
 func lookGit(path string) (string, error) {

@@ -71,22 +71,12 @@ func (f *fixture) push(refspecs ...string) {
 	f.git(f.work, append([]string{"push", "-q", "-f", f.bare}, refspecs...)...)
 }
 
-func (f *fixture) open(noMode bool) *Repo {
+func (f *fixture) open() *Repo {
 	f.t.Helper()
-	r, err := Open(Env{Dir: f.bare, Path: f.path, NoObjectMode: noMode})
+	r, err := Open(Env{Dir: f.bare, Path: f.path})
 	require.NoError(f.t, err)
 	f.t.Cleanup(func() { assert.NoError(f.t, r.Close()) })
 	return r
-}
-
-func bothModes(t *testing.T, fn func(t *testing.T, noMode bool)) {
-	for _, noMode := range []bool{false, true} {
-		name := "objectmode"
-		if noMode {
-			name = "ls-tree"
-		}
-		t.Run(name, func(t *testing.T) { fn(t, noMode) })
-	}
 }
 
 func TestOpen(t *testing.T) {
@@ -98,7 +88,7 @@ func TestOpen(t *testing.T) {
 
 func TestOpen_IsolatesChildren(t *testing.T) {
 	f := newFixture(t)
-	r := f.open(false)
+	r := f.open()
 	env := strings.Join(r.env, "\n")
 	for _, v := range []string{"GIT_NO_REPLACE_OBJECTS=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_DIR=" + f.bare} {
 		assert.Contains(t, env, v)
@@ -118,7 +108,7 @@ func TestVersionAndRefs(t *testing.T) {
 	f := newFixture(t)
 	f.commit("one")
 	f.push("HEAD:refs/heads/main", "HEAD:refs/heads/feature", "HEAD:refs/tags/v1")
-	r := f.open(false)
+	r := f.open()
 	ctx := context.Background()
 	v, err := r.Version(ctx)
 	require.NoError(t, err)
@@ -131,49 +121,51 @@ func TestVersionAndRefs(t *testing.T) {
 	assert.Equal(t, []string{"refs/heads/feature", "refs/heads/main", "refs/tags/v1"}, refs)
 }
 
-func TestEntry(t *testing.T) {
-	bothModes(t, func(t *testing.T, noMode bool) {
-		f := newFixture(t)
-		f.write("PATHPOLICY", "version: 1\n")
-		f.write("COMMITPOLICY/inner", "x")
-		f.write("run.sh", "#!/bin/sh\n")
-		require.NoError(t, os.Chmod(filepath.Join(f.work, "run.sh"), 0o755))
-		require.NoError(t, os.Symlink("PATHPOLICY", filepath.Join(f.work, "TAGPOLICY")))
-		f.git(f.work, "add", "-A")
-		f.git(f.work, "update-index", "--add", "--cacheinfo", "160000,1111111111111111111111111111111111111111,GITLINK")
-		f.git(f.work, "commit", "-q", "-m", "tree")
-		c := f.git(f.work, "rev-parse", "HEAD")
-		f.push("HEAD:refs/heads/main")
-		r := f.open(noMode)
-		ctx := context.Background()
-		tests := []struct {
-			path, mode, typ string
-			size            int64
-		}{
-			{"PATHPOLICY", ModeFile, "blob", 11},
-			{"run.sh", ModeExecutable, "blob", 10},
-			{"COMMITPOLICY", ModeTree, "tree", -1},
-			{"TAGPOLICY", ModeSymlink, "blob", 10},
-			{"GITLINK", ModeGitlink, "commit", -1},
-		}
-		for _, tt := range tests {
-			info, ok, err := r.Entry(ctx, c, tt.path)
-			require.NoError(t, err, tt.path)
-			require.True(t, ok, tt.path)
-			assert.Equal(t, tt.mode, info.Mode, tt.path)
-			assert.Equal(t, tt.typ, info.Type, tt.path)
-			if tt.size >= 0 {
-				assert.Equal(t, tt.size, info.Size, tt.path)
-			}
-		}
-		_, ok, err := r.Entry(ctx, c, "NONE")
-		require.NoError(t, err)
-		assert.False(t, ok)
-		_, _, err = r.Entry(ctx, c, "/abs")
-		assert.Error(t, err)
-		_, _, err = r.Entry(ctx, "HEAD", "PATHPOLICY")
-		assert.Error(t, err)
-	})
+func TestEntries(t *testing.T) {
+	f := newFixture(t)
+	f.write("PATHPOLICY", "version: 1\n")
+	f.write("COMMITPOLICY/inner", "x")
+	f.write("run.sh", "#!/bin/sh\n")
+	require.NoError(t, os.Chmod(filepath.Join(f.work, "run.sh"), 0o755))
+	require.NoError(t, os.Symlink("PATHPOLICY", filepath.Join(f.work, "TAGPOLICY")))
+	f.git(f.work, "add", "-A")
+	f.git(f.work, "update-index", "--add", "--cacheinfo", "160000,1111111111111111111111111111111111111111,GITLINK")
+	f.git(f.work, "commit", "-q", "-m", "tree")
+	c := f.git(f.work, "rev-parse", "HEAD")
+	f.push("HEAD:refs/heads/main")
+	r := f.open()
+	ctx := context.Background()
+	tests := []struct {
+		path, mode, typ string
+		size            int64
+	}{
+		{"PATHPOLICY", ModeFile, "blob", 11},
+		{"run.sh", ModeExecutable, "blob", 10},
+		{"COMMITPOLICY", ModeTree, "tree", 0},
+		{"TAGPOLICY", ModeSymlink, "blob", 10},
+		{"GITLINK", ModeGitlink, "commit", 0},
+	}
+	paths := make([]string, 0, 1+len(tests))
+	paths = append(paths, "NONE")
+	for _, tt := range tests {
+		paths = append(paths, tt.path)
+	}
+	entries, err := r.Entries(ctx, c, paths)
+	require.NoError(t, err)
+	assert.Len(t, entries, len(tests), "a path without an entry is not in the map")
+	for _, tt := range tests {
+		info := entries[tt.path]
+		assert.Equal(t, tt.mode, info.Mode, tt.path)
+		assert.Equal(t, tt.typ, info.Type, tt.path)
+		assert.Equal(t, tt.size, info.Size, tt.path)
+	}
+	entries, err = r.Entries(ctx, c, nil)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no paths is not the whole root tree")
+	_, err = r.Entries(ctx, c, []string{"/abs"})
+	assert.Error(t, err)
+	_, err = r.Entries(ctx, "HEAD", []string{"PATHPOLICY"})
+	assert.Error(t, err)
 }
 
 func TestRead(t *testing.T) {
@@ -181,11 +173,11 @@ func TestRead(t *testing.T) {
 	f.write("A", "hello\n")
 	c := f.commit("one")
 	f.push("HEAD:refs/heads/main")
-	r := f.open(false)
+	r := f.open()
 	ctx := context.Background()
-	info, ok, err := r.Entry(ctx, c, "A")
+	entries, err := r.Entries(ctx, c, []string{"A"})
 	require.NoError(t, err)
-	require.True(t, ok)
+	info := entries["A"]
 	got, data, err := r.Read(ctx, info.OID, 100)
 	require.NoError(t, err)
 	assert.Equal(t, "blob", got.Type)
@@ -210,7 +202,7 @@ func TestPeel(t *testing.T) {
 	tree := f.git(f.work, "rev-parse", "HEAD^{tree}")
 	f.git(f.work, "tag", "-a", "-m", "tree", "v-tree", tree)
 	f.push("HEAD:refs/heads/main", "refs/tags/*:refs/tags/*")
-	r := f.open(false)
+	r := f.open()
 	ctx := context.Background()
 	for _, tag := range []string{"v1", "v1-of-tag"} {
 		oid := f.git(f.bare, "rev-parse", "refs/tags/"+tag)
@@ -244,7 +236,7 @@ func TestDiffAndCommitPaths(t *testing.T) {
 	merge := f.git(f.work, "rev-parse", "HEAD")
 	empty := f.commit("empty")
 	f.push("HEAD:refs/heads/main")
-	r := f.open(false)
+	r := f.open()
 	ctx := context.Background()
 
 	names, err := r.DiffNames(ctx, root, merge)
@@ -271,7 +263,7 @@ func TestRevList(t *testing.T) {
 	c2 := f.commit("2")
 	c3 := f.commit("3")
 	f.push("HEAD:refs/heads/other")
-	r := f.open(false)
+	r := f.open()
 	ctx := context.Background()
 	got, err := r.RevList(ctx, RevListOptions{Include: []string{c3}, Exclude: []string{"refs/heads/main"}, Max: 10})
 	require.NoError(t, err)
@@ -298,22 +290,6 @@ func TestRevList(t *testing.T) {
 	assert.Equal(t, []string{merge}, got, "the side branch is not on the first-parent chain")
 }
 
-func TestObjectModeDetection(t *testing.T) {
-	f := newFixture(t)
-	f.commit("one")
-	f.push("HEAD:refs/heads/main")
-	probe := exec.CommandContext(t.Context(), fixtureGit(), "cat-file", "--batch-check=%(objectmode)")
-	probe.Env = f.env
-	probe.Dir = f.bare
-	want := probe.Run() == nil
-	got, err := f.open(false).ObjectModeSupported(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, want, got, "the fast path follows what git supports")
-	got, err = f.open(true).ObjectModeSupported(context.Background())
-	require.NoError(t, err)
-	assert.False(t, got)
-}
-
 func FuzzLsTree(f *testing.F) {
 	f.Add("100644 blob 587be6b4c3f93f93c489c0111bba5596147a26cb       2\tA")
 	f.Add("040000 tree f13d7a9fb7393bc2311e55592fc17d8814d98eb6       -\tD")
@@ -326,12 +302,11 @@ func FuzzLsTree(f *testing.F) {
 }
 
 func FuzzCatFileHeader(f *testing.F) {
-	f.Add("blob 587be6b4c3f93f93c489c0111bba5596147a26cb 2 100644", true)
-	f.Add("1111111111111111111111111111111111111111 submodule", true)
-	f.Add("HEAD:none missing", false)
-	f.Add("commit 371891cad60e0c06ff80b9026658d2695bc572c2 230", false)
-	f.Fuzz(func(t *testing.T, line string, mode bool) {
-		info, err := (&catFile{mode: mode}).parseHeader("spec", line)
+	f.Add("blob 587be6b4c3f93f93c489c0111bba5596147a26cb 2")
+	f.Add("HEAD:none missing")
+	f.Add("commit 371891cad60e0c06ff80b9026658d2695bc572c2 230")
+	f.Fuzz(func(t *testing.T, line string) {
+		info, err := parseHeader("spec", line)
 		if err == nil && (!IsOID(info.OID) || info.Size < 0) {
 			t.Fatalf("accepted %q as %+v", line, info)
 		}

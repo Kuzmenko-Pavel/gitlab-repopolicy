@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -17,7 +18,7 @@ type Info struct {
 	OID  string
 	Type string
 	Size int64
-	// Mode is the tree entry mode, for example "100644"; set only for <rev>:<path> lookups.
+	// Mode is the tree entry mode, for example "100644"; set only by Entries.
 	Mode string
 }
 
@@ -36,10 +37,10 @@ var (
 	ErrTooLarge = errors.New("gitx: object too large")
 )
 
-const (
-	formatMode  = "%(objecttype) %(objectname) %(objectsize) %(objectmode)"
-	formatPlain = "%(objecttype) %(objectname) %(objectsize)"
-)
+// format is the header of cat-file. It has no %(objectmode): older git, such
+// as 2.43 of Ubuntu 24.04 that lint-commit runs on a developer machine, does
+// not know it. Entries reads the modes with ls-tree instead.
+const format = "%(objecttype) %(objectname) %(objectsize)"
 
 // catFile is the one long-lived "git cat-file --batch-command" of a receive.
 // It is not safe for concurrent use: a receive is sequential.
@@ -48,25 +49,11 @@ type catFile struct {
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
 	stderr *limitedBuffer
-	mode   bool
 }
 
 func (r *Repo) catFile(ctx context.Context) (*catFile, error) {
 	if r.catfile != nil {
 		return r.catfile, nil
-	}
-	cf, err := r.startCatFile(ctx, !r.noMode)
-	if err != nil {
-		return nil, err
-	}
-	r.catfile = cf
-	return cf, nil
-}
-
-func (r *Repo) startCatFile(ctx context.Context, mode bool) (*catFile, error) {
-	format := formatPlain
-	if mode {
-		format = formatMode
 	}
 	cmd := r.command(ctx, "cat-file", "--batch-command="+format)
 	stdin, err := cmd.StdinPipe()
@@ -77,11 +64,12 @@ func (r *Repo) startCatFile(ctx context.Context, mode bool) (*catFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	cf := &catFile{cmd: cmd, stdin: stdin, stdout: bufio.NewReaderSize(stdout, 64<<10), stderr: &limitedBuffer{max: maxStderr}, mode: mode}
+	cf := &catFile{cmd: cmd, stdin: stdin, stdout: bufio.NewReaderSize(stdout, 64<<10), stderr: &limitedBuffer{max: maxStderr}}
 	cmd.Stderr = cf.stderr
 	if err := cmd.Start(); err != nil {
 		return nil, &Error{Args: []string{"cat-file"}, Err: err}
 	}
+	r.catfile = cf
 	return cf, nil
 }
 
@@ -124,32 +112,20 @@ func (c *catFile) failure(err error) error {
 	return &Error{Args: []string{"cat-file"}, Err: werr, Stderr: strings.TrimSpace(c.stderr.String())}
 }
 
-// parseHeader parses "<type> <oid> <size>[ <mode>]", "<spec> missing" and,
-// with %(objectmode), "<oid> submodule" for gitlinks.
-func (c *catFile) parseHeader(spec, line string) (Info, error) {
+// parseHeader parses "<type> <oid> <size>" and "<spec> missing".
+func parseHeader(spec, line string) (Info, error) {
 	if strings.HasSuffix(line, " missing") || strings.HasSuffix(line, " ambiguous") {
 		return Info{}, ErrMissing
 	}
 	f := strings.Split(line, " ")
-	if len(f) == 2 && f[1] == "submodule" && IsOID(f[0]) {
-		return Info{OID: f[0], Type: "commit", Mode: ModeGitlink}, nil
-	}
-	want := 3
-	if c.mode {
-		want = 4
-	}
-	if len(f) != want || !IsOID(f[1]) {
+	if len(f) != 3 || !IsOID(f[1]) {
 		return Info{}, fmt.Errorf("gitx: unexpected cat-file header %q for %q", line, spec)
 	}
 	size, err := strconv.ParseInt(f[2], 10, 64)
 	if err != nil || size < 0 {
 		return Info{}, fmt.Errorf("gitx: unexpected cat-file header %q for %q", line, spec)
 	}
-	info := Info{Type: f[0], OID: f[1], Size: size}
-	if c.mode {
-		info.Mode = f[3]
-	}
-	return info, nil
+	return Info{Type: f[0], OID: f[1], Size: size}, nil
 }
 
 // Info returns the header of an object, for example "<commit>:PATHPOLICY" or "<oid>^{}".
@@ -159,26 +135,10 @@ func (r *Repo) Info(ctx context.Context, spec string) (Info, error) {
 		return Info{}, err
 	}
 	line, err := cf.request("info", spec)
-	if err != nil && cf.mode && strings.Contains(err.Error(), "objectmode") {
-		// git without %(objectmode): restart once without it.
-		if cf, err = r.startCatFile(ctx, false); err != nil {
-			return Info{}, err
-		}
-		r.catfile = cf
-		line, err = cf.request("info", spec)
-	}
 	if err != nil {
 		return Info{}, err
 	}
-	return cf.parseHeader(spec, line)
-}
-
-// ObjectModeSupported reports whether entry modes come from cat-file; it starts cat-file when needed.
-func (r *Repo) ObjectModeSupported(ctx context.Context) (bool, error) {
-	if _, err := r.Info(ctx, "HEAD"); err != nil && !errors.Is(err, ErrMissing) {
-		return false, err
-	}
-	return r.catfile.mode, nil
+	return parseHeader(spec, line)
 }
 
 // Read returns the type and contents of the object oid, up to max bytes.
@@ -198,7 +158,7 @@ func (r *Repo) Read(ctx context.Context, oid string, max int64) (Info, []byte, e
 	if err != nil {
 		return Info{}, nil, err
 	}
-	got, err := cf.parseHeader(oid, line)
+	got, err := parseHeader(oid, line)
 	if err != nil {
 		return Info{}, nil, err
 	}
@@ -233,38 +193,36 @@ func (r *Repo) Peel(ctx context.Context, rev string) (string, error) {
 	return info.OID, nil
 }
 
-// Entry returns the tree entry of path in commit; ok is false when there is none.
-// Mode tells files from directories, symlinks and gitlinks.
-func (r *Repo) Entry(ctx context.Context, commit, path string) (Info, bool, error) {
+// Entries returns the tree entries of paths in commit with one ls-tree; a
+// path without an entry is not in the map. Mode tells files from
+// directories, symlinks and gitlinks.
+func (r *Repo) Entries(ctx context.Context, commit string, paths []string) (map[string]Info, error) {
 	if !IsOID(commit) {
-		return Info{}, false, fmt.Errorf("gitx: invalid commit %q", commit)
+		return nil, fmt.Errorf("gitx: invalid commit %q", commit)
 	}
-	if path == "" || strings.ContainsAny(path, "\n\x00") || strings.HasPrefix(path, "/") {
-		return Info{}, false, fmt.Errorf("gitx: invalid path %q", path)
-	}
-	if mode, err := r.ObjectModeSupported(ctx); err != nil {
-		return Info{}, false, err
-	} else if mode {
-		info, err := r.Info(ctx, commit+":"+path)
-		if errors.Is(err, ErrMissing) {
-			return Info{}, false, nil
+	for _, p := range paths {
+		if p == "" || strings.ContainsAny(p, "\n\x00") || strings.HasPrefix(p, "/") {
+			return nil, fmt.Errorf("gitx: invalid path %q", p)
 		}
-		return info, err == nil, err
 	}
-	out, err := r.run(ctx, nil, "ls-tree", "-z", "-l", "--full-tree", commit, "--", path)
+	entries := map[string]Info{}
+	if len(paths) == 0 {
+		return entries, nil
+	}
+	out, err := r.run(ctx, nil, append([]string{"ls-tree", "-z", "-l", "--full-tree", commit, "--"}, paths...)...)
 	if err != nil {
-		return Info{}, false, err
+		return nil, err
 	}
 	for _, rec := range splitZ(out) {
 		info, name, err := parseLsTree(rec)
 		if err != nil {
-			return Info{}, false, err
+			return nil, err
 		}
-		if name == path {
-			return info, true, nil
+		if slices.Contains(paths, name) {
+			entries[name] = info
 		}
 	}
-	return Info{}, false, nil
+	return entries, nil
 }
 
 // parseLsTree parses "<mode> <type> <oid> <size>\t<path>" of ls-tree -l.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
@@ -69,21 +70,21 @@ func (r *receive) changedByEnds(ctx context.Context, u module.RefUpdate) (map[st
 			return nil, err
 		}
 	}
+	nowEntries, err := r.entries(ctx, newC)
+	if err != nil {
+		return nil, err
+	}
+	wasEntries := map[string]gitx.Info{}
+	if base != "" {
+		if wasEntries, err = r.entries(ctx, base); err != nil {
+			return nil, err
+		}
+	}
 	changed := map[string]bool{}
 	for _, l := range r.policies {
 		f := l.mod.File()
-		now, nowOK, err := r.deps.Git.Entry(ctx, newC, f)
-		if err != nil {
-			return nil, err
-		}
-		if base == "" {
-			changed[f] = nowOK
-			continue
-		}
-		was, wasOK, err := r.deps.Git.Entry(ctx, base, f)
-		if err != nil {
-			return nil, err
-		}
+		now, nowOK := nowEntries[f]
+		was, wasOK := wasEntries[f]
 		changed[f] = nowOK != wasOK || now.OID != was.OID || now.Mode != was.Mode
 	}
 	return changed, nil

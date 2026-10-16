@@ -96,8 +96,10 @@ type receive struct {
 	anchor     string
 	policies   []*loaded
 	// root is the entry of Deps.Root in policies, nil without it.
-	root  *loaded
-	input *module.Input
+	root *loaded
+	// entryCache holds the policy file entries by commit.
+	entryCache map[string]map[string]gitx.Info
+	input      *module.Input
 
 	personal *bool
 	// serviceAccount is the outcome of the check of the service account in the project.

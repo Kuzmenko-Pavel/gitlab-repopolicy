@@ -81,10 +81,11 @@ type policyFile struct {
 // readPolicy reads <commit>:<file>: mode and size are checked before the
 // content is read; a symlink is never followed.
 func (r *receive) readPolicy(ctx context.Context, commit string, m module.Module) (policyFile, error) {
-	entry, ok, err := r.deps.Git.Entry(ctx, commit, m.File())
+	entries, err := r.entries(ctx, commit)
 	if err != nil {
-		return policyFile{}, fmt.Errorf("read %s: %w", m.File(), err)
+		return policyFile{}, err
 	}
+	entry, ok := entries[m.File()]
 	if !ok {
 		return policyFile{}, nil
 	}
@@ -129,6 +130,23 @@ func parse(m module.Module, data []byte) (p module.Policy, err error) {
 		err = errors.New("parser returned no policy")
 	}
 	return p, err
+}
+
+// entries are the tree entries of the policy files in commit, read with one
+// ls-tree per commit and receive.
+func (r *receive) entries(ctx context.Context, commit string) (map[string]gitx.Info, error) {
+	if e, ok := r.entryCache[commit]; ok {
+		return e, nil
+	}
+	e, err := r.deps.Git.Entries(ctx, commit, r.policyFiles())
+	if err != nil {
+		return nil, fmt.Errorf("read policy files of %s: %w", commit, err)
+	}
+	if r.entryCache == nil {
+		r.entryCache = map[string]map[string]gitx.Info{}
+	}
+	r.entryCache[commit] = e
+	return e, nil
 }
 
 // modules are the enabled modules in evaluation order, Root first.

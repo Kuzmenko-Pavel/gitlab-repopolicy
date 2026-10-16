@@ -73,15 +73,18 @@ func Rotate(ctx context.Context, api API, o Options) (Result, error) {
 		return res, err
 	}
 	if err := prepare(tmp, o.Chown, int(st.Uid), int(st.Gid)); err != nil {
-		return res, errors.Join(err, os.Remove(tmp.Name()))
+		return res, errors.Join(err, tmp.Close(), os.Remove(tmp.Name()))
 	}
 	res.NewExpiry = o.Now.UTC().Add(o.Lifetime).Format(time.DateOnly)
 	secret, _, err := api.RotateToken(ctx, res.NewExpiry)
 	if err != nil {
 		cerr := errors.Join(tmp.Close(), os.Remove(tmp.Name()))
 		var apiErr *gitlab.Error
-		if errors.As(err, &apiErr) && apiErr.Status == 400 {
+		switch {
+		case errors.As(err, &apiErr) && apiErr.Status == 400:
 			err = fmt.Errorf("%w: %w", ErrRefused, err)
+		case !errors.As(err, &apiErr) || apiErr.Status == 0 || apiErr.Status >= 500:
+			err = checkAfterLostReply(ctx, api, err)
 		}
 		return res, errors.Join(err, cerr)
 	}
@@ -94,6 +97,18 @@ func Rotate(ctx context.Context, api API, o Options) (Result, error) {
 		return res, fmt.Errorf("the new token is in place, but its directory was not synced: %w", err)
 	}
 	return res, nil
+}
+
+// checkAfterLostReply handles a rotation without a usable reply: GitLab may
+// have issued a new token, which is lost, and revoked the current one. The
+// current token is checked so that the error says which case it is.
+func checkAfterLostReply(ctx context.Context, api API, err error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if _, serr := api.TokenSelf(ctx); serr != nil {
+		return fmt.Errorf("%w; the current token does not work either: GitLab may have rotated it, issue a new token: %w", err, serr)
+	}
+	return fmt.Errorf("%w; the current token still works", err)
 }
 
 // prepare makes the temporary file private and gives it the owner of the token file.

@@ -21,10 +21,15 @@ var now = time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
 type fakeAPI struct {
 	expires   string
 	rotateErr error
-	asked     []string
+	// revoked makes TokenSelf fail after RotateToken was called.
+	revoked bool
+	asked   []string
 }
 
 func (f *fakeAPI) TokenSelf(context.Context) (gitlab.PersonalToken, error) {
+	if f.revoked && len(f.asked) > 0 {
+		return gitlab.PersonalToken{}, &gitlab.Error{Kind: gitlab.Unauthorized, Status: 401, Path: "/api/v4/personal_access_tokens/self"}
+	}
 	return gitlab.PersonalToken{ExpiresAt: f.expires, Active: true}, nil
 }
 
@@ -144,4 +149,30 @@ func TestRotate_ChownFailure(t *testing.T) {
 	require.ErrorContains(t, err, "chown denied")
 	assert.Empty(t, api.asked, "nothing is rotated when the new file cannot be prepared")
 	assert.Equal(t, []string{"token"}, leftovers(t, file))
+}
+
+// TestRotate_LostReply: GitLab gave no usable reply to the rotation; the error
+// says whether the current token still works.
+func TestRotate_LostReply(t *testing.T) {
+	lost := &gitlab.Error{Kind: gitlab.Unavailable, Path: "/api/v4/personal_access_tokens/self/rotate", Err: errors.New("read: connection reset")}
+	for name, tc := range map[string]struct {
+		err     error
+		revoked bool
+		want    string
+	}{
+		"no reply, old token works":   {lost, false, "the current token still works"},
+		"no reply, old token revoked": {lost, true, "issue a new token"},
+		"5xx, old token revoked":      {&gitlab.Error{Kind: gitlab.Unavailable, Status: 502}, true, "issue a new token"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			file, _, o := setup(t)
+			api := &fakeAPI{expires: "2026-10-20", rotateErr: tc.err, revoked: tc.revoked}
+			res, err := Rotate(context.Background(), api, o)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.False(t, res.Rotated)
+			assert.False(t, errors.Is(err, ErrRefused))
+			assert.Equal(t, []string{"token"}, leftovers(t, file))
+		})
+	}
 }

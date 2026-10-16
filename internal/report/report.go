@@ -82,7 +82,7 @@ func Rejection(sections []Section, who Pusher) string {
 	body := block(sections)
 	footer := ""
 	if who.Username != "" {
-		footer = fmt.Sprintf("\nuser: %s\n", who)
+		footer = fmt.Sprintf("\nuser: %s\n", printable(who.String()))
 	}
 	summary := hookErr + prefix + ": " + summary(sections) + ". See push output.\n"
 	room := MaxOutput - b.Len() - len(footer) - len(summary)
@@ -97,7 +97,7 @@ func Warnings(sections []Section, notices []string) string {
 	var b strings.Builder
 	for _, n := range notices {
 		for _, line := range strings.Split(strings.TrimRight(n, "\n"), "\n") {
-			fmt.Fprintf(&b, "%s: %s\n", prefix, line)
+			fmt.Fprintf(&b, "%s: %s\n", prefix, printable(line))
 		}
 	}
 	if total(sections) > 0 {
@@ -149,15 +149,15 @@ func block(sections []Section) string {
 			if v.Ref != "" {
 				head += " " + v.Ref
 			}
-			fmt.Fprintf(&b, "%s: %s\n", head, Title(v.Code))
+			fmt.Fprintf(&b, "%s: %s\n", printable(head), Title(v.Code))
 			for _, line := range strings.Split(strings.TrimSpace(v.Message), "\n") {
 				if line != "" {
-					fmt.Fprintf(&b, "  %s\n", line)
+					fmt.Fprintf(&b, "  %s\n", printable(line))
 				}
 			}
 			writeItems(&b, v.Items)
 			if v.Hint != "" {
-				fmt.Fprintf(&b, "  %s\n", v.Hint)
+				fmt.Fprintf(&b, "  %s\n", printable(v.Hint))
 			}
 		}
 	}
@@ -185,8 +185,8 @@ func writeItems(b *strings.Builder, items []module.Item) {
 	}
 }
 
-// printable escapes control characters so that a file name or a commit
-// subject cannot forge lines such as GL-HOOK-ERR.
+// printable escapes control characters so that text from a push or a policy
+// file cannot forge lines such as GL-HOOK-ERR or drive the terminal of the pusher.
 func printable(s string) string {
 	var b strings.Builder
 	for _, r := range s {

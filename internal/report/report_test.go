@@ -163,6 +163,21 @@ func TestPrintable(t *testing.T) {
 	assert.Contains(t, out, `evil\x0aGL-HOOK-ERR: forged`)
 }
 
+// The message of a rule comes from a policy file and reaches every denied
+// pusher, so terminal escapes in it, in the ref and in notices are escaped.
+func TestPrintable_TerminalEscapes(t *testing.T) {
+	v := module.Violation{Code: module.CodeProtectedPath, Rule: "r", Ref: "refs/heads/x\x1b[2J",
+		Message: "ask \x1b]52;c;cGF5bG9hZA==\a the team\rforged", Hint: "hint\x1b[1m"}
+	out := Rejection([]Section{{Name: "PATHPOLICY", Violations: []module.Violation{v}}}, alice) +
+		Warnings([]Section{{Name: "COMMITPOLICY", Violations: []module.Violation{v}}}, []string{"recovery on refs/heads/x\x1b[2J"})
+	for _, c := range []string{"\x1b", "\a", "\r"} {
+		assert.NotContains(t, out, c)
+	}
+	assert.Contains(t, out, `refs/heads/x\x1b[2J`)
+	assert.Contains(t, out, `ask \x1b]52;c;cGF5bG9hZA==\x07 the team\x0dforged`)
+	assert.Contains(t, out, `hint\x1b[1m`)
+}
+
 func TestPusher(t *testing.T) {
 	assert.Equal(t, "alice (id 314)", alice.String())
 	assert.Equal(t, "bob (key 7)", Pusher{Username: "bob", GLID: "key-7"}.String())

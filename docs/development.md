@@ -32,12 +32,12 @@ make code-lint test-unit test-integration
 | Target | Що робить |
 | --- | --- |
 | `code-fmt` | форматує Go-код |
-| `code-lint` | golangci-lint з правилами залежностей пакетів, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом, мовні пари й посилання документації |
+| `code-lint` | golangci-lint з правилами залежностей пакетів, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом |
 | `code-lint-commits` | повідомлення комітів після `BASE_REF` за `COMMITPOLICY`, взятою з `BASE_REF`, а не з гілки |
 | `code-generate` | перегенерує `schemas/` і golden-файли виводу push |
 | `code-build` | бінарник у `bin/gitlab-repopolicy` |
 | `test-unit` | unit-тести з race detector |
-| `test-integration` | сценарії на справжньому `git receive-pack` з git із `GIT_BIN`, корпус policy |
+| `test-integration` | сценарії на справжньому `git receive-pack` з git із `GIT_BIN`, корпус policy, документація: мовні пари, відносні посилання, цитати `examples/` |
 | `test-coverage` | unit і integration з покриттям у `coverage/` |
 | `test-fuzz` | кожна fuzz-ціль по `FUZZTIME` |
 | `test-load` | бенчмарки hook |
@@ -120,6 +120,23 @@ make test-e2e-down
 | `COMPOSE_PROJECT_NAME` | з версії GitLab | ім'я стенду; у кожної версії свій |
 
 Не запускайте два стенди одночасно: GitLab CE потребує кількох ГБ пам'яті.
+
+## Тексти для користувача
+
+Вивід hook читає людина, якій щойно відмовили, часто в UI GitLab, де видно лише рядок `GL-HOOK-ERR`. Нові повідомлення пишуться за тими самими правилами:
+
+1. Перший рядок блоку каже, що не можна і чому, словами людини: `you may not change these files`, а не `modification denied`. Код відмови лишається в audit для пошуку
+2. Видно, чия це проблема: зміна користувача, зламана policy в default branch або сервер. Для двох останніх друкується `who can help:` з `help.contact`
+3. Одна конкретна дія і людина: кого просити (`allow`, `admins`), яку команду виконати (`git commit --amend`, `git tag -s`)
+4. Порада не суперечить ситуації: не "open a merge request", якщо гілку з цим файлом запушити не можна, не "retry later", якщо помилка постійна
+5. Одна точна причина з числами, без "або": hook знає, яка перевірка спрацювала
+6. Рядок `GL-HOOK-ERR` самодостатній: об'єкт (файл, коміт, тег), суть і кому писати
+7. Попередження не схоже на відмову: починається з `push accepted`, без "violation" і "invalid"
+8. Без внутрішніх слів: `branch x` і `tag v1.0.0` замість `refs/heads/x`, без імен Go-типів, `principal`, `effective`, `anchor`. Номер рядка й ім'я поля лишаються
+9. Одна проблема - один блок, навіть якщо вона є в кількох гілках і тегах push
+10. Результати API (роль, "заблокований", тип ключа, кількість admins, деталі помилок) у вивід не потрапляють, лише в audit `reason`. Друкувати можна те, що записано в policy-файлі, і те, що користувач знає сам
+
+Рамку виводу збирає `internal/report`, тексти відмов - модулі й ядро в полях `module.Violation`. Golden-файли виводу лежать у `internal/report/testdata/`, `make code-generate` їх перегенерує. Diff golden-файлів - це те, що побачить користувач, тому його переглядають у review.
 
 ## Локальна перевірка проєкту його ж інструментом
 

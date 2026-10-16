@@ -8,12 +8,13 @@
 The hook writes every decision that touched a rule to `audit.file` (default `/var/log/gitlab-repopolicy/audit.log`): one JSON object per line, up to 4 KiB per event. A push that touched no rule is not logged, otherwise there would be a line for every push of the instance.
 
 ```json
-{"ts":"2026-10-14T09:14:02.418Z","event":"decision","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
+{"ts":"2026-10-14T09:14:02.418Z","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","event":"decision","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `ts` | time in UTC |
+| `receive_id` | the same in every event of one run of the hook, that is of one push |
 | `event`, `module`, `decision`, `code`, `action` | what happened, see the table below |
 | `enforced` | `false` in `mode: audit`: the decision is recorded, but the push passed |
 | `project_id`, `project_path` | the project |
@@ -29,6 +30,16 @@ The hook writes every decision that touched a rule to `audit.file` (default `/va
 
 A module can write several events for one push: one per branch or tag with violations.
 
+**How a push ended.** There is no separate final event. git rejects the whole push if at least one ref is denied, so the push was rejected if the events with its `receive_id` include `"decision":"deny"` with `"enforced":true`:
+
+```sh
+jq -c 'select(.receive_id == "Q4ZJ7OXKMV3HB2LDSY6TNRWAEC") | {event, module, decision, enforced, code, ref}' /var/log/gitlab-repopolicy/audit.log
+```
+
+The `policy_change`, `policy_bootstrap` and `policy_recovery` events are written only when the push is accepted, because only then the policy really changed. In `mode: audit` they are always written.
+
+If the hook cannot write an event to audit, the push is not affected, and the user sees the line `the audit log is not writable, tell your GitLab administrators`. `settings-check` checks daily that the hook user can write to `audit.file`. If it cannot, it prints `audit: <reason>: the hook loses its events`, writes an `internal_error` event and exits with code 1.
+
 ### Events and alerts
 
 | `event` | When | Alert |
@@ -39,7 +50,7 @@ A module can write several events for one push: one per branch or tag with viola
 | `policy_recovery` | an Owner changed PATHPOLICY through recovery | **yes, every one** |
 | `invalid_policy` | PATHPOLICY or TAGPOLICY in the default branch is invalid | **yes** |
 | `invalid_commit_policy` | COMMITPOLICY in the default branch is invalid (the check is skipped) | no |
-| `authorization_backend_failure` | the API is unavailable on a protected operation, the token does not work, the service account does not see the project (`reason`: `project_not_visible`, `role_below_maintainer`) | yes, if there are several in 5 minutes: a short API failure gives one event, a series means an expired token, a group without the service account or an unavailable API. The installation picks the threshold for its load |
+| `authorization_backend_failure` | the API is unavailable on a protected operation, the token does not work (including a 401 while a rule is checked), the service account does not see the project (`reason`: `project_not_visible`, `role_below_maintainer`) | yes, if there are several in 5 minutes: a short API failure gives one event, a series means an expired token, a group without the service account or an unavailable API. The installation picks the threshold for its load |
 | `unknown_principal` | a deploy key or an unparsable `GL_ID` on a protected path | no |
 | `breakglass` | a break-glass grant is issued (`action: grant`), revoked (`action: revoke`) or used by the hook | **yes** |
 | `settings_drift` | `settings-check` found a difference | **yes** |
@@ -89,10 +100,12 @@ Every recovery is a `policy_recovery` event. Namespace Owners are not always the
 An emergency bypass for one project, when a policy blocked work and cannot be fixed the usual way (for example an invalid PATHPOLICY after an import). It needs root on the Gitaly node and cannot be turned on through GitLab.
 
 ```sh
-sudo gitlab-repopolicy breakglass grant --project-id 812 --ttl 30m --reason "INC-123 policy lockout"
+sudo gitlab-repopolicy breakglass grant --project acme/app --ttl 30m --reason "INC-123 policy lockout"
 sudo gitlab-repopolicy breakglass list
-sudo gitlab-repopolicy breakglass revoke --project-id 812
+sudo gitlab-repopolicy breakglass revoke --project acme/app
 ```
+
+- the project is given by its path `--project` or its ID `--project-id`, exactly one of them. The path is turned into the ID through the API. If the API is not available, `--project-id` is needed: the ID is shown on the project's main page under its name. The output and the event show both the ID and the path
 
 - `--ttl` is required, at most 24 hours. After it the grant is ignored
 - while the grant is valid, every module lets pushes to the project through, the push output carries a warning, and every such push is a `breakglass` event
@@ -122,8 +135,9 @@ For every project with PATHPOLICY that the service account sees:
 
 | Check (`violations[].rule`) | What counts as a difference |
 | --- | --- |
-| `default_branch` | the default branch is not the one in `settings_check.default_branch` |
-| `protected_branches`, `protected_tags` | the expected branches or tag patterns are not protected |
+| `default_branch` | the default branch is not in the list `settings_check.default_branch` or is not protected |
+| `protected_branches` | branches of the list other than the default branch are not protected |
+| `protected_tags` | the tag patterns are not protected. Checked only in projects with TAGPOLICY on the default branch and with the module enabled |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` is not the expected one |
 | `ci_config_path` | the CI configuration is in another project, at a URL or not covered by a PATHPOLICY path rule |
 | `principals` | usernames from the policy files are no longer active GitLab users |
@@ -131,14 +145,16 @@ For every project with PATHPOLICY that the service account sees:
 | `policy` | a policy file cannot be parsed |
 | `unavailable` | the API did not answer for this project |
 
-A difference is a `settings_drift` event per project and exit code 1. A project with PATHPOLICY is looked up both on the current default branch and on the expected one: switching the default to a branch without PATHPOLICY is a difference, not "a project without a policy".
+A difference is a `settings_drift` event per project and exit code 1. A project with PATHPOLICY is looked up both on the current default branch and on the expected ones: switching the default to a branch without PATHPOLICY is a difference, not "a project without a policy".
+
+`ci_config_path` is checked also in projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a CI configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance. The expectations are set in `config.yaml`, the same for the whole instance ([configuration.en.md](configuration.en.md#settings_check)).
 
 ```text
 $ sudo -u git gitlab-repopolicy settings-check
 acme/app: protected_tags: not protected: v*
 ```
 
-This is detection within minutes, not prevention: `settings-check` does not see a change that was reverted between two runs. Only an organizational measure closes this gap fully: the Maintainer role only for the owners of protected paths.
+This is detection, not prevention: `settings-check` does not see a change that was reverted between two runs. Only an organizational measure closes this gap fully: the Maintainer role only for the owners of protected paths.
 
 ### On the node with a timer
 
@@ -147,7 +163,21 @@ sudo systemctl enable --now gitlab-repopolicy-settings-check.timer
 journalctl -u gitlab-repopolicy-settings-check.service
 ```
 
-A run every 15 minutes, the same token as the hook, events go to the audit log. The alert is built from audit (`settings_drift`).
+A run once a day with a random delay of up to an hour, the same token as the hook, events go to the audit log. The alert is built from audit (`settings_drift`).
+
+A different schedule is a drop-in file, which the package does not overwrite:
+
+```sh
+sudo systemctl edit gitlab-repopolicy-settings-check.timer
+```
+
+```ini
+[Timer]
+OnCalendar=
+OnCalendar=*:0/15
+```
+
+The empty `OnCalendar=` resets the schedule of the package, otherwise systemd runs on both. The check walks the projects one by one, with `--timeout 1h` by default. On a large instance a schedule more frequent than one pass takes makes no sense.
 
 ### In a scheduled GitLab CI pipeline
 
@@ -170,8 +200,8 @@ settings-check:
       breakglass_dir: /nonexistent
       audit: { file: "", stdout: true }
       settings_check:
-        default_branch: main
-        protected_branches: [main]
+        default_branch: [main]
+        protected_branches: []
         protected_tags: ["v*"]
         job_token_push: false
       EOF
@@ -205,18 +235,32 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| every push to group projects: `push could not be verified` | the hook cannot read the config or the token (permissions, a 0750 root directory), git is not available | `sudo -u git gitlab-repopolicy selftest` |
-| `the hook configuration on the server is invalid` | an invalid `config.yaml` or an empty `audit.file` (the hook writes only to the file, `audit.stdout` does not apply to it) | `sudo gitlab-repopolicy selftest` |
-| `unable to verify authorization` on protected changes | the API is unavailable, the token expired, the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
+| in every push: `internal error: the hook configuration on the server is invalid` | an invalid `config.yaml`, an empty `audit.file` (the hook writes only to the file, `audit.stdout` does not apply to it), or the hook cannot read the config or the token (permissions, a 0750 root directory) | `sudo -u git gitlab-repopolicy selftest` |
+| `internal error: git is not available to the hook` | the git that Gitaly passes to the hook does not run | the versions of GitLab and Gitaly, `gitlab-ctl status gitaly` |
+| `could not check permissions: the GitLab API did not answer` on protected changes | the API is unavailable or the token expired | `selftest`; `reason` in audit |
+| `this project is not connected to gitlab-repopolicy correctly` | the token is refused, the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | the same in a personal project | the project owner is blocked or banned: the service account token does not see such users, and the project is treated as a group project | expected behaviour, fail closed |
+| `the check did not finish within the server limits` | the push is larger than the limits (`limits`, `max_api_calls`, `timeouts`) | split the push; if the push is small, the limit is too low |
+| `internal error: the push was not checked and is rejected` with an id | an internal error of the binary | find the `internal_error` event with this `receive_id` in audit |
+| `the audit log is not writable, tell your GitLab administrators` | the hook user cannot write to `audit.file` | `sudo -u git gitlab-repopolicy selftest`, the permissions of the log directory |
 | a merge request or the Web IDE shows only "pre-receive hook declined" without text | another hook in `pre-receive.d/` denied the push without a `GL-HOOK-ERR` line | check the neighbouring files in `pre-receive.d/` |
+| a merge through the API: only "Branch cannot be merged" | the API does not return the text of the hook in the merge response | the `merge_error` field of the merge request (`GET /projects/:id/merge_requests/:iid`) |
 | the hook is not called | `custom_hooks_dir` is not set or is wrong, the wrapper is not executable, its name ends with `~`, the file sits at `custom_hooks_dir/pre-receive` | `grep -A2 '^\[hooks\]' /var/opt/gitlab/gitaly/config.toml`, `ls -l <custom_hooks_dir>/pre-receive.d/` |
-| every change of a project is denied with `policy is invalid` | an invalid PATHPOLICY in the default branch | an Owner fixes PATHPOLICY (recovery) or break-glass |
-| tags are denied with `policy is invalid` | an invalid TAGPOLICY in the default branch | fix TAGPOLICY through a merge |
-| a merge in the UI is slow or `unable to verify authorization` under peak load | web operations hold a Puma worker while the hook calls back into Rails | `api_calls`, `duration_ms` in audit; `timeouts.http` |
+| every change of a project is denied: `PATHPOLICY in main is broken, so no changes are accepted` | an invalid PATHPOLICY in the default branch | an Owner fixes PATHPOLICY (recovery) or break-glass |
+| tags are denied: `TAGPOLICY in main is broken, so no tag can be created or moved` | an invalid TAGPOLICY in the default branch | fix TAGPOLICY through a merge |
+| a merge in the UI is slow or `could not check permissions` under peak load | web operations hold a Puma worker while the hook calls back into Rails | `api_calls`, `duration_ms` in audit; `timeouts.http` |
+
+If `help.contact` is set in the config, denials the user cannot fix alone print this contact instead of `your GitLab administrators` ([configuration.en.md](configuration.en.md#help)).
+
+## Check a push without pushing
 
 `gitlab-repopolicy test` makes the hook decision on a local repository without a push, which helps to reproduce a denial:
 
 ```sh
-gitlab-repopolicy test --repo /path/to/clone --old <old> --new <new> --ref refs/heads/main --user alice
+git clone --mirror https://gitlab.example.com/acme/app.git app.git
+gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice
 ```
+
+Exit code 0 means the push would be accepted, and `test` prints the result: `allowed: no rule was touched, 3 new commits` or `allowed: the rules allow the change, 3 new commits`. 1 is a denial with the same text the user would see.
+
+Run `test` in a mirror copy that has only the branches and tags of the server. For a new branch the hook checks only the commits that are not yet in the repository. In a working clone these commits are usually already on another local branch; then `test` sees 0 new commits and prints a hint about `git clone --mirror`.

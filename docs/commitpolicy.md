@@ -200,6 +200,8 @@ COMMITPOLICY - про гігієну, а не про доступ, тому за
 
 Невідоме правило в новій версії файлу - помилка приймання: друкарська помилка не пройде мовчки.
 
+Якщо в default branch проєкту немає PATHPOLICY, COMMITPOLICY може змінити будь-хто з правом push, зокрема послабити правила. Hook приймає таку версію з попередженням `the project has no PATHPOLICY on the default branch: anyone who can push may change COMMITPOLICY`. Захистити файл можна правилом PATHPOLICY ([pathpolicy.md](pathpolicy.md#приклад)). Якщо модуль PATHPOLICY вимкнено в конфігурації, попередження немає.
+
 Попередження успішного push видно в терміналі як рядки `remote:`. Для merge кнопкою, Web IDE та інших операцій UI GitLab успішний вивід hook не показує: там попередження видно лише в audit.
 
 ## Локальна перевірка
@@ -211,9 +213,10 @@ COMMITPOLICY - про гігієну, а не про доступ, тому за
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | одне повідомлення за `COMMITPOLICY` поточного каталогу |
 | `gitlab-repopolicy lint-commit --range origin/main..HEAD` | коміти діапазону; одна ревізія - уся її історія |
 | `-f FILE` | інший файл COMMITPOLICY |
-| `--config FILE` | конфігурація сервера з пресетами, якщо файл використовує `extends` |
+| `--ruleset NAME` | лише цей ruleset; можна повторити для кількох. Невідоме ім'я - помилка зі списком rulesets файлу |
+| `--config FILE` | файл з `commitpolicy_presets`, якщо COMMITPOLICY використовує `extends`. Інші ключі конфігурації не потрібні ([configuration.md](configuration.md#commitpolicy_presets)) |
 
-`lint-commit` застосовує всі rulesets файлу і не дивиться на `refs`: локально невідомо, у яку гілку піде коміт. `except.users` локально не діє.
+Без `--ruleset` `lint-commit` застосовує всі rulesets файлу і не дивиться на `refs`: локально невідомо, у яку гілку піде коміт. `except.users` локально не діє.
 
 ```text
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
@@ -227,7 +230,21 @@ message: [release] error: header: expected "type(scope): subject"
 ```sh
 #!/bin/sh
 # .git/hooks/commit-msg
-exec gitlab-repopolicy lint-commit -m "$(git stripspace --strip-comments < "$1")"
+exec gitlab-repopolicy lint-commit --ruleset protected -m "$(git stripspace --strip-comments < "$1")"
 ```
 
-`git stripspace` прибирає рядки-коментарі, які залишає редактор: git передає hook файл повідомлення ще з ними. Код виходу `lint-commit` - 0, якщо порушень рівня `error` немає (попередження не заважають), і 1, якщо вони є.
+`git stripspace` прибирає рядки-коментарі, які залишає редактор: git передає hook файл повідомлення ще з ними. `--ruleset protected` потрібен, коли rulesets для різних гілок суперечать один одному. У прикладі вище ruleset `release` дозволяє лише `fix`, `docs` і `chore`, і без `--ruleset` hook відхилив би `feat:`, хоча в main він дозволений. Візьміть ruleset тих гілок, куди зазвичай іде робота.
+
+У CI merge request ті самі перевірки йдуть до merge, щоб автор побачив проблему в pipeline, а не під час merge:
+
+```yaml
+# .gitlab-ci.yml
+repopolicy:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - gitlab-repopolicy validate
+    - gitlab-repopolicy lint-commit --ruleset protected --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME..HEAD"
+```
+
+Бінарник у job - з перевіреного релізу, наприклад в образі runner'а. Для `origin/<target>` у job потрібна історія цільової гілки: `GIT_DEPTH: 0` або `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. Код виходу `lint-commit` - 0, якщо порушень рівня `error` немає (попередження не заважають), і 1, якщо вони є.

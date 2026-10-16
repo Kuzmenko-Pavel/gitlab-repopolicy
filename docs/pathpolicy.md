@@ -34,13 +34,15 @@ rules:
     allow: [platform-lead, sre-lead, ci-maintainer]
     message: >-
       The platform team changes the CI/CD configuration and the deploy logic.
-      Propose the change in a merge request.
+      Ask platform-lead, sre-lead or ci-maintainer to make this change.
 
   - name: prod-values
     paths: ["helm/**/values-prod.yaml"]
     refs: protected
     allow: [platform-lead, release-manager]
 ```
+
+Правило `ci-config` діє на всіх гілках (`refs` не задано, тобто `all`), бо pipeline будь-якої гілки виконує CI-конфігурацію саме цієї гілки, з runner'ами і змінними проєкту. `refs: protected` дозволив би Developer запушити гілку зі зміненим `.gitlab-ci.yml`, і її pipeline виконав би цю зміну ще до review. Тому `message` радить попросити власників шляху, а не відкривати merge request.
 
 Делегування інших policy-файлів їхнім власникам:
 
@@ -98,6 +100,8 @@ Username порівнюють без урахування регістру, як
 | merge кнопкою, auto-merge | той, хто натиснув merge або ввімкнув auto-merge. Автор комітів не враховується |
 | push із CI з `CI_JOB_TOKEN` | користувач, який запустив pipeline |
 
+Push із CI job hook бачить як push користувача, який запустив pipeline: інших ознак job у середовищі hook немає. Тому у відмові такого push `checked as:` показує цього користувача, а job відхиляється, якщо цього користувача немає в `allow`. Для автоматизації, якій потрібен захищений шлях, підходить project access token, бот якого вказано в правилі.
+
 Commit author, committer і підписи комітів для авторизації не використовуються: їх легко підробити.
 
 ## Зіставлення шляхів
@@ -152,7 +156,7 @@ Commit author, committer і підписи комітів для авториз�
 
 **Recovery** вмикається лише тоді, коли API підтвердив, що effective admins немає: усіх видалили з проєкту, заблокували або понизили. Право отримує effective Owner проєкту, зокрема Owner батьківської групи на будь-якій глибині. Збій API recovery ніколи не вмикає. Instance administrator не є учасником проєкту і recovery не отримує: його шлях - стати Owner'ом (це видно в аудиті GitLab) або break-glass ([operations.md](operations.md)).
 
-Recovery-push змінює тільки PATHPOLICY. Захищені шляхи в тому ж push перевіряються за старими правилами. Кожен recovery пише audit-подію `policy_recovery`, на неї варто поставити алерт.
+Recovery-push змінює тільки PATHPOLICY. Захищені шляхи в тому ж push перевіряються за старими правилами, і відмова по них підказує спершу довести нову PATHPOLICY до default branch. Owner бачить у виводі push `PATHPOLICY is changed by Owner <username> because it has no working admins. This is logged.` Кожен прийнятий recovery пише audit-подію `policy_recovery`, на неї варто поставити алерт. Відмова `policy_admin_violation` recovery не згадує: її бачать усі, хто не admin, а recovery доступний лише Owner'у і лише коли admins немає.
 
 **Невалідна PATHPOLICY у default branch** (так буває лише в обхід hook, наприклад через break-glass або `mode: audit`) блокує будь-яку зміну вмісту гілок і тегів проєкту, бо правила невідомі. Проходять видалення гілок і тегів, break-glass і Owner, який виправляє або видаляє лише PATHPOLICY.
 
@@ -186,41 +190,46 @@ Username, які вже були у версії на якорі, повторн
 
 | Код | Заголовок у виводі | Коли |
 | --- | --- | --- |
-| `protected_path_violation` | modification denied | шлях із правила змінює той, кого немає в `allow` |
-| `policy_admin_violation` | policy change denied | PATHPOLICY змінює не admin |
-| `lockout_prevented` | new policy has no effective administrators | у новій версії немає effective admin |
-| `invalid_policy` | policy is invalid | PATHPOLICY у default branch невалідна |
-| `invalid_policy_update` | new policy version is invalid | нова версія policy-файлу не пройшла приймання |
-| `authorization_backend_failure` | unable to verify authorization | API GitLab не відповів, токен прострочений, service account не бачить проєкт |
-| `unknown_principal` | principal type not allowed | deploy key або нерозбірний `GL_ID` на захищеному шляху |
-| `limit_exceeded`, `internal_error` | push could not be verified | ліміт часу, викликів API або комітів; внутрішня помилка |
+| `protected_path_violation` | you may not change these files | шлях із правила змінює той, кого немає в `allow` |
+| `policy_admin_violation` | only PATHPOLICY admins may change PATHPOLICY | PATHPOLICY змінює не admin |
+| `lockout_prevented` | the changed PATHPOLICY would have no working admin | у новій версії немає effective admin |
+| `invalid_policy` | PATHPOLICY in main is broken, so no changes are accepted | PATHPOLICY у default branch невалідна |
+| `invalid_policy_update` | the changed PATHPOLICY is invalid | нова версія policy-файлу не пройшла приймання |
+| `authorization_backend_failure` | could not check permissions: the GitLab API did not answer; this project is not connected to gitlab-repopolicy correctly | API GitLab не відповів або токен прострочений; service account не бачить проєкт або має роль нижчу за Maintainer |
+| `unknown_principal` | only a person may change these files | deploy key або нерозбірний `GL_ID` на захищеному шляху |
+| `limit_exceeded` | the check did not finish within the server limits | ліміт часу, викликів API або комітів |
+| `internal_error` | internal error: the push was not checked and is rejected | внутрішня помилка, у виводі id для пошуку в audit |
 
 За невизначеності PATHPOLICY закривається (fail closed): якщо відповідь отримати не можна, push, що зачепив захищені шляхи, відхиляється. Push, який не зачепив жодного правила, від API не залежить.
 
 Так виглядає відмова в терміналі:
 
 ```text
-remote: gitlab-repopolicy: push rejected (PATHPOLICY: 1 violation)
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
 remote:
-remote: PATHPOLICY [ci-config] refs/heads/feature: modification denied
-remote:   The platform team changes the CI/CD configuration and the deploy logic.
-remote:   Propose the change in a merge request.
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: platform-lead, sre-lead, ci-maintainer
 remote:   files:
 remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
+remote:   this rule applies to every branch: ask one of them to push the change
 remote:
-remote: user: bob (id 3)
-remote: GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY [ci-config] modification denied. See push output.
+remote: rules: PATHPOLICY in main (9f1c2ab)
+remote: checked as: bob (HTTPS)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
 ```
 
-У merge request, Web IDE і відповідях API GitLab показує лише рядок `GL-HOOK-ERR`. Результати API (роль, "заблокований") у повідомлення не потрапляють ніколи, тільки в audit.
+Одна проблема - один блок: якщо те саме порушення є в кількох гілках і тегах одного push, у заголовку блоку перелічено їх усі. `rules:` показує, з якої версії policy взято правила, `checked as:` - кого і яким способом перевіряв hook.
+
+У merge request, Web IDE і відповідях API GitLab показує лише рядок `GL-HOOK-ERR`, тому в ньому перша проблема описана повністю, а решта перелічена заголовками. Під час merge через API GitLab відповідає лише "Branch cannot be merged", а текст відмови записує в поле `merge_error` merge request. Результати API (роль, "заблокований") у повідомлення не потрапляють ніколи, тільки в audit.
 
 ## Перевірка без push
 
 | Команда | Що робить |
 | --- | --- |
 | `gitlab-repopolicy validate -f PATHPOLICY` | ті самі перевірки, що й під час приймання, без GitLab |
-| `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | ще існування username і роль admins у проєкті через API |
-| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | які правила збіглися зі шляхом і чи виконує їх користувач |
+| `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | ще існування username і роль admins у проєкті через API. Про кожного admin, який не є активним користувачем з роллю Maintainer або вище, - попередження і підсумок `N of M admins work`. Файл при цьому валідний, код виходу 0 |
+| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | які правила збіглися зі шляхом і чи виконує їх користувач. Код виходу 0 - дозволено або жодне правило не збіглося, 1 - заборонено або помилка (текст помилки в stderr) |
 | `gitlab-repopolicy admins --project P` | admins із файлу, effective admins і чи ввімкнено recovery |
 
 `explain` і `admins` читають PATHPOLICY з default branch проєкту через API, тобто ту версію, за якою буде оцінено наступний push.

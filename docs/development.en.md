@@ -32,12 +32,12 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | Target | What it does |
 | --- | --- |
 | `code-fmt` | formats Go code |
-| `code-lint` | golangci-lint with the package dependency rules, tidy of every module, actionlint, yamllint, `schemas/` matching the code, documentation language pairs and links |
+| `code-lint` | golangci-lint with the package dependency rules, tidy of every module, actionlint, yamllint, `schemas/` matching the code |
 | `code-lint-commits` | commit messages after `BASE_REF` against the `COMMITPOLICY` taken from `BASE_REF`, not from the branch |
 | `code-generate` | regenerates `schemas/` and the golden files of push output |
 | `code-build` | the binary in `bin/gitlab-repopolicy` |
 | `test-unit` | unit tests with the race detector |
-| `test-integration` | scenarios on a real `git receive-pack` with the git from `GIT_BIN`, the policy corpus |
+| `test-integration` | scenarios on a real `git receive-pack` with the git from `GIT_BIN`, the policy corpus, the documentation: language pairs, relative links, quotes of `examples/` |
 | `test-coverage` | unit and integration with coverage into `coverage/` |
 | `test-fuzz` | every fuzz target for `FUZZTIME` |
 | `test-load` | hook benchmarks |
@@ -120,6 +120,23 @@ make test-e2e-down
 | `COMPOSE_PROJECT_NAME` | from the GitLab version | the stand name; every version has its own |
 
 Do not run two stands at once: GitLab CE needs several GB of memory.
+
+## Texts for the user
+
+The output of the hook is read by a person who has just been denied, often in the GitLab UI, where only the `GL-HOOK-ERR` line is visible. New messages follow the same rules:
+
+1. The first line of a block says what is not allowed and why, in plain words: `you may not change these files`, not `modification denied`. The denial code stays in audit for searching
+2. It is clear whose problem it is: the user's change, a broken policy in the default branch or the server. The last two print `who can help:` with `help.contact`
+3. One concrete action and a person: who to ask (`allow`, `admins`), which command to run (`git commit --amend`, `git tag -s`)
+4. The advice does not contradict the situation: no "open a merge request" if a branch with this file cannot be pushed, no "retry later" if the error is permanent
+5. One exact reason with numbers, without "or": the hook knows which check fired
+6. The `GL-HOOK-ERR` line stands on its own: the object (file, commit, tag), the point and who to write to
+7. A warning does not look like a denial: it starts with `push accepted`, without "violation" and "invalid"
+8. No internal words: `branch x` and `tag v1.0.0` instead of `refs/heads/x`, no Go type names, `principal`, `effective`, `anchor`. Line numbers and field names stay
+9. One problem is one block, even if it is on several branches and tags of the push
+10. API results (a role, "blocked", a key type, the number of admins, error details) do not get into the output, only into audit `reason`. What the policy file says and what the user knows anyway may be printed
+
+`internal/report` builds the frame of the output, the modules and the core write the texts of denials in the fields of `module.Violation`. Golden files of the output are in `internal/report/testdata/`, `make code-generate` regenerates them. The diff of the golden files is what the user will see, so it is looked at in review.
 
 ## The project checks itself with its own tool
 

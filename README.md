@@ -35,7 +35,7 @@ rules:
     allow: [platform-lead, sre-lead, ci-maintainer]
     message: >-
       The platform team changes the CI/CD configuration and the deploy logic.
-      Propose the change in a merge request.
+      Ask platform-lead, sre-lead or ci-maintainer to make this change.
 
   - name: prod-values
     paths: ["helm/**/values-prod.yaml"]

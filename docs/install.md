@@ -87,7 +87,9 @@ sudo dnf install ./gitlab-repopolicy_1.0.0_linux_amd64.rpm      # RHEL, Rocky, A
 
 Оновлення не змінює права, які виставив адміністратор, і не перезаписує змінений `config.yaml`: dpkg запитає, яку версію залишити (з `--force-confold` залишить вашу, а нову покладе поруч як `.dpkg-dist`), rpm залишить вашу, а нову покладе як `.rpmnew`.
 
-**Без пакета** (архів, Docker, інші дистрибутиви): розпакуйте `gitlab-repopolicy` в `/usr/bin/` і створіть ті самі каталоги й файли з тими самими правами. Зразок `config.yaml` - [config/config.yaml](../config/config.yaml).
+У Docker-образ GitLab пакет не ставиться, див. розділ [Docker](#docker).
+
+**Без пакета** (архів, інші дистрибутиви): розпакуйте `gitlab-repopolicy` в `/usr/bin/` і створіть ті самі каталоги й файли з тими самими правами. Зразок `config.yaml` - [config/config.yaml](../config/config.yaml).
 
 ## 3. Service account і токен
 
@@ -189,8 +191,9 @@ sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_ho
 
 `install-hook`:
 - створює `custom_hooks_dir/pre-receive.d/50-gitlab-repopolicy` - wrapper, який запускає `/usr/bin/gitlab-repopolicy hook pre-receive --config /etc/gitlab-repopolicy/config.yaml`. Власник - `--user`, режим 0755
-- встановлює групу `config.yaml` і токена та власника каталогу audit-логу для `--user`
-- повторний запуск нічого не змінює (`unchanged`). Інші файли в `pre-receive.d/` не чіпає
+- встановлює групу `config.yaml` і токена та власника каталогу audit-логу для `--user`. Якщо права каталогу логу ширші за 0750, а файлу audit ширші за 0640, звужує їх
+- записує шлях `custom_hooks_dir` у `/var/lib/gitlab-repopolicy/hooks`, щоб видалення пакета прибрало wrapper
+- повторний запуск нічого не змінює і так і пише: `unchanged`, `owner unchanged (0:998)`, `mode unchanged (0750)`. Інші файли в `pre-receive.d/` не чіпає
 
 Gitaly виконує файли `pre-receive.d/` за алфавітом і зупиняється на першому, що завершився з помилкою. Окремий файл `custom_hooks_dir/pre-receive` поруч із `pre-receive.d/` Gitaly не виконує: свої hooks кладіть у `pre-receive.d/`. Файли з `~` у кінці імені Gitaly пропускає.
 
@@ -201,9 +204,9 @@ sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
 
-`selftest` перевіряє конфігурацію, модулі, audit-лог, каталог break-glass, файл токена, service account (`bot`, `external`, не адміністратор), scopes і строк токена, доступ до API. Будь-який `FAIL` - код виходу 1.
+`selftest` перевіряє конфігурацію, модулі, audit-лог, каталог break-glass, файл токена, service account (`bot`, `external`, не адміністратор), scopes і строк токена, доступ до API і кількість груп, де service account має роль Maintainer. Будь-який `FAIL` - код виходу 1. Якщо service account не входить у жодну групу, рядок `groups` - `FAIL`: hook не зможе перевірити жоден груповий проєкт. Які саме групи пропущено, покаже `coverage`.
 
-Запускайте `selftest` і від root, і від користувача git: hook працює від git, і лише так видно, що він може прочитати конфігурацію і токен. Наприклад, каталог `/etc/gitlab-repopolicy` з правами 0750 root не помітить жодна перевірка від root, а hook відмовлятиме кожному push у групові проєкти з текстом "push could not be verified".
+Запускайте `selftest` і від root, і від користувача git: hook працює від git, і лише так видно, що він може прочитати конфігурацію і токен. Наприклад, каталог `/etc/gitlab-repopolicy` з правами 0750 root не помітить жодна перевірка від root, а hook відмовлятиме кожному push з текстом "internal error: the hook configuration on the server is invalid".
 
 ```text
 $ sudo -u git gitlab-repopolicy selftest
@@ -229,20 +232,108 @@ info git         git version 2.55.0-rc1.g02bb39c in PATH of selftest; the hook u
 | Таймер | Що робить | Як часто |
 | --- | --- | --- |
 | `gitlab-repopolicy-token-rotate.timer` | `token rotate`: ротація токена за 30 днів до кінця строку | щодня |
-| `gitlab-repopolicy-settings-check.timer` | `settings-check`: звірка налаштувань проєктів ([operations.md](operations.md)) | кожні 15 хвилин |
+| `gitlab-repopolicy-settings-check.timer` | `settings-check`: звірка налаштувань проєктів і перевірка, що hook може писати audit ([operations.md](operations.md#settings-check)) | щодня |
 
 ```sh
 sudo systemctl enable --now gitlab-repopolicy-token-rotate.timer gitlab-repopolicy-settings-check.timer
 ```
 
+Обидва таймери запускаються раз на добу з випадковою затримкою до години. Інший розклад задається drop-in файлом ([operations.md](operations.md#settings-check)).
+
 Обидві служби працюють від root в обмеженому оточенні systemd: на запис лише свої каталоги, без нових привілеїв, з двома capabilities - `CAP_CHOWN` (власник токена й нового audit-логу) і `CAP_DAC_OVERRIDE` (каталог логу належить користувачу hook).
 
 ## Docker
 
-- бінарник монтуйте в контейнер GitLab read-only, наприклад у `/usr/bin/gitlab-repopolicy`
-- `config.yaml` і токен кладіть у контейнер файлами, які може змінити root контейнера: `install-hook` змінює їхню групу, а `token rotate` замінює токен
-- `custom_hooks_dir` і `/var/log/gitlab-repopolicy` - у persistent volume, щоб пережили перестворення контейнера
-- `install-hook` і `selftest` запускайте в контейнері: `docker exec -it gitlab gitlab-repopolicy ...`
+**Пакет у контейнер GitLab не ставте.** Пакет живе в шарі контейнера, а wrapper hook лежить у `custom_hooks_dir`, тобто в persistent volume. Після `docker compose up --force-recreate`, а так виглядає будь-яке оновлення GitLab у Docker, бінарника вже немає, а wrapper залишився. Тоді GitLab відхиляє кожен push інстансу з `exec: /usr/bin/gitlab-repopolicy: not found`. Таймери systemd у контейнері теж не працюють: в образі GitLab немає systemd.
+
+Тому все, що має пережити перестворення контейнера, лежить на хості:
+
+| На хості | У контейнері | Чому так |
+| --- | --- | --- |
+| каталог з бінарником, наприклад `/opt/gitlab-repopolicy/bin/` | `/opt/gitlab-repopolicy/bin`, read-only | монтується каталог, а не файл: новий бінарник, покладений на хості, одразу видно в контейнері |
+| `/srv/gitlab-repopolicy/etc/` з `config.yaml` і `token` | `/etc/gitlab-repopolicy` | `token rotate` пише новий токен поруч і перейменовує його поверх старого, у змонтованому окремо файлі так не вийде |
+| volume або каталог | `/var/log/gitlab-repopolicy` | audit-лог |
+| volume даних GitLab | `/var/opt/gitlab` | там уже лежить `custom_hooks_dir` |
+
+Фрагмент `compose.yaml`:
+
+```yaml
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:19.4.2-ce.0
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        gitaly['configuration'] = {
+          hooks: { custom_hooks_dir: '/var/opt/gitlab/gitaly/custom_hooks' }
+        }
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+      - /opt/gitlab-repopolicy/bin:/opt/gitlab-repopolicy/bin:ro
+      - /srv/gitlab-repopolicy/etc:/etc/gitlab-repopolicy
+      - repopolicy-log:/var/log/gitlab-repopolicy
+
+volumes:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  repopolicy-log:
+```
+
+Установка. Бінарник з архіву релізу кладеться в `/opt/gitlab-repopolicy/bin/`, `config.yaml` зі зразка [config/config.yaml](../config/config.yaml) і токен кладуться в `/srv/gitlab-repopolicy/etc/`. Далі в контейнері:
+
+```sh
+docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy install-hook \
+  --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git \
+  --binary /opt/gitlab-repopolicy/bin/gitlab-repopolicy
+docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
+docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
+```
+
+`docker exec` працює від root контейнера, `docker exec -u git` - від користувача, яким Gitaly запускає hooks. `sudo` в образі GitLab немає, тому команди з цієї документації виду `sudo -u git gitlab-repopolicy ...` у Docker виглядають як `docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy ...`.
+
+**Таймери - на хості.** systemd timer хоста викликає команду в контейнері:
+
+```ini
+# /etc/systemd/system/gitlab-repopolicy-token-rotate.service
+[Unit]
+Description=Rotate the token of the gitlab-repopolicy service account
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy token rotate
+
+# /etc/systemd/system/gitlab-repopolicy-token-rotate.timer
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Для `settings-check` так само: служба з `ExecStart=... gitlab-repopolicy settings-check` і такий самий таймер. Те саме через cron хоста:
+
+```text
+# /etc/cron.d/gitlab-repopolicy
+17 3 * * * root docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy token rotate
+47 3 * * * root docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy settings-check
+```
+
+Без ротації токен перестане діяти після свого строку, і всі захищені зміни отримуватимуть відмову `authorization_backend_failure`.
+
+**Оновлення gitlab-repopolicy.** Новий бінарник кладеться поруч під тимчасовим ім'ям і перейменовується поверх старого. Push, які вже йдуть, доробляє старий бінарник, наступні беруть новий:
+
+```sh
+install -m 0755 gitlab-repopolicy /opt/gitlab-repopolicy/bin/.gitlab-repopolicy.new
+mv /opt/gitlab-repopolicy/bin/.gitlab-repopolicy.new /opt/gitlab-repopolicy/bin/gitlab-repopolicy
+```
+
+Після цього `selftest` від root і від git.
+
+**Оновлення GitLab.** Перестворення контейнера бінарник, конфігурацію, токен і `custom_hooks_dir` не зачіпає. Після оновлення - `selftest` від root і від git.
 
 ## Окремі ноди Gitaly і Gitaly Cluster
 
@@ -262,9 +353,55 @@ go install github.com/Kuzmenko-Pavel/gitlab-repopolicy/cmd/gitlab-repopolicy@v1.
 
 ## Вимкнути і видалити
 
+Швидко вимкнути перевірки без видалення - `mode: off` у конфігурації ([operations.md](operations.md)).
+
+Видалення пакета - це явне вимкнення перевірок, і пакет прибирає за собою:
+
 ```sh
-sudo gitlab-repopolicy uninstall-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks
 sudo apt remove gitlab-repopolicy        # або dnf remove
 ```
 
-`uninstall-hook` видаляє лише свій wrapper. Видалення пакета вимикає таймери, але hook не чіпає: якщо забути `uninstall-hook`, wrapper указуватиме на відсутній бінарник, і GitLab відхилятиме кожен push з текстом "Prevented by server hooks". `config.yaml` і токен після `apt remove` лишаються на місці, видаліть їх вручну, якщо вони більше не потрібні. Швидко вимкнути перевірки без видалення - `mode: off` у конфігурації ([operations.md](operations.md)).
+```text
+gitlab-repopolicy: the hook is removed from /var/opt/gitlab/gitaly/custom_hooks: pushes are no longer checked
+```
+
+| Дія | Що відбувається |
+| --- | --- |
+| оновлення пакета | нічого не змінюється: hook, таймери, конфігурація й токен залишаються |
+| `apt remove`, `dnf remove` | таймери вимикаються, wrapper видаляється з кожного `custom_hooks_dir`, куди його ставив `install-hook`. `config.yaml`, токен і break-glass залишаються |
+| `apt purge` | ще видаляються `/etc/gitlab-repopolicy` (конфігурація, токен, break-glass) і `/var/lib/gitlab-repopolicy`. У rpm такого кроку немає, ці каталоги видаляються вручну |
+| будь-яка | audit-лог `/var/log/gitlab-repopolicy` не видаляється ніколи: це запис рішень hook |
+
+Якщо пакет не зміг прибрати wrapper, він пише `remove <dir>/pre-receive.d/50-gitlab-repopolicy by hand`. Тоді видаліть файл вручну або запустіть `gitlab-repopolicy uninstall-hook --hooks-dir <dir>` до видалення пакета. Wrapper без бінарника відхиляє кожен push інстансу. Без пакета (Docker, архів) wrapper завжди прибирається вручну через `uninstall-hook`.
+
+Після видалення з усіх нод відкличте токен service account, щоб він не залишився діяти до кінця строку. Токеном адміністратора:
+
+```sh
+# id токена
+curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" "$GITLAB/api/v4/personal_access_tokens?user_id=$SA_ID&state=active"
+curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X DELETE "$GITLAB/api/v4/personal_access_tokens/<token-id>"
+```
+
+Або видаліть сам service account у Admin area → Service accounts: разом з ним зникнуть його токени й членство в групах.
+
+## Часті питання
+
+**Чи можна поставити пакет у контейнер GitLab?** Ні: після перестворення контейнера бінарник зникне, а wrapper залишиться, і GitLab почне відхиляти кожен push. Як ставити в Docker - розділ [Docker](#docker).
+
+**Як за audit дізнатися, чим закінчився push?** У всіх подій одного запуску hook однаковий `receive_id`. Push відхилено, якщо серед них є `"decision":"deny"` з `"enforced":true`: git відхиляє push цілком, навіть якщо відмовив лише один ref. Деталі - [operations.md](operations.md#audit).
+
+**Як помітити, що токен перестав діяти?** Кожна відмова через збій API пише подію `authorization_backend_failure`, зокрема коли GitLab відповідає 401 на токен. Алерт на серію таких подій ловить прострочений або відкликаний токен ([operations.md](operations.md#події-й-алерти)).
+
+**`selftest` пише `ok`, а проєкти групи не перевіряються.** Service account не доданий у top-level групу. `selftest` показує кількість груп у рядку `groups`, а які саме пропущено, покаже `coverage` (крок 3).
+
+**Commit-msg hook відхиляє `feat:`, хоча в main це дозволено.** `lint-commit` без `--ruleset` застосовує всі rulesets файла, бо локально невідомо, у яку гілку піде коміт. Задайте потрібний ruleset: `lint-commit --ruleset protected` ([commitpolicy.md](commitpolicy.md#локальна-перевірка)).
+
+**Очікування `settings_check` одні на весь інстанс, а в infra-проєктів немає тегів.** `protected_tags` перевіряється лише в проєктах з TAGPOLICY у default branch, тож проєкти без релізних тегів у drift не потрапляють. Перевірку `ci_config_path` варто залишити і для проєктів без `.gitlab-ci.yml` ([configuration.md](configuration.md#settings_check)).
+
+**`gitlab-repopolicy test` нічого не знайшов у новій гілці.** Для нової гілки hook перевіряє лише нові коміти, яких ще немає в репозиторії. У робочому клоні коміт уже є в іншій локальній гілці, тому `test` друкує `allowed: no rule was touched` з підказкою. Запускайте `test` на копії, де є лише гілки сервера ([operations.md](operations.md#перевірити-push-без-push)).
+
+**Де взяти ID проєкту для break-glass?** `breakglass grant` приймає і шлях `--project group/project`. Якщо API недоступний, потрібен `--project-id`: ID показано на головній сторінці проєкту під його назвою.
+
+**Merge через API відповідає лише "Branch cannot be merged".** Причину відмови GitLab записує в поле `merge_error` merge request (`GET /projects/:id/merge_requests/:iid`), в UI вона видна на сторінці MR.
+
+**Каталог `/var/log/gitlab-repopolicy` створено заздалегідь з правами 0755.** `install-hook` звужує його до 0750, а файл audit до 0640, і пише, що змінив. `selftest` попереджає, якщо audit може читати будь-хто.

@@ -118,6 +118,8 @@ In addition to the common checks ([pathpolicy.en.md](pathpolicy.en.md#acceptance
 | an expired OpenPGP key in an unchanged entry | a warning: somebody else's expired key does not block an edit of the file |
 | a key that no rule uses | a warning |
 
+If the project has no PATHPOLICY on the default branch, anyone who can push may change TAGPOLICY, that is also the list of keys that sign releases. The hook accepts such a version with the warning `the project has no PATHPOLICY on the default branch: anyone who can push may change TAGPOLICY`. Protect the file with a PATHPOLICY rule ([pathpolicy.en.md](pathpolicy.en.md#example)).
+
 In the default branch an expired key does not make TAGPOLICY invalid: it is rejected only when a signature is checked.
 
 Rotating and revoking a key is a change of TAGPOLICY in the default branch. It applies from the first push after the merge. A compromised private key can sign a release until that merge happens.
@@ -128,19 +130,28 @@ TAGPOLICY fails closed under uncertainty, but it does not use the API, so an API
 
 | Code | Title in the output | When |
 | --- | --- | --- |
-| `tag_not_signed` | tag is not signed | a lightweight tag, a tag without a signature, an X.509 signature, a tag from the UI or the Releases API |
-| `tag_object_invalid` | tag object does not match ref | the name inside the object differs from the tag name, the tag does not point to a commit |
-| `tag_signer_not_allowed` | tag signer not allowed | the key is not in the file or its label is not in `signers` |
-| `tag_signature_invalid` | tag signature is invalid | the key is expired or revoked, a weak hash, a wrong SSH namespace |
-| `invalid_policy` | policy is invalid | TAGPOLICY in the default branch is invalid: creating and moving any tag is denied, branches are not affected |
-| `invalid_policy_update` | new policy version is invalid | a new version of the file failed acceptance |
+| `tag_not_signed` | the tag must be signed | a lightweight tag, a tag without a signature, an X.509 signature, a tag from the UI or the Releases API |
+| `tag_object_invalid` | the tag does not match its ref, or more precisely: the tag was signed as "x" but is pushed as "y", the tag points to a tree, not a commit | the name inside the object differs from the tag name, the tag does not point to a commit |
+| `tag_signer_not_allowed` | this key may not sign these tags | the key is not in the file or its label is not in `signers` |
+| `tag_signature_invalid` | the signature cannot be accepted | the key is expired or revoked, a weak hash, a wrong SSH namespace |
+| `invalid_policy` | TAGPOLICY in main is broken, so no tag can be created or moved | TAGPOLICY in the default branch is invalid: creating and moving any tag is denied, branches are not affected |
+| `invalid_policy_update` | the changed TAGPOLICY is invalid | a new version of the file failed acceptance |
 
 ```text
-remote: TAGPOLICY [prod] refs/tags/v3.156.0-prod: tag signer not allowed
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: TAGPOLICY rule "prod", tag v3.156.0-prod: this key may not sign these tags
+remote:   signed with: key "dev-lead" from TAGPOLICY (OpenPGP, 4528A421CE40AA6A717FF2112DA7684307491280)
+remote:   allowed keys: release-lead (OpenPGP), sre-lead (SSH)
 remote:   Prod releases are signed by release-lead or sre-lead.
-remote:   signed by: dev-lead (4528A421CE40AA6A717FF2112DA7684307491280)
-remote:   allowed:   release-lead, sre-lead
+remote:   ask the owner of an allowed key to sign the tag, or ask the people who may change TAGPOLICY to add your key
+remote:
+remote: rules: PATHPOLICY, TAGPOLICY in main (9f1c2ab)
+remote: checked as: dev-lead (SSH)
+remote: GL-HOOK-ERR: gitlab-repopolicy: this key may not sign these tags (TAGPOLICY rule "prod", tag v3.156.0-prod)
 ```
+
+A tag created in the GitLab UI or through the Releases API is not signed: GitLab creates a lightweight or an unsigned tag. For tags under a rule the denial says so (`GitLab cannot sign a tag created in the UI or API`) and suggests to create the tag with `git tag -s` and `git push` and then create the release for the existing tag.
 
 The audit event `decision` of the `tagpolicy` module holds the tag, the rules, the label and the fingerprint of the key that signed the tag.
 

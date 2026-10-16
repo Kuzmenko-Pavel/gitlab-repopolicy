@@ -118,6 +118,8 @@ GitLab не вміє підписувати теги, які створює са
 | прострочений OpenPGP-ключ у незміненому записі | попередження: чужий прострочений ключ не блокує правку файлу |
 | ключ, який не використовує жодне правило | попередження |
 
+Якщо в default branch проєкту немає PATHPOLICY, TAGPOLICY може змінити будь-хто з правом push, тобто й список ключів, якими підписують релізи. Hook приймає таку версію з попередженням `the project has no PATHPOLICY on the default branch: anyone who can push may change TAGPOLICY`. Захистіть файл правилом PATHPOLICY ([pathpolicy.md](pathpolicy.md#приклад)).
+
 У default branch прострочений ключ не робить TAGPOLICY невалідною: його відхиляють лише під час перевірки підпису.
 
 Ротація і відкликання ключа - це зміна TAGPOLICY у default branch. Вона діє з першого push після merge. Скомпрометованим приватним ключем можна підписати реліз, доки цей merge не відбувся.
@@ -128,19 +130,28 @@ TAGPOLICY закривається за невизначеності (fail close
 
 | Код | Заголовок у виводі | Коли |
 | --- | --- | --- |
-| `tag_not_signed` | tag is not signed | lightweight-тег, тег без підпису, підпис X.509, тег з UI чи Releases API |
-| `tag_object_invalid` | tag object does not match ref | ім'я в об'єкті не збігається з ім'ям тегу, тег не на коміт |
-| `tag_signer_not_allowed` | tag signer not allowed | ключа немає у файлі або його мітки немає в `signers` |
-| `tag_signature_invalid` | tag signature is invalid | ключ прострочений чи відкликаний, слабкий хеш, неправильний namespace SSH |
-| `invalid_policy` | policy is invalid | TAGPOLICY у default branch невалідна: відмова на створення і переміщення будь-якого тегу, гілки не зачеплені |
-| `invalid_policy_update` | new policy version is invalid | нова версія файлу не пройшла приймання |
+| `tag_not_signed` | the tag must be signed | lightweight-тег, тег без підпису, підпис X.509, тег з UI чи Releases API |
+| `tag_object_invalid` | the tag does not match its ref, або точніше: the tag was signed as "x" but is pushed as "y", the tag points to a tree, not a commit | ім'я в об'єкті не збігається з ім'ям тегу, тег не на коміт |
+| `tag_signer_not_allowed` | this key may not sign these tags | ключа немає у файлі або його мітки немає в `signers` |
+| `tag_signature_invalid` | the signature cannot be accepted | ключ прострочений чи відкликаний, слабкий хеш, неправильний namespace SSH |
+| `invalid_policy` | TAGPOLICY in main is broken, so no tag can be created or moved | TAGPOLICY у default branch невалідна: відмова на створення і переміщення будь-якого тегу, гілки не зачеплені |
+| `invalid_policy_update` | the changed TAGPOLICY is invalid | нова версія файлу не пройшла приймання |
 
 ```text
-remote: TAGPOLICY [prod] refs/tags/v3.156.0-prod: tag signer not allowed
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: TAGPOLICY rule "prod", tag v3.156.0-prod: this key may not sign these tags
+remote:   signed with: key "dev-lead" from TAGPOLICY (OpenPGP, 4528A421CE40AA6A717FF2112DA7684307491280)
+remote:   allowed keys: release-lead (OpenPGP), sre-lead (SSH)
 remote:   Prod releases are signed by release-lead or sre-lead.
-remote:   signed by: dev-lead (4528A421CE40AA6A717FF2112DA7684307491280)
-remote:   allowed:   release-lead, sre-lead
+remote:   ask the owner of an allowed key to sign the tag, or ask the people who may change TAGPOLICY to add your key
+remote:
+remote: rules: PATHPOLICY, TAGPOLICY in main (9f1c2ab)
+remote: checked as: dev-lead (SSH)
+remote: GL-HOOK-ERR: gitlab-repopolicy: this key may not sign these tags (TAGPOLICY rule "prod", tag v3.156.0-prod)
 ```
+
+Тег, створений в UI GitLab або через Releases API, не підписаний: GitLab створює lightweight або непідписаний тег. Для тегів під правилом відмова так і каже (`GitLab cannot sign a tag created in the UI or API`) і підказує створити тег через `git tag -s` і `git push`, а реліз потім створити для вже наявного тегу.
 
 Подія audit `decision` модуля `tagpolicy` містить тег, правила, мітку і fingerprint ключа, яким підписано тег.
 

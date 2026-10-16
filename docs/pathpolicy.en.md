@@ -34,13 +34,15 @@ rules:
     allow: [platform-lead, sre-lead, ci-maintainer]
     message: >-
       The platform team changes the CI/CD configuration and the deploy logic.
-      Propose the change in a merge request.
+      Ask platform-lead, sre-lead or ci-maintainer to make this change.
 
   - name: prod-values
     paths: ["helm/**/values-prod.yaml"]
     refs: protected
     allow: [platform-lead, release-manager]
 ```
+
+The `ci-config` rule applies to every branch (`refs` is not set, that is `all`), because the pipeline of any branch runs the CI configuration of that very branch, with the runners and variables of the project. `refs: protected` would let a Developer push a branch with a changed `.gitlab-ci.yml`, and its pipeline would run that change before any review. So the `message` says to ask the owners of the path rather than to open a merge request.
 
 Delegating the other policy files to their owners:
 
@@ -98,6 +100,8 @@ Whom the hook takes as the author of a change:
 | merge button, auto-merge | whoever pressed merge or turned on auto-merge. The author of the commits does not count |
 | push from CI with `CI_JOB_TOKEN` | the user who started the pipeline |
 
+The hook sees a push from a CI job as a push of the user who started the pipeline: the hook environment has no other sign of a job. So the denial of such a push shows this user in `checked as:`, and the job is denied if this user is not in `allow`. Automation that needs a protected path can use a project access token whose bot is listed in the rule.
+
 Commit author, committer and commit signatures are not used for authorization: they are easy to forge.
 
 ## Path matching
@@ -152,7 +156,7 @@ An **admin** is a user from `admins` who is active and has at least the Maintain
 
 **Recovery** turns on only when the API confirmed that there are no effective admins: all were removed from the project, blocked or demoted. The right goes to an effective Owner of the project, including an Owner of a parent group at any depth. An API failure never turns recovery on. An instance administrator is not a project member and does not get recovery: the way for them is to become an Owner (GitLab audits this) or break-glass ([operations.en.md](operations.en.md)).
 
-A recovery push changes only PATHPOLICY. Protected paths in the same push are checked by the old rules. Every recovery writes the audit event `policy_recovery`; set an alert on it.
+A recovery push changes only PATHPOLICY. Protected paths in the same push are checked by the old rules, and their denial suggests to get the new PATHPOLICY into the default branch first. The Owner sees `PATHPOLICY is changed by Owner <username> because it has no working admins. This is logged.` in the push output. Every accepted recovery writes the audit event `policy_recovery`; set an alert on it. The `policy_admin_violation` denial does not mention recovery: everyone who is not an admin sees it, and recovery is open only to an Owner and only when there are no admins.
 
 **An invalid PATHPOLICY in the default branch** (this happens only around the hook, for example through break-glass or `mode: audit`) blocks any change of the content of branches and tags of the project, because the rules are unknown. Deletion of branches and tags, break-glass and an Owner who fixes or deletes only PATHPOLICY still pass.
 
@@ -186,41 +190,46 @@ If PATHPOLICY is deleted while COMMITPOLICY or TAGPOLICY stay, anyone with push 
 
 | Code | Title in the output | When |
 | --- | --- | --- |
-| `protected_path_violation` | modification denied | a path from a rule is changed by someone not in `allow` |
-| `policy_admin_violation` | policy change denied | PATHPOLICY is changed by someone who is not an admin |
-| `lockout_prevented` | new policy has no effective administrators | the new version has no effective admin |
-| `invalid_policy` | policy is invalid | PATHPOLICY in the default branch is invalid |
-| `invalid_policy_update` | new policy version is invalid | a new version of a policy file failed acceptance |
-| `authorization_backend_failure` | unable to verify authorization | the GitLab API did not answer, the token expired, the service account does not see the project |
-| `unknown_principal` | principal type not allowed | a deploy key or an unparsable `GL_ID` on a protected path |
-| `limit_exceeded`, `internal_error` | push could not be verified | a limit of time, API calls or commits; an internal error |
+| `protected_path_violation` | you may not change these files | a path from a rule is changed by someone not in `allow` |
+| `policy_admin_violation` | only PATHPOLICY admins may change PATHPOLICY | PATHPOLICY is changed by someone who is not an admin |
+| `lockout_prevented` | the changed PATHPOLICY would have no working admin | the new version has no effective admin |
+| `invalid_policy` | PATHPOLICY in main is broken, so no changes are accepted | PATHPOLICY in the default branch is invalid |
+| `invalid_policy_update` | the changed PATHPOLICY is invalid | a new version of a policy file failed acceptance |
+| `authorization_backend_failure` | could not check permissions: the GitLab API did not answer; this project is not connected to gitlab-repopolicy correctly | the GitLab API did not answer or the token expired; the service account does not see the project or its role is below Maintainer |
+| `unknown_principal` | only a person may change these files | a deploy key or an unparsable `GL_ID` on a protected path |
+| `limit_exceeded` | the check did not finish within the server limits | a limit of time, API calls or commits |
+| `internal_error` | internal error: the push was not checked and is rejected | an internal error; the output has an id to look up in audit |
 
 Under uncertainty PATHPOLICY fails closed: if the answer cannot be obtained, a push that touches protected paths is denied. A push that touches no rule does not depend on the API.
 
 A denial in the terminal:
 
 ```text
-remote: gitlab-repopolicy: push rejected (PATHPOLICY: 1 violation)
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
 remote:
-remote: PATHPOLICY [ci-config] refs/heads/feature: modification denied
-remote:   The platform team changes the CI/CD configuration and the deploy logic.
-remote:   Propose the change in a merge request.
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: platform-lead, sre-lead, ci-maintainer
 remote:   files:
 remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
+remote:   this rule applies to every branch: ask one of them to push the change
 remote:
-remote: user: bob (id 3)
-remote: GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY [ci-config] modification denied. See push output.
+remote: rules: PATHPOLICY in main (9f1c2ab)
+remote: checked as: bob (HTTPS)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
 ```
 
-In a merge request, the Web IDE and API responses GitLab shows only the `GL-HOOK-ERR` line. API results (a role, "blocked") never get into the message, only into audit.
+One problem is one block: if the same violation is on several branches and tags of one push, the head of the block lists all of them. `rules:` shows which version of the policy the rules come from, `checked as:` who the hook checked and how.
+
+In a merge request, the Web IDE and API responses GitLab shows only the `GL-HOOK-ERR` line, so it describes the first problem in full and lists the others by title. On a merge through the API GitLab answers only "Branch cannot be merged" and writes the denial into the `merge_error` field of the merge request. API results (a role, "blocked") never get into the message, only into audit.
 
 ## Checking without a push
 
 | Command | What it does |
 | --- | --- |
 | `gitlab-repopolicy validate -f PATHPOLICY` | the same checks as on acceptance, without GitLab |
-| `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | also checks through the API that usernames exist and the role of admins in the project |
-| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | which rules match the path and whether the user satisfies them |
+| `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | also checks through the API that usernames exist and the role of admins in the project. Every admin who is not an active user with Maintainer or higher gets a warning, plus the summary `N of M admins work`. The file stays valid, exit code 0 |
+| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | which rules match the path and whether the user satisfies them. Exit code 0 means allowed or no rule matched, 1 means denied or an error (the error text is on stderr) |
 | `gitlab-repopolicy admins --project P` | admins from the file, effective admins and whether recovery is on |
 
 `explain` and `admins` read PATHPOLICY from the default branch of the project through the API, that is the version the next push will be evaluated by.

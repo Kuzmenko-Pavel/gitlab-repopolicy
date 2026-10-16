@@ -108,7 +108,7 @@ One push:
 5. **Changes.** Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs))
 6. **Modules.** PATHPOLICY first, then COMMITPOLICY and TAGPOLICY. The API only if the decision depends on it
 7. **Acceptance.** Every changed policy file in any branch is checked as a new version
-8. **Decision.** AND over modules; one message per push on stderr; an audit event per decision
+8. **Decision.** AND over modules; one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
 
 A typical run takes about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched: most of it is starting git processes. A call to the API adds 50-300 ms and is rare.
 

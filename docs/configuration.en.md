@@ -63,12 +63,22 @@ modules:
   tagpolicy: enabled
 
 # What settings-check expects of every project with PATHPOLICY. An empty
-# value is not checked; ci_config_path and principals are always checked.
+# value is not checked; ci_config_path, principals and the protection of the
+# default branch are always checked. default_branch lists the allowed names,
+# protected_branches are branches to protect besides the default one and
+# protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  default_branch: main
-  protected_branches: [main]
+  default_branch: [main]
+  protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
+
+# Where a pusher gets help, printed in denials; both are optional. contact is
+# named when the server or a policy in the default branch is at fault, docs_url
+# next to the rules. Up to 200 characters each.
+help:
+  contact: ""
+  docs_url: ""
 
 # Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
 commitpolicy_presets: {}
@@ -93,6 +103,8 @@ commitpolicy_presets: {}
 | `max_api_calls` | `30` | API calls per push. Exceeding it is `limit_exceeded` |
 | `modules.<name>` | `enabled` | `enabled` or `disabled` for `pathpolicy`, `commitpolicy`, `tagpolicy` |
 | `settings_check.*` | empty | what `settings-check` expects, see below |
+| `help.contact` | empty | who to ask, for example `#gitlab-support`. See below |
+| `help.docs_url` | empty | a link to the documentation of the rules for developers, `http://` or `https://` |
 | `commitpolicy_presets` | empty | presets for `extends` in COMMITPOLICY ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)) |
 
 A duration is written as in Go (`10s`, `100ms`, `1h30m`) or in whole days with the suffix `d` (`364d`). Paths are absolute.
@@ -125,12 +137,32 @@ What `settings-check` expects of every project with PATHPOLICY. An empty value i
 
 | Key | What is compared |
 | --- | --- |
-| `default_branch` | the default branch of the project |
-| `protected_branches` | every branch in the list is protected. Other protected branches of the project do not matter |
-| `protected_tags` | these tag patterns are protected |
+| `default_branch` | the list of allowed names of the default branch, for example `[main, master]` |
+| `protected_branches` | branches that must be protected besides the default branch. Other protected branches of the project do not matter |
+| `protected_tags` | these tag patterns are protected. Only in projects with TAGPOLICY on the default branch |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` (`false` means it must be off) |
 
-Regardless of these keys, `settings-check` always checks the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
+Regardless of these keys, `settings-check` always checks that the default branch is protected, the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
+
+The expectations are the same for the whole instance; there are no settings per group or project. So put into the lists only what holds for every project with PATHPOLICY. `protected_tags` gives no drift in projects without release tags, because it is checked only where there is TAGPOLICY. Keep the CI configuration check also for projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance.
+
+## `help`
+
+Both keys are optional, up to 200 characters, without control characters.
+
+- `help.contact` is printed in the `who can help:` line of denials the user cannot fix alone: an API failure, server limits, an internal error, a broken policy in the default branch. Without this key the line says `your GitLab administrators`
+- `help.docs_url` is printed in the `rules:` line at the end of every denial and warning
+
+```yaml
+help:
+  contact: "#gitlab-support"
+  docs_url: https://wiki.example.com/gitlab/repopolicy
+```
+
+```text
+remote: rules: PATHPOLICY in main (0316d44); docs: https://wiki.example.com/gitlab/repopolicy
+remote: checked as: alice (HTTPS)
+```
 
 ## `commitpolicy_presets`
 
@@ -147,6 +179,14 @@ commitpolicy_presets:
 ```
 
 The preset name is the key of the section, `rules` are rules in the same format as in a COMMITPOLICY ruleset. Rules of the project file override the preset rules by name.
+
+**Presets for developers.** For `validate` and `lint-commit` on a laptop to see the same presets as the server, hand out a file with only the `commitpolicy_presets` section, for example in the repository with the tools of the team:
+
+```sh
+gitlab-repopolicy lint-commit --config presets.yaml -f COMMITPOLICY -m "$(cat .git/COMMIT_EDITMSG)"
+```
+
+`validate` and `lint-commit` with `--config` read only `commitpolicy_presets`; other keys are not needed and not checked. `validate --online` calls the API and reads the whole config. The hook and the server commands always check the whole config.
 
 ## Other configurations
 

@@ -200,6 +200,8 @@ COMMITPOLICY is about hygiene, not access, so a failure does not block work (fai
 
 An unknown rule in a new version of the file is an acceptance error: a typo does not pass silently.
 
+If the project has no PATHPOLICY on the default branch, anyone who can push may change COMMITPOLICY, including weakening its rules. The hook accepts such a version with the warning `the project has no PATHPOLICY on the default branch: anyone who can push may change COMMITPOLICY`. A PATHPOLICY rule protects the file ([pathpolicy.en.md](pathpolicy.en.md#example)). If the PATHPOLICY module is disabled in the config, there is no warning.
+
 Warnings of a successful push show in the terminal as `remote:` lines. For a merge button, the Web IDE and other UI operations GitLab does not show the successful output of the hook: there the warnings are visible only in audit.
 
 ## Checking locally
@@ -211,9 +213,10 @@ Warnings of a successful push show in the terminal as `remote:` lines. For a mer
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | one message against `COMMITPOLICY` of the current directory |
 | `gitlab-repopolicy lint-commit --range origin/main..HEAD` | the commits of a range; one revision means its whole history |
 | `-f FILE` | another COMMITPOLICY file |
-| `--config FILE` | the server config with presets, if the file uses `extends` |
+| `--ruleset NAME` | only this ruleset; repeat it for several. An unknown name is an error that lists the rulesets of the file |
+| `--config FILE` | a file with `commitpolicy_presets`, if COMMITPOLICY uses `extends`. Other config keys are not needed ([configuration.en.md](configuration.en.md#commitpolicy_presets)) |
 
-`lint-commit` applies every ruleset of the file and ignores `refs`: locally it is not known which branch the commit will go to. `except.users` does not apply locally.
+Without `--ruleset`, `lint-commit` applies every ruleset of the file and ignores `refs`: locally it is not known which branch the commit will go to. `except.users` does not apply locally.
 
 ```text
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
@@ -227,7 +230,21 @@ As a git `commit-msg` hook:
 ```sh
 #!/bin/sh
 # .git/hooks/commit-msg
-exec gitlab-repopolicy lint-commit -m "$(git stripspace --strip-comments < "$1")"
+exec gitlab-repopolicy lint-commit --ruleset protected -m "$(git stripspace --strip-comments < "$1")"
 ```
 
-`git stripspace` removes the comment lines left by the editor: git passes the message file to the hook with them still in place. The exit code of `lint-commit` is 0 when there are no `error` level violations (warnings do not count) and 1 when there are.
+`git stripspace` removes the comment lines left by the editor: git passes the message file to the hook with them still in place. `--ruleset protected` is needed when rulesets for different branches contradict each other. In the example above the `release` ruleset allows only `fix`, `docs` and `chore`, and without `--ruleset` the hook would reject `feat:`, though main allows it. Take the ruleset of the branches where work usually goes.
+
+In the CI of a merge request the same checks run before the merge, so the author sees the problem in the pipeline and not at merge time:
+
+```yaml
+# .gitlab-ci.yml
+repopolicy:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - gitlab-repopolicy validate
+    - gitlab-repopolicy lint-commit --ruleset protected --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME..HEAD"
+```
+
+The binary in the job comes from a verified release, for example in the runner image. For `origin/<target>` the job needs the history of the target branch: `GIT_DEPTH: 0` or `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. The exit code of `lint-commit` is 0 when there are no `error` level violations (warnings do not count) and 1 when there are.

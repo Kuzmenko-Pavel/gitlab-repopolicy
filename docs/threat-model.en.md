@@ -47,7 +47,7 @@ The hook is called only when a branch or a tag changes. Changes in Settings are 
 | turn on push with `CI_JOB_TOKEN` | **bypass**: the job pushes as the user who started the pipeline | **bypass** | `settings-check` |
 | pipeline variables to change the behaviour of a job | out of scope | out of scope | a minimal role for pipeline variables |
 
-`settings-check` is detection within minutes, not prevention: it does not see a change that was reverted between two runs. Only an organizational measure closes this group of bypasses fully: the Maintainer role only for the owners of protected paths. Where this is not possible, `settings-check` is required.
+`settings-check` is detection on a schedule (once a day by default), not prevention: it does not see a change that was reverted between two runs. Only an organizational measure closes this group of bypasses fully: the Maintainer role only for the owners of protected paths. Where this is not possible, `settings-check` is required.
 
 ## What is protected
 

@@ -63,12 +63,22 @@ modules:
   tagpolicy: enabled
 
 # What settings-check expects of every project with PATHPOLICY. An empty
-# value is not checked; ci_config_path and principals are always checked.
+# value is not checked; ci_config_path, principals and the protection of the
+# default branch are always checked. default_branch lists the allowed names,
+# protected_branches are branches to protect besides the default one and
+# protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  default_branch: main
-  protected_branches: [main]
+  default_branch: [main]
+  protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
+
+# Where a pusher gets help, printed in denials; both are optional. contact is
+# named when the server or a policy in the default branch is at fault, docs_url
+# next to the rules. Up to 200 characters each.
+help:
+  contact: ""
+  docs_url: ""
 
 # Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
 commitpolicy_presets: {}
@@ -93,6 +103,8 @@ commitpolicy_presets: {}
 | `max_api_calls` | `30` | викликів API на один push. Перевищення - `limit_exceeded` |
 | `modules.<ім'я>` | `enabled` | `enabled` або `disabled` для `pathpolicy`, `commitpolicy`, `tagpolicy` |
 | `settings_check.*` | порожньо | що очікує `settings-check`, див. нижче |
+| `help.contact` | порожньо | до кого звертатися, наприклад `#gitlab-support`. Див. нижче |
+| `help.docs_url` | порожньо | посилання на документацію правил для розробників, `http://` або `https://` |
 | `commitpolicy_presets` | порожньо | пресети для `extends` у COMMITPOLICY ([commitpolicy.md](commitpolicy.md#пресети-extends)) |
 
 Тривалість пишеться як у Go (`10s`, `100ms`, `1h30m`) або цілими днями з суфіксом `d` (`364d`). Шляхи - абсолютні.
@@ -125,12 +137,32 @@ gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsoc
 
 | Ключ | Що звіряється |
 | --- | --- |
-| `default_branch` | default branch проєкту |
-| `protected_branches` | кожна гілка зі списку захищена. Інші захищені гілки проєкту не заважають |
-| `protected_tags` | ці шаблони тегів захищені |
+| `default_branch` | список допустимих імен default branch, наприклад `[main, master]` |
+| `protected_branches` | гілки, які мають бути захищені, крім default branch. Інші захищені гілки проєкту не заважають |
+| `protected_tags` | ці шаблони тегів захищені. Лише в проєктах з TAGPOLICY у default branch |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` (`false` - має бути вимкнений) |
 
-Незалежно від цих ключів `settings-check` завжди перевіряє шлях CI-конфігурації і те, що всі principals із policy-файлів існують. Докладно - [operations.md](operations.md#settings-check).
+Незалежно від цих ключів `settings-check` завжди перевіряє, що default branch захищена, шлях CI-конфігурації і те, що всі principals із policy-файлів існують. Докладно - [operations.md](operations.md#settings-check).
+
+Очікування одні на весь інстанс, налаштувань на групу чи проєкт немає. Тому в списки варто класти лише те, що вірно для всіх проєктів з PATHPOLICY. `protected_tags` не дає drift у проєктах без релізних тегів, бо перевіряється лише там, де є TAGPOLICY. Перевірку CI-конфігурації варто залишити і для проєктів без `.gitlab-ci.yml`: Maintainer може ввімкнути CI пізніше або вказати шлях до конфігурації в іншому проєкті, а path-правило на `.gitlab-ci.yml` закриває цей обхід заздалегідь.
+
+## `help`
+
+Обидва ключі необов'язкові, до 200 символів, без керуючих символів.
+
+- `help.contact` друкується в рядку `who can help:` у відмовах, де користувач нічого не може виправити сам: збій API, ліміти сервера, внутрішня помилка, зламана policy в default branch. Без цього ключа там стоїть `your GitLab administrators`
+- `help.docs_url` друкується в рядку `rules:` наприкінці кожної відмови й попередження
+
+```yaml
+help:
+  contact: "#gitlab-support"
+  docs_url: https://wiki.example.com/gitlab/repopolicy
+```
+
+```text
+remote: rules: PATHPOLICY in main (0316d44); docs: https://wiki.example.com/gitlab/repopolicy
+remote: checked as: alice (HTTPS)
+```
 
 ## `commitpolicy_presets`
 
@@ -147,6 +179,14 @@ commitpolicy_presets:
 ```
 
 Ім'я пресету - ключ секції, `rules` - правила в тому ж форматі, що й у ruleset COMMITPOLICY. Правила файлу проєкту перекривають правила пресету за іменем.
+
+**Пресети для розробників.** Щоб `validate` і `lint-commit` на ноутбуці бачили ті самі пресети, що й сервер, роздайте файл лише із секцією `commitpolicy_presets`, наприклад у репозиторії з інструментами команди:
+
+```sh
+gitlab-repopolicy lint-commit --config presets.yaml -f COMMITPOLICY -m "$(cat .git/COMMIT_EDITMSG)"
+```
+
+`validate` і `lint-commit` з `--config` читають лише `commitpolicy_presets`, інші ключі не потрібні й не перевіряються. `validate --online` звертається до API і читає конфігурацію повністю. Hook і серверні команди перевіряють конфігурацію завжди повністю.
 
 ## Інші конфігурації
 

@@ -376,7 +376,7 @@ func TestCLI_Test(t *testing.T) {
 // TestCLI_Test_StdoutOnlyAudit: with audit.stdout a warning of an allowed
 // update goes to stderr, so that stdout holds only audit events.
 func TestCLI_Test_StdoutOnlyAudit(t *testing.T) {
-	s, base := mainWith(t, map[string]string{"NOTEPOLICY": "rules:\n  - name: ci\n    paths: [ci.yml]\n    allow: [alice]\n", "ci.yml": "x"})
+	s, base := mainWith(t, map[string]string{"NOTEPOLICY": "guard ci ci.yml allow alice\n", "ci.yml": "x"})
 	head := s.Commit("change", map[string]string{"ci.yml": "y"})
 	cfg := filepath.Join(s.Dir, "stdout.yaml")
 	require.NoError(t, os.WriteFile(cfg, []byte(fmt.Sprintf("mode: enforce\ngitlab_url: %s\ntoken_file: %s\naudit:\n  file: \"\"\n  stdout: true\n",

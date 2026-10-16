@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,114 +18,11 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/testmodule"
 )
 
-// testModule reads one instruction per line: "deny", "panic", "slow",
-// "touch", "classify", "bad-new", "sign", "versioned". Any other content is invalid.
-type testModule struct {
-	file string
-	mode module.FailMode
-}
-
-func (m testModule) Name() string               { return strings.ToLower(m.file) }
-func (m testModule) File() string               { return m.file }
-func (m testModule) OnInvalid() module.FailMode { return m.mode }
-func (testModule) MaxPolicySize() int           { return module.DefaultMaxPolicySize }
-func (testModule) Needs() module.Needs          { return module.Needs{} }
-
-// EvaluateInvalid denies every change of branch and tag content when the
-// module fails closed and only warns when it fails open.
-func (m testModule) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
-	msg := fmt.Sprintf("%s on the default branch is invalid: %v", m.file, parseErr)
-	ev := audit.Event{Event: audit.EventInvalidPolicy, Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}
-	if m.mode == module.FailOpen {
-		ev.Decision = "warn"
-		return &module.Result{Decision: module.Warn, Touched: true, Events: []audit.Event{ev},
-			Violations: []module.Violation{{Code: module.CodeInvalidPolicy, Message: msg + "\nThe check is skipped until it is fixed."}}}, nil
-	}
-	res := &module.Result{Touched: true}
-	for _, u := range in.Updates {
-		if u.Kind() == module.Delete {
-			continue
-		}
-		res.Decision = module.Deny
-		res.Violations = append(res.Violations, module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref,
-			Message: msg + "\nNothing can change until it is fixed on the default branch."})
-	}
-	ev.Decision = res.Decision.String()
-	res.Events = []audit.Event{ev}
-	return res, nil
-}
-
-func (m testModule) Parse(blob []byte) (module.Policy, error) {
-	var p testPolicy
-	for _, line := range strings.Fields(string(blob)) {
-		switch line {
-		case "deny", "panic", "slow", "touch", "classify", "bad-new", "sign", "versioned":
-			p = append(p, line)
-		default:
-			return nil, errors.New("unknown instruction " + line)
-		}
-	}
-	return p, nil
-}
-
-type testPolicy []string
-
-func (p testPolicy) Validate(context.Context, module.Validator) []module.Problem {
-	for _, s := range p {
-		if s == "bad-new" {
-			return []module.Problem{{Msg: "bad-new is rejected at acceptance"}}
-		}
-	}
-	return nil
-}
-
-// ValidateVersion of "versioned" reports the anchor version it was given.
-func (p testPolicy) ValidateVersion(anchor module.Policy, now time.Time) []module.Problem {
-	for _, s := range p {
-		if s != "versioned" {
-			continue
-		}
-		prev, _ := anchor.(testPolicy)
-		if now.IsZero() {
-			return []module.Problem{{Msg: "no clock"}}
-		}
-		return []module.Problem{{Warning: true, Msg: "anchor version: " + strings.Join(prev, ",")}}
-	}
-	return nil
-}
-
-func (p testPolicy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
-	res := &module.Result{}
-	for _, s := range p {
-		switch s {
-		case "panic":
-			panic("boom")
-		case "slow":
-			<-ctx.Done()
-			return nil, ctx.Err()
-		case "touch":
-			res.Touched = true
-		case "sign":
-			res.Touched = true
-			for _, u := range in.Updates {
-				res.Signatures = append(res.Signatures, module.Signature{Ref: u.Ref, Rules: []string{"r"}, Signer: "lead", Fingerprint: "FPR"})
-			}
-		case "classify":
-			_, st := in.Refs.Class(ctx, in.Updates[0].Ref)
-			if !st.IsConfirmed() {
-				return &module.Result{Decision: module.Deny, Touched: true, Violations: []module.Violation{{Code: module.CodeAuthorizationBackend, Ref: in.Updates[0].Ref}}}, nil
-			}
-			res.Touched = true
-		case "deny":
-			res.Decision, res.Touched = module.Deny, true
-			res.Violations = append(res.Violations, module.Violation{Code: module.CodeProtectedPath, Rule: "r", Ref: in.Updates[0].Ref,
-				Items: []module.Item{{Name: "a"}}, Reason: "audit only"})
-		}
-	}
-	return res, nil
-}
+// testModule is the test module of the core; see its package for the instructions.
+type testModule = testmodule.Module
 
 type fakeAPI struct {
 	users     []gitlab.User
@@ -276,8 +171,8 @@ func (r *repo) run(modules []module.Module, settings Settings, api *fakeAPI, pat
 
 var (
 	enforce = Settings{Mode: config.ModeEnforce, Total: 10 * time.Second}
-	closed  = testModule{file: "TESTPOLICY", mode: module.FailClosed}
-	open    = testModule{file: "OPENPOLICY", mode: module.FailOpen}
+	closed  = testModule{FileName: "TESTPOLICY", Mode: module.FailClosed}
+	open    = testModule{FileName: "OPENPOLICY", Mode: module.FailOpen}
 	zero40  = strings.Repeat("0", 40)
 )
 

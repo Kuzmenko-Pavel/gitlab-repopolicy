@@ -31,6 +31,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `internal/{changes,gitx,refs,identity,gitlab,hookenv,config,strictyaml,report,audit}` | core infrastructure |
 | `internal/{install,settings,coverage,token,breakglass}` | operational commands, called only from `cli` |
 | `internal/{spec,schema,buildinfo}` | format of policy files and its validator, JSON Schema generation, build metadata |
+| `internal/testmodule` | policy module of the tests of the core, imported only by tests |
 
 Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 

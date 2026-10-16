@@ -15,6 +15,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/install"
 )
 
@@ -148,6 +149,17 @@ func (a App) runUninstallHook(_ context.Context, args []string, _ []string, stdi
 	return withOutput(out.err, ExitOK)
 }
 
+// projectByPath looks a project up by its full path with the service account.
+func projectByPath(ctx context.Context, cfg *config.Config, path string) (gitlab.Project, error) {
+	api, err := apiClient(cfg, opsMaxCalls)
+	if err != nil {
+		return gitlab.Project{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+	return api.Project(ctx, path)
+}
+
 // auditWriter writes the events of a command other than the hook: to the
 // file and, with audit.stdout, to stdout.
 func (a App) auditWriter(cfg *config.Config, stdout io.Writer) (*audit.Writer, error) {
@@ -165,7 +177,7 @@ func (a App) auditWriter(cfg *config.Config, stdout io.Writer) (*audit.Writer, e
 }
 
 // runBreakglass implements "breakglass grant|revoke|list".
-func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio Stdio) int {
+func (a App) runBreakglass(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	if len(args) == 0 || (args[0] != "grant" && args[0] != "revoke" && args[0] != "list") {
 		return fail(stdio.Err, "breakglass", fmt.Errorf("expected grant, revoke or list"), ExitUsage)
 	}
@@ -173,10 +185,12 @@ func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio
 	fs := flag.NewFlagSet("breakglass "+sub, flag.ContinueOnError)
 	configPath := fs.String("config", DefaultConfig, "server config")
 	var projectID *int64
+	var projectPath *string
 	var ttl *time.Duration
 	var reason *string
 	if sub != "list" {
-		projectID = fs.Int64("project-id", 0, "project ID")
+		projectID = fs.Int64("project-id", 0, "project ID, when GitLab does not answer")
+		projectPath = fs.String("project", "", "full path of the project, looked up through the API")
 	}
 	if sub == "grant" {
 		ttl = fs.Duration("ttl", 0, "how long the grant lasts, at most 24h")
@@ -186,8 +200,8 @@ func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio
 		return ExitUsage
 	}
 	cmd := "breakglass " + sub
-	if projectID != nil && *projectID <= 0 {
-		return fail(stdio.Err, cmd, fmt.Errorf("--project-id is required"), ExitUsage)
+	if projectID != nil && (*projectID > 0) == (*projectPath != "") {
+		return fail(stdio.Err, cmd, fmt.Errorf("give exactly one of --project and --project-id"), ExitUsage)
 	}
 	if !a.system().IsRoot() {
 		return fail(stdio.Err, cmd, errNotRoot, ExitError)
@@ -219,11 +233,20 @@ func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio
 		}
 		return withOutput(out.err, ExitOK)
 	}
+	name := fmt.Sprintf("project %d", *projectID)
+	if *projectPath != "" {
+		p, err := projectByPath(ctx, cfg, *projectPath)
+		if err != nil {
+			return fail(stdio.Err, cmd, fmt.Errorf("--project %s: %w; when GitLab does not answer, give --project-id, the ID on the project overview page", *projectPath, err), ExitError)
+		}
+		*projectID, *projectPath = p.ID, p.PathWithNamespace
+		name = fmt.Sprintf("project %d (%s)", p.ID, p.PathWithNamespace)
+	}
 	w, err := a.auditWriter(cfg, stdio.Out)
 	if err != nil {
 		return fail(stdio.Err, cmd, err, ExitError)
 	}
-	ev := audit.Event{Event: audit.EventBreakglass, Action: sub, ProjectID: *projectID, Username: a.operator(env)}
+	ev := audit.Event{Event: audit.EventBreakglass, Action: sub, ProjectID: *projectID, ProjectPath: *projectPath, Username: a.operator(env)}
 	if sub == "grant" {
 		g := breakglass.Grant{ProjectID: *projectID, GrantedAt: now.UTC(), ExpiresAt: now.UTC().Add(*ttl),
 			Reason: *reason, Operator: ev.Username}
@@ -231,17 +254,17 @@ func (a App) runBreakglass(_ context.Context, args []string, env []string, stdio
 			return fail(stdio.Err, cmd, err, ExitError)
 		}
 		ev.Reason = g.Text()
-		out.printf("project %d: break-glass active until %s\n", *projectID, g.ExpiresAt.Format(time.RFC3339))
+		out.printf("%s: break-glass active until %s\n", name, g.ExpiresAt.Format(time.RFC3339))
 	} else {
 		had, err := store.Revoke(*projectID)
 		if err != nil {
 			return fail(stdio.Err, cmd, err, ExitError)
 		}
 		if !had {
-			out.printf("project %d: no break-glass grant\n", *projectID)
+			out.printf("%s: no break-glass grant\n", name)
 			return withOutput(out.err, ExitOK)
 		}
-		out.printf("project %d: break-glass revoked\n", *projectID)
+		out.printf("%s: break-glass revoked\n", name)
 	}
 	if err := w.Write(ev); err != nil {
 		return fail(stdio.Err, cmd, err, ExitError)

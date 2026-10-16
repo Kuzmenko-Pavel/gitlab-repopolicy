@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest"
 )
 
 const notRoot = "REPOPOLICY_TEST_NOT_ROOT=1"
@@ -140,6 +142,33 @@ func TestBreakglass_Valid(t *testing.T) {
 	assert.Equal(t, "revoke", Events(s.Audit(), "breakglass")[0]["action"])
 	s.Commit("change again", map[string]string{"ci.yml": "z"})
 	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "GUARDPOLICY")
+}
+
+// TestBreakglass_ByPath: --project looks the ID up; without an answer of
+// GitLab the error points to --project-id.
+func TestBreakglass_ByPath(t *testing.T) {
+	s := breakglassStand(t)
+	byPath := []string{"breakglass", "grant", "--config", s.config, "--project", "acme/platform/app", "--ttl", "30m", "--reason", "INC-7"}
+	r := s.Run(nil, "breakglass", "grant", "--config", s.config, "--project", "acme/platform/app", "--project-id", "1", "--ttl", "30m", "--reason", "INC-7")
+	assert.Equal(t, 2, r.Code, "one of --project and --project-id")
+
+	s.API.Handle("GET", "/api/v4/projects/acme%2Fplatform%2Fapp", gitlabtest.Status(502))
+	r = s.Run(nil, byPath...)
+	assert.Equal(t, 1, r.Code)
+	assert.Contains(t, r.Stderr, "give --project-id, the ID on the project overview page")
+
+	s.API.Handle("GET", "/api/v4/projects/acme%2Fplatform%2Fapp", gitlabtest.OK(map[string]any{"id": 1, "path_with_namespace": "acme/platform/app"}))
+	r = s.Run(nil, byPath...)
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, "project 1 (acme/platform/app): break-glass active until")
+	ev := Events(s.Audit(), "breakglass")
+	require.Len(t, ev, 1)
+	assert.Equal(t, "acme/platform/app", ev[0]["project_path"])
+	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/main"))
+
+	r = s.Run(nil, "breakglass", "revoke", "--config", s.config, "--project", "acme/platform/app")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, "project 1 (acme/platform/app): break-glass revoked")
 }
 
 // TestBreakglass_ExpiredIgnored: an expired grant, one longer than 24h and one

@@ -104,7 +104,7 @@ code-fmt: $(TOOLS_BIN)/golangci-lint
 	golangci-lint fmt
 
 .PHONY: code-lint
-## Lint code, modules, workflows, YAML and documentation language pairs.
+## Lint code, modules, workflows, YAML, documentation language pairs and links.
 code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 	golangci-lint config verify
 	golangci-lint run
@@ -126,6 +126,11 @@ code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 		if ! grep -qF "]($$(basename "$$f"))" bin/.switcher || ! grep -qF "]($$(basename "$$pair"))" bin/.switcher; then \
 			echo "docs: $$f must start with the language switcher linking $$(basename "$$f") and $$(basename "$$pair")" >&2; status=1; \
 		fi; \
+		awk '/^```/ { code = !code; next } !code' "$$f" | { grep -oE '\]\([^)[:space:]]+\)' || true; } | sed 's/^](//; s/)$$//' | \
+		while read -r link; do \
+			case "$$link" in http://* | https://* | mailto:* | '#'*) continue ;; esac; \
+			if [ ! -e "$$(dirname "$$f")/$${link%%#*}" ]; then echo "docs: $$f links to a missing file: $$link" >&2; exit 1; fi; \
+		done || status=1; \
 	done; \
 	rm -f bin/.switcher; \
 	exit $$status

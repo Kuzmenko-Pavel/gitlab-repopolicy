@@ -47,10 +47,13 @@ modules:
   tagpolicy: enabled
 
 # What settings-check expects of every project with PATHPOLICY. An empty
-# value is not checked; ci_config_path and principals are always checked.
+# value is not checked; ci_config_path, principals and the protection of the
+# default branch are always checked. default_branch lists the allowed names,
+# protected_branches are branches to protect besides the default one and
+# protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  default_branch: main
-  protected_branches: [main]
+  default_branch: [main]
+  protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
 

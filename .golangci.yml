@@ -283,6 +283,8 @@ linters:
             - $gostd
             - github.com/stretchr/testify
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
+            # refs.Match: GitLab patterns of protected branches
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config

@@ -101,7 +101,7 @@ func project(id int64, path string) gitlab.Project {
 }
 
 func expected() config.SettingsCheck {
-	return config.SettingsCheck{DefaultBranch: "main", ProtectedBranches: []string{"main"}, ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
+	return config.SettingsCheck{DefaultBranch: []string{"main"}, ProtectedBranches: []string{"release/*"}, ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
 }
 
 func healthy() *fakeAPI {
@@ -152,13 +152,17 @@ func TestRun_Drifts(t *testing.T) {
 		"default branch changed": {func(f *fakeAPI) {
 			f.projects[0].DefaultBranch = "old"
 			f.files["1:old:PATHPOLICY"] = pathPolicy
-		}, CheckDefaultBranch, `"old", expected "main"`},
+		}, CheckDefaultBranch, `"old", expected one of main`},
 		"default branch without PATHPOLICY": {func(f *fakeAPI) { f.projects[0].DefaultBranch = "empty" }, CheckDefaultBranch, `"empty"`},
-		"main not protected":                {func(f *fakeAPI) { f.branches[1] = []string{"release/*"} }, CheckProtected, "not protected: main"},
-		"tags not protected":                {func(f *fakeAPI) { f.tags[1] = nil }, CheckProtectedTags, "not protected: v*"},
-		"job token push on":                 {func(f *fakeAPI) { f.projects[0].JobTokenPush = field(true) }, CheckJobTokenPush, "is true, expected false"},
-		"admin left":                        {func(f *fakeAPI) { delete(f.users, "platform-lead") }, CheckPrincipals, "platform-lead"},
-		"user of COMMITPOLICY blocked":      {func(f *fakeAPI) { f.users["release-bot"] = "blocked" }, CheckPrincipals, "release-bot"},
+		"main not protected":                {func(f *fakeAPI) { f.branches[1] = []string{"release/*"} }, CheckProtected, "not protected: main (the default branch)"},
+		"release not protected":             {func(f *fakeAPI) { f.branches[1] = []string{"main"} }, CheckProtected, "not protected: release/*"},
+		"tags not protected": {func(f *fakeAPI) {
+			f.files["1:main:TAGPOLICY"] = "version: 1\n"
+			f.tags[1] = nil
+		}, CheckProtectedTags, "not protected: v*"},
+		"job token push on":            {func(f *fakeAPI) { f.projects[0].JobTokenPush = field(true) }, CheckJobTokenPush, "is true, expected false"},
+		"admin left":                   {func(f *fakeAPI) { delete(f.users, "platform-lead") }, CheckPrincipals, "platform-lead"},
+		"user of COMMITPOLICY blocked": {func(f *fakeAPI) { f.users["release-bot"] = "blocked" }, CheckPrincipals, "release-bot"},
 		"role below Maintainer": {func(f *fakeAPI) {
 			f.projects[0].Permissions.Group.AccessLevel = 30
 		}, CheckAccess, "access level 30"},
@@ -183,6 +187,19 @@ func TestRun_Drifts(t *testing.T) {
 			assert.Contains(t, strings.Join(reasons, "\n"), tc.reason)
 		})
 	}
+}
+
+func TestRun_ProtectionScope(t *testing.T) {
+	api := healthy()
+	api.tags[1] = nil
+	api.branches[1] = []string{"*", "release/*"}
+	assert.Empty(t, run(t, api, expected()).Drifted(), "tags matter only with TAGPOLICY; a wildcard protects main")
+
+	api = healthy()
+	api.branches[1] = nil
+	rep := run(t, api, config.SettingsCheck{})
+	require.Len(t, rep.Drifted(), 1, "the default branch is protected even when nothing is configured")
+	assert.Equal(t, "not protected: main (the default branch)", rep.Drifted()[0].Drifts[0].Reason)
 }
 
 func TestRun_Scope(t *testing.T) {

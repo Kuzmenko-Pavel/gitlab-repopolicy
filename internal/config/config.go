@@ -65,7 +65,8 @@ type Timeouts struct {
 
 // SettingsCheck holds the project settings expected by settings-check.
 type SettingsCheck struct {
-	DefaultBranch     string   `yaml:"default_branch"`
+	// DefaultBranch lists the allowed names of the default branch, for example [main, master].
+	DefaultBranch     []string `yaml:"default_branch"`
 	ProtectedBranches []string `yaml:"protected_branches"`
 	ProtectedTags     []string `yaml:"protected_tags"`
 	JobTokenPush      *bool    `yaml:"job_token_push"`

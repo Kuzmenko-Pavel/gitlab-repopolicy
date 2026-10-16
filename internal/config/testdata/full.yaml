@@ -13,7 +13,7 @@ modules:
   pathpolicy: enabled
   commitpolicy: disabled
 settings_check:
-  default_branch: main
+  default_branch: [main]
   protected_branches: [main]
   protected_tags: ["v*"]
   job_token_push: false

@@ -15,6 +15,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
 // API is the part of the GitLab client that settings-check uses.
@@ -125,8 +126,8 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 		return nil
 	}
 	exp := o.Expected
-	if exp.DefaultBranch != "" && p.DefaultBranch != exp.DefaultBranch {
-		drift(CheckDefaultBranch, "the default branch is %q, expected %q", p.DefaultBranch, exp.DefaultBranch)
+	if len(exp.DefaultBranch) > 0 && !slices.Contains(exp.DefaultBranch, p.DefaultBranch) {
+		drift(CheckDefaultBranch, "the default branch is %q, expected one of %s", p.DefaultBranch, strings.Join(exp.DefaultBranch, ", "))
 	}
 	if level := p.Access(); level < module.AccessMaintainer {
 		drift(CheckAccess, "the service account has access level %d, Maintainer (40) is required to see the settings", level)
@@ -137,16 +138,28 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 	} else {
 		checkCIConfig(p, o.Guard, guard, drift)
 	}
-	if len(exp.ProtectedBranches) > 0 {
-		have, err := api.ProtectedBranches(ctx, p.ID)
-		if err != nil {
-			return unavailable("protected branches", err)
-		}
-		if missing := missingFrom(exp.ProtectedBranches, have); len(missing) > 0 {
-			drift(CheckProtected, "not protected: %s", strings.Join(missing, ", "))
+	// The default branch is always protected: PATHPOLICY is read from it.
+	have, err := api.ProtectedBranches(ctx, p.ID)
+	if err != nil {
+		return unavailable("protected branches", err)
+	}
+	var missing []string
+	if p.DefaultBranch != "" && !slices.ContainsFunc(have, func(pattern string) bool { return refs.Match(pattern, p.DefaultBranch) }) {
+		missing = append(missing, p.DefaultBranch+" (the default branch)")
+	}
+	for _, b := range missingFrom(exp.ProtectedBranches, have) {
+		if b != p.DefaultBranch {
+			missing = append(missing, b)
 		}
 	}
-	if len(exp.ProtectedTags) > 0 {
+	if len(missing) > 0 {
+		drift(CheckProtected, "not protected: %s", strings.Join(missing, ", "))
+	}
+	tags, err := hasTagPolicy(ctx, api, o, p, ref)
+	if err != nil {
+		return unavailable("read TAGPOLICY", err)
+	}
+	if len(exp.ProtectedTags) > 0 && tags {
 		have, err := api.ProtectedTags(ctx, p.ID)
 		if err != nil {
 			return unavailable("protected tags", err)
@@ -174,11 +187,13 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 // branch to one without PATHPOLICY is a drift, not a project without policy.
 // The policy is nil when the file cannot be parsed.
 func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (module.Policy, string, bool, error) {
-	refs := []string{p.DefaultBranch}
-	if e := o.Expected.DefaultBranch; e != "" && e != p.DefaultBranch {
-		refs = append(refs, e)
+	branches := []string{p.DefaultBranch}
+	for _, e := range o.Expected.DefaultBranch {
+		if e != p.DefaultBranch {
+			branches = append(branches, e)
+		}
 	}
-	for _, ref := range refs {
+	for _, ref := range branches {
 		if ref == "" {
 			continue
 		}
@@ -196,6 +211,24 @@ func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (mod
 		return pol, ref, true, nil
 	}
 	return nil, "", false, nil
+}
+
+// tagPolicyFile is the file of TAGPOLICY; protected tags matter only to projects with it.
+const tagPolicyFile = "TAGPOLICY"
+
+// hasTagPolicy reports whether the project has TAGPOLICY on ref, with the module enabled.
+func hasTagPolicy(ctx context.Context, api API, o Options, p gitlab.Project, ref string) (bool, error) {
+	for _, m := range o.Modules {
+		if m.File() != tagPolicyFile {
+			continue
+		}
+		_, err := api.RawFile(ctx, p.ID, m.File(), ref, m.MaxPolicySize())
+		if gitlab.KindOf(err) == gitlab.NotFound {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	return false, nil
 }
 
 // defaultCIConfig is the CI file when ci_config_path is empty.

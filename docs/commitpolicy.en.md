@@ -213,6 +213,7 @@ Warnings of a successful push show in the terminal as `remote:` lines. For a mer
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | one message against `COMMITPOLICY` of the current directory |
 | `gitlab-repopolicy lint-commit --range origin/main..HEAD` | the commits of a range; one revision means its whole history |
 | `-f FILE` | another COMMITPOLICY file |
+| `--skip-author EMAIL` | with `--range`: skip the commits of this author; repeat it for several. A skipped commit prints the line `skipped, author EMAIL` |
 | `--ruleset NAME` | only this ruleset; repeat it for several. An unknown name is an error that lists the rulesets of the file |
 | `--config FILE` | a file with `commitpolicy_presets`, if COMMITPOLICY uses `extends`. Other config keys are not needed ([configuration.en.md](configuration.en.md#commitpolicy_presets)) |
 

@@ -33,7 +33,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | --- | --- |
 | `code-fmt` | formats Go code |
 | `code-lint` | golangci-lint with the package dependency rules, tidy of every module, actionlint, yamllint, `schemas/` matching the code |
-| `code-lint-commits` | commit messages after `BASE_REF` against the `COMMITPOLICY` taken from `BASE_REF`, not from the branch |
+| `code-lint-commits` | commit messages after `BASE_REF` against the `COMMITPOLICY` taken from `BASE_REF`, not from the branch. Dependabot commits are skipped, because it writes `Bump` with a capital letter and this cannot be changed. The PR title, which becomes the squash commit, is always checked |
 | `code-generate` | regenerates `schemas/` and the golden files of push output |
 | `code-build` | the binary in `bin/gitlab-repopolicy` |
 | `test-unit` | unit tests with the race detector |

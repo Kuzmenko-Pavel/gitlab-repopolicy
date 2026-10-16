@@ -78,6 +78,9 @@ YAMLLINT_VERSION := 1.38.0
 # Go tools, one module per tool under tools/<name>.
 TOOLS  := actionlint benchstat cosign gitleaks golangci-lint goreleaser govulncheck syft
 BINARY := bin/gitlab-repopolicy
+# Commits of this author are not linted: Dependabot capitalizes "Bump" and has
+# no option to change it. The PR title, which becomes the squash commit, still is.
+DEPENDABOT_EMAIL := 49699333+dependabot[bot]@users.noreply.github.com
 # Repository slug for release URLs and keyless signature identity.
 GITHUB_REPOSITORY_SLUG := Kuzmenko-Pavel/gitlab-repopolicy
 # Consumer verification of release assets in the current directory.
@@ -144,7 +147,7 @@ code-lint-commits: code-build
 	fi; \
 	echo "code-lint-commits: range $$range, COMMITPOLICY from $$policy"; \
 	git show "$$policy:COMMITPOLICY" > bin/COMMITPOLICY.base; \
-	$(BINARY) lint-commit --range "$$range" -f bin/COMMITPOLICY.base; \
+	$(BINARY) lint-commit --range "$$range" -f bin/COMMITPOLICY.base --skip-author '$(DEPENDABOT_EMAIL)'; \
 	if [ -n "$(GITHUB_EVENT_PATH)" ] && jq -e '.pull_request' "$(GITHUB_EVENT_PATH)" > /dev/null; then \
 		title=$$(jq -r '.pull_request.title' "$(GITHUB_EVENT_PATH)"); \
 		number=$$(jq -r '.pull_request.number' "$(GITHUB_EVENT_PATH)"); \

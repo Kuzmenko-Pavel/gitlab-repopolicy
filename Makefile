@@ -30,14 +30,15 @@ VERSION     := $(VERSION)
 COMMIT      := $(COMMIT)
 BUILD_DATE  := $(BUILD_DATE)
 
-# Module path, computed on first use: help and other targets do not need a Go toolchain.
-GO_MODULE = $(eval GO_MODULE := $$(shell go list -m))$(GO_MODULE)
+# Module path from go.mod, not from "go list -m": help and other targets do not need
+# a Go toolchain, and $(shell) of make 4.3 does not see exported GOTOOLCHAIN.
+GO_MODULE := $(shell sed -n 's/^module //p' go.mod)
 TOOLS_BIN := $(CURDIR)/bin/tools
 export PATH := $(TOOLS_BIN):$(PATH)
 LDFLAGS   = -s -w -X $(GO_MODULE)/internal/buildinfo.Version=$(VERSION) \
             -X $(GO_MODULE)/internal/buildinfo.Commit=$(COMMIT) \
             -X $(GO_MODULE)/internal/buildinfo.Date=$(BUILD_DATE)
-# Not exported: exporting would expand them, and run go, for every recipe line.
+# Not exported: only the go build lines below use them.
 unexport GO_MODULE LDFLAGS
 
 # Start of the range for code-lint-commits; set by the workflow in CI.

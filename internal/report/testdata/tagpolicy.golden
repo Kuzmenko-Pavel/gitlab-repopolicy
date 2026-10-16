@@ -1,0 +1,15 @@
+gitlab-repopolicy: push rejected by the rules of this repository (2 problems)
+
+TAGPOLICY rule "prod", tag v3.156.0-prod: this key may not sign these tags
+  signed with: key "dev-lead" from TAGPOLICY (SSH, SHA256:budi)
+  allowed keys: release-lead (OpenPGP), sre-lead (SSH)
+  Prod releases are signed by release-lead or sre-lead.
+
+TAGPOLICY rule "staging", tag v3.156.0-staging: the tag must be signed
+  it is a lightweight tag, it has no signature
+  allowed signing keys: release-lead (OpenPGP)
+  how to fix: git tag -d v3.156.0-staging && git tag -s v3.156.0-staging -m "v3.156.0-staging" && git push origin v3.156.0-staging
+
+rules: PATHPOLICY, TAGPOLICY in main
+checked as: bob (SSH key 7)
+GL-HOOK-ERR: gitlab-repopolicy: this key may not sign these tags (TAGPOLICY rule "prod", tag v3.156.0-prod) (+1 more: TAGPOLICY: the tag must be signed)

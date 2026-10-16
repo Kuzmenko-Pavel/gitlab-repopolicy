@@ -1,0 +1,9 @@
+---
+# Server config of the e2e stand; the bootstrap writes it to
+# /etc/gitlab-repopolicy/config.yaml.
+mode: enforce
+gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket
+token_file: /etc/gitlab-repopolicy/token
+audit:
+  file: /var/log/gitlab-repopolicy/audit.log
+  stdout: false

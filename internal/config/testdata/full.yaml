@@ -1,0 +1,23 @@
+mode: audit
+gitlab_url: https://gitlab.example.com/
+ca_file: /etc/ssl/gitlab-ca.pem
+token_file: /etc/gitlab-repopolicy/token
+token_lifetime: 30d
+audit:
+  file: /var/log/gitlab-repopolicy/audit.log
+  stdout: true
+breakglass_dir: /etc/gitlab-repopolicy/breakglass
+timeouts: { total: 8s, http: 2s, pattern: 50ms, pattern_budget: 1s }
+max_api_calls: 20
+modules:
+  pathpolicy: enabled
+  commitpolicy: disabled
+settings_check:
+  default_branch: [main]
+  protected_branches: [main]
+  protected_tags: ["v*"]
+  job_token_push: false
+commitpolicy_presets:
+  org-conventional:
+    rules:
+      type-enum: { level: error, value: [feat, fix] }

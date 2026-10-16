@@ -1,0 +1,7 @@
+gitlab-repopolicy: PATHPOLICY is changed by Owner alice because it has no working admins. This is logged.
+gitlab-repopolicy: push accepted with 1 warning
+
+COMMITPOLICY rule "protected": 1 commit message does not follow the format; this is a warning, it does not block the push
+
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
+checked as: alice (HTTPS)

@@ -1,0 +1,32 @@
+# Conventional Commits in protected branches; a stricter type list in
+# release branches. Feature branches are not checked.
+version: 1
+mode: enforce
+
+rulesets:
+  - name: protected
+    refs: protected
+    format: conventional
+    except:
+      merge_commits: true
+      git_reverts: true
+      users: [release-bot]
+    rules:
+      type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:             { level: error, value: optional }
+      breaking-bang:     { level: error, value: allow }
+      header-max-length: { level: warn,  value: 100 }
+      subject-case:      { level: error, value: lower-first }
+      subject-full-stop: { level: error, value: forbid }
+      body-required:     { level: error, types: [feat, fix] }
+      reference:         { level: warn,  location: any, pattern: "[A-Za-z0-9_./-]*#[0-9]+", types: [feat, fix] }
+      trailer-required:  { level: error, value: [Signed-off-by] }
+    message: >-
+      Commits in protected branches follow Conventional Commits.
+      Reword them with git rebase -i or squash the merge request.
+
+  - name: release
+    refs: ["refs/heads/release/*"]
+    format: conventional
+    rules:
+      type-enum: { level: error, value: [fix, docs, chore] }

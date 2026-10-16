@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "labels": {
+      "additionalProperties": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z]+$"
+      },
+      "type": "object"
+    },
+    "refs": {
+      "description": "Where the rule applies.",
+      "oneOf": [
+        {
+          "enum": [
+            "all",
+            "default",
+            "protected"
+          ],
+          "type": "string"
+        },
+        {
+          "items": {
+            "pattern": "^refs/",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      ],
+      "x-repopolicy-check": "refs"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "level": {
+            "enum": [
+              "error",
+              "warn",
+              "off"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "maxLength": 256,
+              "type": "string",
+              "x-repopolicy-check": "path-pattern"
+            },
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "weight": {
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "type": "array",
+      "x-repopolicy-check": "unique-names"
+    },
+    "version": {
+      "const": 1,
+      "description": "Schema version of the file.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "rules"
+  ],
+  "title": "SAMPLEPOLICY",
+  "type": "object"
+}

@@ -1,0 +1,59 @@
+---
+# e2e stand: GitLab CE with the binary of the branch and a runner with the
+# shell executor; the e2e bootstrap installs the hook as in production.
+# Started by make test-e2e, which sets the variables below; state (test CA,
+# keys, tokens) lives in E2E_STATE_DIR, not in the repo.
+name: ${COMPOSE_PROJECT_NAME:?run through make test-e2e}
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:${GITLAB_VERSION:?}
+    hostname: gitlab
+    shm_size: 256m
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'https://localhost:${E2E_HTTPS_PORT:?}'
+        gitlab_rails['gitlab_shell_ssh_port'] = ${E2E_SSH_PORT:?}
+        nginx['ssl_certificate'] = '/etc/gitlab-stand/gitlab.crt'
+        nginx['ssl_certificate_key'] = '/etc/gitlab-stand/gitlab.key'
+        letsencrypt['enable'] = false
+        gitlab_rails['usage_ping_enabled'] = false
+        gitaly['configuration'] = {
+          hooks: { custom_hooks_dir: '/var/opt/gitlab/gitaly/custom_hooks' }
+        }
+        prometheus_monitoring['enable'] = false
+    ports:
+      - 127.0.0.1:${E2E_HTTPS_PORT}:${E2E_HTTPS_PORT}
+      - 127.0.0.1:${E2E_SSH_PORT}:22
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+      - ${E2E_STATE_DIR:?}/tls/gitlab.crt:/etc/gitlab-stand/gitlab.crt:ro
+      - ${E2E_STATE_DIR}/tls/gitlab.key:/etc/gitlab-stand/gitlab.key:ro
+      - ${E2E_BINARY:?}:/usr/bin/gitlab-repopolicy:ro
+    # The image healthcheck passes before the first reconfigure; readiness covers
+    # Puma, the database, Redis and Gitaly.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsSk --max-time 10 'https://localhost:${E2E_HTTPS_PORT}/-/readiness?all=1'
+          | grep -q '"status":"ok"'
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 15m
+
+  runner:
+    image: gitlab/gitlab-runner:${GITLAB_RUNNER_VERSION:?}
+    hostname: runner
+    volumes:
+      - runner-config:/etc/gitlab-runner
+      - ${E2E_STATE_DIR}/tls/ca.crt:/etc/gitlab-stand/ca.crt:ro
+
+volumes:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  runner-config:

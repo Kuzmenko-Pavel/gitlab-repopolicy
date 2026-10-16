@@ -1,0 +1,102 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
+)
+
+func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	code = Run(context.Background(), args, nil, Stdio{In: strings.NewReader(""), Out: &out, Err: &errOut})
+	return code, out.String(), errOut.String()
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantCode   int
+		wantOut    string
+		wantErrOut string
+	}{
+		{name: "no arguments", args: nil, wantCode: ExitUsage, wantErrOut: "Usage: gitlab-repopolicy"},
+		{name: "help", args: []string{"help"}, wantCode: ExitOK, wantOut: "Usage: gitlab-repopolicy"},
+		{name: "unknown command", args: []string{"frobnicate"}, wantCode: ExitUsage, wantErrOut: `unknown command "frobnicate"`},
+		{name: "version", args: []string{"version"}, wantCode: ExitOK, wantOut: "gitlab-repopolicy "},
+		{name: "version with arguments", args: []string{"version", "extra"}, wantCode: ExitUsage, wantErrOut: "unexpected arguments"},
+		{name: "version with unknown flag", args: []string{"version", "-x"}, wantCode: ExitUsage, wantErrOut: "flag provided but not defined"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out, errOut := run(t, tc.args...)
+			assert.Equal(t, tc.wantCode, code)
+			if tc.wantOut != "" {
+				assert.Contains(t, out, tc.wantOut)
+			}
+			if tc.wantErrOut != "" {
+				assert.Contains(t, errOut, tc.wantErrOut)
+			}
+		})
+	}
+}
+
+func TestPrintVersion(t *testing.T) {
+	var out bytes.Buffer
+	err := printVersion(&out, buildinfo.Info{Version: "1.0.0-rc.1", Commit: "0123456789ab", Date: "2026-10-13T12:00:00+03:00"}, "go1.27.2")
+	require.NoError(t, err)
+	want := "gitlab-repopolicy 1.0.0-rc.1\ncommit: 0123456789ab\ndate: 2026-10-13T12:00:00+03:00\ngo: go1.27.2\n"
+	require.Equal(t, want, out.String())
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestRun_OutputWriteFailure(t *testing.T) {
+	stdio := Stdio{In: strings.NewReader(""), Out: failingWriter{}, Err: failingWriter{}}
+	for _, args := range [][]string{{"version"}, {"help"}, nil, {"frobnicate"}, {"version", "extra"}} {
+		assert.Equal(t, ExitError, Run(context.Background(), args, nil, stdio), "args %q", args)
+	}
+}
+
+func TestHookCanAppend(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "audit.log")
+	require.NoError(t, hookCanAppend(file), "a missing file is created by the owner of the directory")
+	require.NoError(t, os.WriteFile(file, nil, 0o640))
+	require.NoError(t, hookCanAppend(file))
+	require.NoError(t, os.Chmod(file, 0o440))
+	assert.ErrorContains(t, hookCanAppend(file), "is not writable by its owner")
+	require.NoError(t, os.Remove(file))
+	require.NoError(t, os.Mkdir(file, 0o750))
+	assert.ErrorContains(t, hookCanAppend(file), "is not a regular file")
+	locked := filepath.Join(dir, "locked")
+	require.NoError(t, os.Mkdir(locked, 0o550))
+	assert.ErrorContains(t, hookCanAppend(filepath.Join(locked, "audit.log")), "cannot be created")
+	assert.ErrorContains(t, hookCanAppend(filepath.Join(dir, "none", "audit.log")), "log directory")
+}
+
+func TestCheckAudit_ReadableByEveryone(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "audit.log")
+	require.NoError(t, os.WriteFile(file, nil, 0o640))
+	require.NoError(t, os.Chmod(file, 0o644))
+	var b bytes.Buffer
+	App{}.checkAudit(&checks{out: &output{w: &b}}, &config.Config{Audit: config.Audit{File: file}})
+	assert.Contains(t, b.String(), "is readable by everyone (-rw-r--r--)")
+	require.NoError(t, os.Chmod(file, 0o640))
+	b.Reset()
+	App{}.checkAudit(&checks{out: &output{w: &b}}, &config.Config{Audit: config.Audit{File: file}})
+	assert.Contains(t, b.String(), "ok")
+}

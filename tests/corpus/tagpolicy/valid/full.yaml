@@ -1,0 +1,21 @@
+version: 1
+rules:
+  - name: staging
+    tags: 'v\d+\.\d+\.\d+-staging'
+    signers: [release-lead, dev-lead]
+  - name: prod
+    tags: 'v\d+\.\d+\.\d+-prod'
+    signers: [release-lead]
+    message: Prod releases are signed by release-lead.
+keys:
+  release-lead: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+    
+    mDMEas8yyBYJKwYBBAHaRw8BAQdARgQtR6FZCckYy8pf9+9snMoIb3gcbH9QVotM
+    2CEt2za0H1JlbGVhc2UgTGVhZCA8bGVhZEBleGFtcGxlLmNvbT6IkwQTFgoAOxYh
+    BGx5V+qHOlRnp48dB1l3WaOCcpNZBQJqzzLIAhsDBQsJCAcCAiICBhUKCQgLAgQW
+    AgMBAh4HAheAAAoJEFl3WaOCcpNZf7IBAO02jJtCe9KhJlLAOTz/XX+kpgyY8mth
+    6Cku2bukuF6bAP40EeqZQ1ISoo/Agcdncm5Z+KysHKFd7y49xzE0q6ObDA==
+    =3XJY
+    -----END PGP PUBLIC KEY BLOCK-----
+  dev-lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE ed25519

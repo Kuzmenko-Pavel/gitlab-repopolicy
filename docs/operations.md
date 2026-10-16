@@ -1,0 +1,266 @@
+[![Українська](https://img.shields.io/badge/lang-Українська-blue.svg)](operations.md)
+[![English](https://img.shields.io/badge/lang-English-lightgrey.svg)](operations.en.md)
+
+# Експлуатація
+
+## Audit
+
+Hook пише кожне рішення, яке зачепило правило, у `audit.file` (за замовчуванням `/var/log/gitlab-repopolicy/audit.log`): один JSON-об'єкт на рядок, до 4 KiB на подію. Push, який не зачепив жодного правила, не логується, інакше був би рядок на кожен push інстансу.
+
+```json
+{"ts":"2026-10-14T09:14:02.418Z","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","event":"decision","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
+```
+
+| Поле | Значення |
+| --- | --- |
+| `ts` | час UTC |
+| `receive_id` | однаковий у всіх подіях одного запуску hook, тобто одного push |
+| `event`, `module`, `decision`, `code`, `action` | що сталося, див. таблицю нижче |
+| `enforced` | `false` у `mode: audit`: рішення записане, але push пройшов |
+| `project_id`, `project_path` | проєкт |
+| `user_id`, `username`, `gl_id`, `protocol` | хто вносив зміну і як: `http`, `ssh` або `web` (merge, Web IDE, API, операції UI) |
+| `ref`, `oldrev`, `newrev` | гілка або тег і значення до і після |
+| `anchor_rev`, `policy_blob` | коміт якоря і blob policy-файлу: за ними можна відновити точну policy, за якою прийнято рішення |
+| `violations` | правило, код, шляхи або коміти, `reason` |
+| `rules`, `signer`, `fingerprint` | для TAGPOLICY: правила, мітка і fingerprint ключа підпису |
+| `reason` | причина з результатами API. У повідомлення користувачу не потрапляє |
+| `truncated` | `true`, якщо `violations` або `reason` обрізано, щоб подія вмістилася в 4 KiB |
+| `api_calls`, `duration_ms` | вартість рішення |
+| `version`, `git`, `node` | версія gitlab-repopolicy, git, який бачив hook, і нода |
+
+Для одного push у модуля може бути кілька подій: по одній на кожну гілку чи тег із порушеннями.
+
+**Чим закінчився push.** Окремої підсумкової події немає. git відхиляє push цілком, якщо відмовлено хоча б одному ref, тому push відхилено, якщо серед подій з його `receive_id` є `"decision":"deny"` з `"enforced":true`:
+
+```sh
+jq -c 'select(.receive_id == "Q4ZJ7OXKMV3HB2LDSY6TNRWAEC") | {event, module, decision, enforced, code, ref}' /var/log/gitlab-repopolicy/audit.log
+```
+
+Події `policy_change`, `policy_bootstrap` і `policy_recovery` пишуться лише тоді, коли push прийнято, бо тільки тоді policy справді змінилася. У `mode: audit` вони пишуться завжди.
+
+Якщо hook не може записати подію в audit, push це не змінює, а користувач бачить рядок `the audit log is not writable, tell your GitLab administrators`. `settings-check` щодня перевіряє, що користувач hook може писати в `audit.file`. Якщо не може, він друкує `audit: <причина>: the hook loses its events`, пише подію `internal_error` і завершується з кодом 1.
+
+### Події й алерти
+
+| `event` | Коли | Алерт |
+| --- | --- | --- |
+| `decision` | allow, deny або warn, коли зачеплено правило | ні |
+| `policy_change` | створення, зміна або видалення policy-файлу | ні |
+| `policy_bootstrap` | перша PATHPOLICY у проєкті | ні |
+| `policy_recovery` | Owner змінив PATHPOLICY через recovery | **так, кожна** |
+| `invalid_policy` | PATHPOLICY або TAGPOLICY у default branch невалідна | **так** |
+| `invalid_commit_policy` | COMMITPOLICY у default branch невалідна (перевірку пропущено) | ні |
+| `authorization_backend_failure` | API недоступний на захищеній операції, токен не діє (зокрема 401 під час перевірки правила), service account не бачить проєкт (`reason`: `project_not_visible`, `role_below_maintainer`) | так, якщо їх кілька за 5 хвилин: одну подію дає короткий збій API, серію - прострочений токен, група без service account або недоступний API. Поріг під своє навантаження вибирає інсталяція |
+| `unknown_principal` | deploy key або нерозбірний `GL_ID` на захищеному шляху | ні |
+| `breakglass` | дозвіл break-glass виданий (`action: grant`), відкликаний (`action: revoke`) або використаний hook | **так** |
+| `settings_drift` | `settings-check` знайшов розбіжність | **так** |
+| `internal_error` | внутрішня помилка бінарника, збій `token rotate` (`action: token_rotate`) | **так** |
+
+Окремо варто стежити за `decision` з `code: invalid_policy_update` у `mode: audit`: таку версію policy hook у `enforce` не пропустив би, а після перемикання вона заблокує проєкт.
+
+### Доставка і ротація логу
+
+Куди відправляти лог (Fluent Bit, Vector, journald, SIEM), вирішує інсталяція. Hook відкриває файл на кожен запис з `O_APPEND`, тому logrotate не потребує `copytruncate`. Пакет конфігурацію logrotate не ставить, приклад:
+
+```text
+# /etc/logrotate.d/gitlab-repopolicy
+/var/log/gitlab-repopolicy/audit.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+}
+```
+
+Новий файл створить hook від користувача git. Інші команди від root створюють відсутній файл з власником каталогу логу, тож hook не втратить права на запис.
+
+## Recovery
+
+Recovery вмикається, коли в PATHPOLICY не залишилося жодного effective admin: усіх видалили з проєкту, заблокували або понизили нижче Maintainer. Тоді Owner проєкту (зокрема Owner батьківської групи) може змінити PATHPOLICY. Правила - [pathpolicy.md](pathpolicy.md#admins-перша-policy-і-recovery).
+
+```sh
+sudo gitlab-repopolicy admins --project group/project
+```
+
+показує admins із файлу, effective admins і чи ввімкнено recovery. Збій API - помилка, а не "0 admins".
+
+```text
+$ sudo gitlab-repopolicy admins --project acme/app
+  alice                          missing: access level 30, Maintainer (40) is required
+acme/app: configured 1, effective 0, missing 1
+recovery active: an Owner of the project may change PATHPOLICY
+```
+
+Кожен recovery - подія `policy_recovery`. Owner'и namespace - не завжди ті, хто відповідає за policy, тому на цю подію потрібен алерт.
+
+## Break-glass
+
+Аварійний обхід для одного проєкту, коли policy заблокувала роботу, а виправити її штатно не можна (наприклад, невалідна PATHPOLICY після імпорту). Потрібен root на ноді Gitaly, через GitLab його не ввімкнути.
+
+```sh
+sudo gitlab-repopolicy breakglass grant --project acme/app --ttl 30m --reason "INC-123 policy lockout"
+sudo gitlab-repopolicy breakglass list
+sudo gitlab-repopolicy breakglass revoke --project acme/app
+```
+
+- проєкт задається шляхом `--project` або ID `--project-id`, рівно одним із них. Шлях hook переводить в ID через API. Якщо API недоступний, потрібен `--project-id`: ID показано на головній сторінці проєкту під назвою. У виводі й події видно і ID, і шлях
+
+- `--ttl` обов'язковий, не більше 24 годин. Після строку дозвіл ігнорується
+- поки дозвіл діє, усі модули пропускають push у проєкт, у виводі push є попередження, кожен такий push - подія `breakglass`
+- дозвіл - файл `<breakglass_dir>/<project-id>` з часом, причиною й оператором (`SUDO_USER`). Hook довіряє лише файлу і каталогу root, у які не можуть писати група й інші
+- на кількох нодах Gitaly дозвіл видається на кожній, де може виконатися hook
+
+## Ротація токена
+
+Токен service account має строк. Прострочений токен - відмова `authorization_backend_failure` на кожній захищеній зміні.
+
+```sh
+sudo gitlab-repopolicy token rotate --before 30d
+```
+
+- якщо до кінця строку більше `--before`, команда нічого не робить
+- інакше ротує токен через API з явним `expires_at` = сьогодні + `token_lifetime` (без нього GitLab видав би токен на 7 днів)
+- старий токен перестає діяти одразу, тому новий записується атомарно: тимчасовий файл у тому ж каталозі, fsync, rename. Hook, який отримав 401 під час ротації, один раз перечитує файл і повторює запит
+- `400` від GitLab (наприклад, строк більший за максимум інстансу) - поточний токен лишається робочим, подія `internal_error` з `action: token_rotate`
+
+Таймер `gitlab-repopolicy-token-rotate.timer` запускає ротацію щодня ([install.md](install.md#7-таймери)). На кількох нодах Gitaly у кожної свій токен або ротацію робить одна нода, а інші отримують файл через вашу систему доставки: інакше ротація на одній ноді зламає токен на інших.
+
+## `settings-check`
+
+Hook бачить лише зміни гілок і тегів. Налаштування проєкту змінюються в Settings, і Maintainer може обійти PATHPOLICY через них: перенести шлях CI-конфігурації в незахищений файл, зробити default гілку без policy, увімкнути push через `CI_JOB_TOKEN`. `settings-check` знаходить такі зміни.
+
+Для кожного проєкту з PATHPOLICY, який бачить service account:
+
+| Перевірка (`violations[].rule`) | Що вважається розбіжністю |
+| --- | --- |
+| `default_branch` | default branch не входить у список `settings_check.default_branch` або не захищена |
+| `protected_branches` | гілки зі списку, крім default branch, не захищені |
+| `protected_tags` | шаблони тегів не захищені. Перевіряється лише в проєктах з TAGPOLICY у default branch і з увімкненим модулем |
+| `job_token_push` | дозвіл push через `CI_JOB_TOKEN` не такий, як очікується |
+| `ci_config_path` | CI-конфігурація в іншому проєкті, за URL або не покрита path-правилом PATHPOLICY |
+| `principals` | username з policy-файлів більше не активні користувачі GitLab |
+| `access` | роль service account нижча за Maintainer: налаштування не видно |
+| `policy` | policy-файл не розбирається |
+| `unavailable` | API не відповів для цього проєкту |
+
+Розбіжність - подія `settings_drift` на проєкт і код виходу 1. Проєкт з PATHPOLICY шукається і на поточній default branch, і на очікуваних: перемикання default на гілку без PATHPOLICY - розбіжність, а не "проєкт без policy".
+
+`ci_config_path` перевіряється й у проєктах без `.gitlab-ci.yml`: Maintainer може ввімкнути CI пізніше або вказати шлях до CI-конфігурації в іншому проєкті, і path-правило на `.gitlab-ci.yml` закриває цей обхід заздалегідь. Очікування задаються в `config.yaml` одні на весь інстанс ([configuration.md](configuration.md#settings_check)).
+
+```text
+$ sudo -u git gitlab-repopolicy settings-check
+acme/app: protected_tags: not protected: v*
+```
+
+Це виявлення, а не запобігання: зміну, яку повернули між двома запусками, `settings-check` не побачить. Повністю цю діру закриває лише організаційний захід - роль Maintainer тільки у власників захищених шляхів.
+
+### На ноді за таймером
+
+```sh
+sudo systemctl enable --now gitlab-repopolicy-settings-check.timer
+journalctl -u gitlab-repopolicy-settings-check.service
+```
+
+Запуск раз на добу з випадковою затримкою до години, той самий токен, що в hook, події в audit-лог. Алерт будується з audit (`settings_drift`).
+
+Інший розклад - drop-in файл, пакет його не перезапише:
+
+```sh
+sudo systemctl edit gitlab-repopolicy-settings-check.timer
+```
+
+```ini
+[Timer]
+OnCalendar=
+OnCalendar=*:0/15
+```
+
+Порожній `OnCalendar=` скидає розклад пакета, інакше systemd запускатиме за обома. Перевірка обходить проєкти послідовно, за замовчуванням `--timeout 1h`. На великому інстансі розклад частіше, ніж триває один прохід, не має сенсу.
+
+### У запланованому pipeline GitLab CI
+
+Якщо зручніше бачити результат як job у GitLab, `settings-check` можна запускати за розкладом у CI. Код не змінюється, але потрібні:
+- **окремий** personal access token того самого service account зі scope `read_api`, у masked і protected CI/CD variable. Токен hook для цього не підходить: `token rotate` ротує його на ноді, і змінна в CI застаріє
+- захищений проєкт, де job і змінну бачать лише адміністратори: токен читає налаштування всіх груп
+- конфігурація з `audit.stdout: true` і порожнім `audit.file`: події потраплять у лог job
+
+```yaml
+# .gitlab-ci.yml
+settings-check:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - printf '%s' "$REPOPOLICY_TOKEN" > "$CI_PROJECT_DIR/token"
+    - |
+      cat > config.yaml <<EOF
+      gitlab_url: $CI_SERVER_URL
+      token_file: $CI_PROJECT_DIR/token
+      breakglass_dir: /nonexistent
+      audit: { file: "", stdout: true }
+      settings_check:
+        default_branch: [main]
+        protected_branches: []
+        protected_tags: ["v*"]
+        job_token_push: false
+      EOF
+    - gitlab-repopolicy settings-check --config config.yaml
+```
+
+Бінарник у job - з перевіреного релізу ([install.md](install.md#1-завантажити-й-перевірити-реліз)), наприклад в образі runner'а. Job падає за будь-якої розбіжності.
+
+Рекомендований варіант - таймер на ноді плюс алерт з audit: він не потребує ще одного токена з доступом до всіх груп.
+
+## `coverage`
+
+Service account сам не бачить приватних груп, де він не є учасником, і не може про них повідомити. Їх знаходить `coverage` з токеном адміністратора (scope `read_api`):
+
+```sh
+sudo gitlab-repopolicy coverage --token-file /root/admin-token
+```
+
+Друкує top-level групи без service account (Maintainer) і проєкти з policy-файлами в них. Код виходу 1, якщо такі є. Токен адміністратора лише читається і ніде не зберігається. Запускайте після створення нових груп або за розкладом.
+
+## Оновлення і відкат
+
+- Оновлення - пакетним менеджером. Бінарник замінюється атомарно, запущені hook завершують роботу на старій версії
+- на кількох нодах Gitaly версія має бути однаковою; її видно в кожній audit-події (`version`)
+- відкат - встановлення попередньої версії. Схеми PATHPOLICY і TAGPOLICY `version: 1` заморожені, тому відкат не робить їх невалідними. COMMITPOLICY з правилом, якого немає в старій версії, втрачає лише це правило (попередження)
+- якщо причина збою незрозуміла, спершу `mode: audit` ([configuration.md](configuration.md#mode)): push проходять, рішення пишуться в лог
+
+Кожен реліз перевіряє, що попередня minor-версія приймає всі валідні PATHPOLICY і TAGPOLICY з корпусу тестів і з `examples/`.
+
+## Типові проблеми
+
+| Симптом | Причина | Що робити |
+| --- | --- | --- |
+| у кожному push: `internal error: the hook configuration on the server is invalid` | невалідний `config.yaml`, порожній `audit.file` (hook пише лише у файл, `audit.stdout` для нього не діє) або hook не може прочитати конфігурацію чи токен (права, каталог 0750 root) | `sudo -u git gitlab-repopolicy selftest` |
+| `internal error: git is not available to the hook` | git, який Gitaly передає hook, не запускається | версія GitLab і Gitaly, `gitlab-ctl status gitaly` |
+| `could not check permissions: the GitLab API did not answer` на захищених змінах | API недоступний або токен прострочений | `selftest`; у audit `reason` |
+| `this project is not connected to gitlab-repopolicy correctly` | токен відхилено, service account не учасник групи або роль нижча за Maintainer | `selftest`; у audit `reason` (`project_not_visible`, `role_below_maintainer`); `coverage` |
+| те саме в особистому проєкті | власник проєкту заблокований або забанений: токен service account таких користувачів не бачить, і проєкт вважається груповим | очікувана поведінка, fail closed |
+| `the check did not finish within the server limits` | push більший за ліміти (`limits`, `max_api_calls`, `timeouts`) | розбити push на частини; якщо push малий, ліміт занизький |
+| `internal error: the push was not checked and is rejected` з id | внутрішня помилка бінарника | знайти подію `internal_error` з цим `receive_id` в audit |
+| `the audit log is not writable, tell your GitLab administrators` | користувач hook не може писати в `audit.file` | `sudo -u git gitlab-repopolicy selftest`, права каталогу логу |
+| у MR або Web IDE лише "pre-receive hook declined" без тексту | відмову дав інший hook у `pre-receive.d/` без рядка `GL-HOOK-ERR` | перевірте сусідні файли в `pre-receive.d/` |
+| merge через API: лише "Branch cannot be merged" | API не повертає текст hook у відповіді на merge | поле `merge_error` merge request (`GET /projects/:id/merge_requests/:iid`) |
+| hook не викликається | `custom_hooks_dir` не задано або не той, wrapper не виконуваний, ім'я закінчується на `~`, файл лежить як `custom_hooks_dir/pre-receive` | `grep -A2 '^\[hooks\]' /var/opt/gitlab/gitaly/config.toml`, `ls -l <custom_hooks_dir>/pre-receive.d/` |
+| усі зміни проєкту відхиляються: `PATHPOLICY in main is broken, so no changes are accepted` | невалідна PATHPOLICY у default branch | Owner виправляє PATHPOLICY (recovery) або break-glass |
+| теги відхиляються: `TAGPOLICY in main is broken, so no tag can be created or moved` | невалідна TAGPOLICY у default branch | виправити TAGPOLICY через merge |
+| merge через UI повільний або `could not check permissions` під піковим навантаженням | web-операції тримають Puma-worker, а hook звертається назад до Rails | `api_calls`, `duration_ms` в audit; `timeouts.http` |
+
+Якщо в конфігурації задано `help.contact`, у відмовах, де користувач нічого не може виправити сам, замість `your GitLab administrators` друкується цей контакт ([configuration.md](configuration.md#help)).
+
+## Перевірити push без push
+
+`gitlab-repopolicy test` приймає рішення hook на локальному репозиторії без push - зручно, щоб відтворити відмову:
+
+```sh
+git clone --mirror https://gitlab.example.com/acme/app.git app.git
+gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice
+```
+
+Код виходу 0 - push було б прийнято, і `test` друкує підсумок: `allowed: no rule was touched, 3 new commits` або `allowed: the rules allow the change, 3 new commits`. 1 - відмова з тим самим текстом, що побачив би користувач.
+
+Запускайте `test` на mirror-копії, де є лише гілки й теги сервера. Для нової гілки hook перевіряє тільки коміти, яких ще немає в репозиторії. У робочому клоні ці коміти зазвичай уже є в іншій локальній гілці, тоді `test` бачить 0 нових комітів і друкує підказку про `git clone --mirror`.

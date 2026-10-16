@@ -1,0 +1,31 @@
+[Unit]
+Description=Compare GitLab project settings against gitlab-repopolicy expectations
+Documentation=https://github.com/Kuzmenko-Pavel/gitlab-repopolicy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/gitlab-repopolicy settings-check --config /etc/gitlab-repopolicy/config.yaml
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# chown: the token file and a new audit log; DAC override: the log directory belongs to the hook user.
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE
+ReadWritePaths=/var/log/gitlab-repopolicy

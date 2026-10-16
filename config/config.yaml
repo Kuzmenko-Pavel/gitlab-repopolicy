@@ -1,0 +1,68 @@
+# Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
+# The package installs this file as a conffile; values below are the defaults
+# unless marked otherwise. Unknown keys are an error.
+
+# off | audit | enforce: the global switch. audit writes every decision to the
+# audit log with "enforced": false and lets the push through.
+mode: enforce
+
+# GitLab API: the Workhorse socket of the same node, or https:// for Gitaly
+# on a separate node. Required.
+gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket
+
+# Extra CA bundle for https://; not used with http+unix://.
+ca_file: ""
+
+# Token of the instance service account: Maintainer in every top-level group,
+# scopes exactly read_api and self_rotate. root:<git-user> 0440, written only
+# by "gitlab-repopolicy token rotate".
+token_file: /etc/gitlab-repopolicy/token
+
+# Expiry of a rotated token: token rotate always sends expires_at = today + this.
+token_lifetime: 364d
+
+audit:
+  # The hook writes only to this file: its stdout and stderr reach the pusher.
+  file: /var/log/gitlab-repopolicy/audit.log
+  # Other commands (settings-check, token rotate, breakglass, test) also print
+  # events to stdout, for journald or a container runtime.
+  stdout: false
+
+# Break-glass grants, written by "gitlab-repopolicy breakglass grant" as root.
+breakglass_dir: /etc/gitlab-repopolicy/breakglass
+
+timeouts:
+  total: 10s            # one hook invocation
+  http: 3s              # one API request
+  pattern: 100ms        # the COMMITPOLICY pattern rule, per message
+  pattern_budget: 2s    # the same, per push
+
+# API calls per push; more is limit_exceeded.
+max_api_calls: 30
+
+# Modules are enabled unless disabled here.
+modules:
+  pathpolicy: enabled
+  commitpolicy: enabled
+  tagpolicy: enabled
+
+# What settings-check expects of every project with PATHPOLICY. An empty
+# value is not checked; ci_config_path, principals and the protection of the
+# default branch are always checked. default_branch lists the allowed names,
+# protected_branches are branches to protect besides the default one and
+# protected_tags are checked in projects with TAGPOLICY.
+settings_check:
+  default_branch: [main]
+  protected_branches: []
+  protected_tags: ["v*"]
+  job_token_push: false
+
+# Where a pusher gets help, printed in denials; both are optional. contact is
+# named when the server or a policy in the default branch is at fault, docs_url
+# next to the rules. Up to 200 characters each.
+help:
+  contact: ""
+  docs_url: ""
+
+# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+commitpolicy_presets: {}

@@ -1,0 +1,7 @@
+version: 1
+rules:
+  - name: prod
+    tags: v.*
+    signers: [nobody]
+keys:
+  lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE ed25519

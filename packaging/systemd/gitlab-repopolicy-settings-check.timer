@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily gitlab-repopolicy settings-check
+Documentation=https://github.com/Kuzmenko-Pavel/gitlab-repopolicy
+
+# A different schedule is a drop-in with OnCalendar=, see docs/operations.md.
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

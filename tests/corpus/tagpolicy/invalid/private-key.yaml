@@ -1,0 +1,6 @@
+version: 1
+keys:
+  lead: |
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAA
+    -----END OPENSSH PRIVATE KEY-----

@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in gitlab-repopolicy does not work as documented.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: gitlab-repopolicy version
+      description: Output of `gitlab-repopolicy version`.
+    validations:
+      required: true
+  - type: input
+    id: gitlab
+    attributes:
+      label: GitLab version and installation type
+      description: For example "19.4.2, Linux package, single node".
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Push output, `GL-HOOK-ERR` text and the relevant audit events. Remove tokens and other secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Policy files and the git operation that triggers the problem.
+    validations:
+      required: true

@@ -1,0 +1,10 @@
+gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+
+branch feature: internal error: the push was not checked and is rejected
+  this is a problem of the server, not of your change
+  retry in a few minutes
+  who can help: #gitlab-support
+
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
+checked as: alice (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: internal error: the push was not checked and is rejected (branch feature)

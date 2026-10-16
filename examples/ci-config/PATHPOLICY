@@ -1,0 +1,22 @@
+# The platform team owns the CI configuration, the deploy logic and the
+# production values; everything else is authorized by GitLab as usual.
+version: 1
+
+admins: [platform-lead, sre-lead]
+
+rules:
+  - name: ci-config
+    paths:
+      - ".gitlab-ci.yml"
+      - ".gitlab/ci/**"
+      - "Makefile"
+      - "scripts/deploy/**"
+    allow: [platform-lead, sre-lead, ci-maintainer]
+    message: >-
+      The platform team changes the CI/CD configuration and the deploy logic.
+      Ask platform-lead, sre-lead or ci-maintainer to make this change.
+
+  - name: prod-values
+    paths: ["helm/**/values-prod.yaml"]
+    refs: protected
+    allow: [platform-lead, release-manager]

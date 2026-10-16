@@ -1,0 +1,46 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+)
+
+// testSystem lets the integration tests run root commands as an ordinary
+// user: the test user is root and the trusted owner, and chown is recorded
+// in REPOPOLICY_TEST_CHOWN_LOG instead of being done.
+type testSystem struct{}
+
+func (testSystem) IsRoot() bool { return os.Getenv("REPOPOLICY_TEST_NOT_ROOT") == "" }
+
+// LookupUser: "self" is the test user, any other user an id after it, so
+// that install-hook has owners to change.
+func (testSystem) LookupUser(name string) (int, int, error) {
+	switch name {
+	case "no-such-user":
+		return 0, 0, errors.New("unknown user " + name)
+	case "self":
+		return os.Getuid(), os.Getgid(), nil
+	}
+	return os.Getuid() + 1, os.Getgid() + 1, nil
+}
+
+func (testSystem) CurrentUser() string { return "root" }
+
+func (testSystem) Chown(path string, uid, gid int) error {
+	log := os.Getenv("REPOPOLICY_TEST_CHOWN_LOG")
+	if log == "" {
+		return nil
+	}
+	f, err := os.OpenFile(log, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600) //nolint:gosec // G304: test log path
+	if err != nil {
+		return err
+	}
+	_, werr := fmt.Fprintf(f, "%s %d:%d\n", path, uid, gid)
+	return errors.Join(werr, f.Close())
+}
+
+func (testSystem) TrustedUID() int { return os.Getuid() }
+
+// StateDir is REPOPOLICY_TEST_STATE_DIR, a directory of the test.
+func (testSystem) StateDir() string { return os.Getenv("REPOPOLICY_TEST_STATE_DIR") }

@@ -67,13 +67,32 @@ func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 			}
 		}
 	}
-	n, status := countAdmins(ctx, v, p.admins)
-	switch {
-	case !status.IsConfirmed():
-		problems = append(problems, module.Problem{Unknown: true, Msg: "admins cannot be checked: " + status.Reason()})
-	case n == 0:
-		problems = append(problems, module.Problem{Code: module.CodeLockoutPrevented,
+	report, status := adminReport(ctx, v, p.admins)
+	if !status.IsConfirmed() {
+		return append(problems, module.Problem{Unknown: true, Msg: "admins cannot be checked: " + status.Reason()})
+	}
+	var missing []module.Problem
+	for _, ad := range report {
+		switch {
+		case ad.Effective:
+			continue
+		case !ad.Exists:
+			missing = append(missing, module.Problem{Warning: true, Msg: fmt.Sprintf("admin %q does not exist or is blocked", ad.Username)})
+		case !ad.Active:
+			missing = append(missing, module.Problem{Warning: true, Msg: fmt.Sprintf("admin %q is not active", ad.Username)})
+		default:
+			missing = append(missing, module.Problem{Warning: true,
+				Msg: fmt.Sprintf("admin %q has access level %d, Maintainer (40) is required", ad.Username, ad.Access)})
+		}
+	}
+	if len(missing) == len(report) {
+		return append(problems, module.Problem{Code: module.CodeLockoutPrevented,
 			Msg: "none of the admins is an active user with at least Maintainer access to the project"})
+	}
+	if len(missing) > 0 {
+		problems = append(problems, missing...)
+		problems = append(problems, module.Problem{Warning: true,
+			Msg: fmt.Sprintf("%d of %d admins are effective", len(report)-len(missing), len(report))})
 	}
 	return problems
 }

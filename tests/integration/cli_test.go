@@ -45,9 +45,11 @@ func TestSelftest_WrongScopes(t *testing.T) {
 	inYear := time.Now().AddDate(1, 0, 0)
 	s.API.Handle("GET", "/api/v4/user", gitlabtest.OK(serviceAccount))
 	s.API.Handle("GET", "/api/v4/personal_access_tokens/self", gitlabtest.OK(goodToken(inYear)))
+	s.API.Handle("GET", "/api/v4/groups?min_access_level=40&per_page=100", gitlabtest.OK([]any{map[string]any{"id": 3, "full_path": "acme"}}))
 	r := s.Run(nil, "selftest", "--config", s.config)
 	require.Equal(t, 0, r.Code, r.Stdout)
 	assert.Regexp(t, `(?m)^ok +account +repopolicy is a service account`, r.Stdout)
+	assert.Regexp(t, `(?m)^ok +groups +Maintainer of 1 groups; gitlab-repopolicy coverage checks every top-level group`, r.Stdout)
 	assert.Regexp(t, `(?m)^ok +token +scopes read_api, self_rotate, expires on `, r.Stdout)
 	assert.Regexp(t, `(?m)^warn breakglass `, r.Stdout, "no break-glass directory is a warning")
 	assert.Regexp(t, `(?m)^info git +git version `, r.Stdout)
@@ -80,6 +82,11 @@ func TestSelftest_WrongScopes(t *testing.T) {
 	r = s.Run(nil, "selftest", "--config", s.config)
 	assert.Equal(t, 0, r.Code, "an expiry within 30 days is a warning")
 	assert.Regexp(t, `(?m)^warn token +expires on .* run gitlab-repopolicy token rotate`, r.Stdout)
+
+	s.API.Handle("GET", "/api/v4/groups?min_access_level=40&per_page=100", gitlabtest.OK([]any{}))
+	r = s.Run(nil, "selftest", "--config", s.config)
+	assert.Equal(t, 1, r.Code)
+	assert.Regexp(t, `(?m)^FAIL groups +repopolicy is a Maintainer of no group, so the hook sees no project`, r.Stdout)
 
 	s.API.Handle("GET", "/api/v4/user", gitlabtest.Status(401))
 	r = s.Run(nil, "selftest", "--config", s.config)
@@ -292,27 +299,27 @@ func projectAPI(s *Stand, policy string) {
 func TestCLI_Explain(t *testing.T) {
 	s, _ := pathStand(t, pathRelease, nil)
 	projectAPI(s, pathRelease)
-	explain := func(user, path, ref string) CLI {
+	explain := func(user, path, ref string, code int) CLI {
 		r := s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app", "--user", user, "--path", path, "--ref", ref)
-		require.Equal(t, 0, r.Code, r.Stderr)
+		require.Equal(t, code, r.Code, "0 allowed or no rule, 1 denied: %s", r.Stderr)
 		return r
 	}
-	r := explain("bob", "ci.yml", "release/1")
+	r := explain("bob", "ci.yml", "release/1", 1)
 	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): NOT allowed; allow: alice")
 	assert.Contains(t, r.Stdout, "result: bob may not change ci.yml on refs/heads/release/1")
-	r = explain("alice", "ci.yml", "refs/heads/release/1")
+	r = explain("alice", "ci.yml", "refs/heads/release/1", 0)
 	assert.Contains(t, r.Stdout, "result: alice may change ci.yml")
-	r = explain("bob", "ci.yml", "")
+	r = explain("bob", "ci.yml", "", 0)
 	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): does not apply to refs/heads/main")
-	r = explain("bob", "README.md", "")
+	r = explain("bob", "README.md", "", 0)
 	assert.Contains(t, r.Stdout, "no path rule matches")
-	r = explain("bob", "PATHPOLICY", "")
+	r = explain("bob", "PATHPOLICY", "", 1)
 	assert.Contains(t, r.Stdout, "admins of PATHPOLICY (refs: all): NOT allowed; allow: alice")
 
 	r = s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app")
 	assert.Equal(t, 2, r.Code)
 	s.API.Handle("GET", "/api/v4/projects/1/repository/files/PATHPOLICY/raw?ref=main", gitlabtest.Status(404))
-	r = explain("bob", "ci.yml", "")
+	r = explain("bob", "ci.yml", "", 0)
 	assert.Contains(t, r.Stdout, "has no PATHPOLICY on its default branch")
 }
 
@@ -361,6 +368,16 @@ func TestCLI_ValidateOnline(t *testing.T) {
 	r = s.Run(nil, "validate", "-f", file, "--online", "--config", s.config, "--project", "acme/platform/app")
 	assert.Equal(t, 0, r.Code, r.Stdout)
 	assert.Contains(t, r.Stdout, "PATHPOLICY: valid")
+
+	// bob is a Developer: the file is valid while alice is an effective admin.
+	require.NoError(t, os.WriteFile(file, []byte(strings.Replace(pathPolicy, "admins: [alice]", "admins: [alice, bob]", 1)), 0o600))
+	s.API.Handle("GET", "/api/v4/projects/1/members/all?per_page=100&user_ids%5B%5D=2&user_ids%5B%5D=3", gitlabtest.OK([]any{
+		map[string]any{"id": 2, "access_level": 40, "state": "active"}, map[string]any{"id": 3, "access_level": 30, "state": "active"}}))
+	r = s.Run(nil, "validate", "-f", file, "--online", "--config", s.config, "--project", "acme/platform/app")
+	assert.Equal(t, 0, r.Code, r.Stdout)
+	assert.Contains(t, r.Stdout, "PATHPOLICY: valid\n")
+	assert.Contains(t, r.Stdout, `warning: admin "bob" has access level 30, Maintainer (40) is required`)
+	assert.Contains(t, r.Stdout, "warning: 1 of 2 admins are effective")
 }
 
 // TestCLI_Test: gitlab-repopolicy test decides like the hook without a push.
@@ -386,6 +403,20 @@ func TestCLI_Test(t *testing.T) {
 	r = run("--old", base, "--new", "candidate", "--ref", "refs/heads/main", "--user", "alice")
 	assert.Equal(t, 0, r.Code, r.Stderr)
 	assert.Equal(t, base, s.RemoteRev("refs/heads/main"), "test never changes refs")
+	assert.Contains(t, r.Stderr, "allowed: the rules allow the change, 0 new commits", "candidate is already a branch")
+
+	r = run("--old", base, "--new", head, "--ref", "refs/heads/main", "--user", "bob", "--gl-id", "user-3", "--project-id", "1")
+	require.Equal(t, 1, r.Code)
+	app := s.Commit("app", map[string]string{"app.go": "x"})
+	// The objects of a push are in the repository before any ref points to them.
+	s.git(s.Work, "push", "-q", s.Bare, app+":refs/heads/incoming")
+	s.git(s.Bare, "update-ref", "-d", "refs/heads/incoming")
+	r = run("--old", head, "--new", app, "--ref", "refs/heads/candidate", "--user", "bob", "--gl-id", "user-3")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stderr, "allowed: no rule was touched, 1 new commits")
+	r = run("--old", zeroOID, "--new", "candidate", "--ref", "refs/heads/copy", "--user", "bob", "--gl-id", "user-3")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stderr, "run test in a mirror copy of the project", "a new branch whose commits are on other branches")
 
 	r = run("--old", base, "--new", head, "--ref", "refs/heads/main", "--user", "nobody")
 	assert.Equal(t, 1, r.Code)

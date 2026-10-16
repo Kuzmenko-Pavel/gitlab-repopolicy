@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 )
 
 func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -85,4 +86,17 @@ func TestHookCanAppend(t *testing.T) {
 	require.NoError(t, os.Mkdir(locked, 0o550))
 	assert.ErrorContains(t, hookCanAppend(filepath.Join(locked, "audit.log")), "cannot be created")
 	assert.ErrorContains(t, hookCanAppend(filepath.Join(dir, "none", "audit.log")), "log directory")
+}
+
+func TestCheckAudit_ReadableByEveryone(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "audit.log")
+	require.NoError(t, os.WriteFile(file, nil, 0o640))
+	require.NoError(t, os.Chmod(file, 0o644))
+	var b bytes.Buffer
+	App{}.checkAudit(&checks{out: &output{w: &b}}, &config.Config{Audit: config.Audit{File: file}})
+	assert.Contains(t, b.String(), "is readable by everyone (-rw-r--r--)")
+	require.NoError(t, os.Chmod(file, 0o640))
+	b.Reset()
+	App{}.checkAudit(&checks{out: &output{w: &b}}, &config.Config{Audit: config.Audit{File: file}})
+	assert.Contains(t, b.String(), "ok")
 }

@@ -65,7 +65,8 @@ func anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.Client, p
 }
 
 // runExplain implements "explain --project P --user U --path X [--ref R]":
-// which path rules match and whether the user satisfies them.
+// which path rules match and whether the user satisfies them. Exit 1 means
+// the user may not change the path.
 func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
 	configPath := fs.String("config", DefaultConfig, "server config")
@@ -124,10 +125,10 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	}
 	if allowed {
 		out.printf("result: %s may change %s on %s (as a person: a deploy key never may)\n", *user, *path, target)
-	} else {
-		out.printf("result: %s may not change %s on %s: every applying rule must allow the user\n", *user, *path, target)
+		return withOutput(out.err, ExitOK)
 	}
-	return withOutput(out.err, ExitOK)
+	out.printf("result: %s may not change %s on %s: every applying rule must allow the user\n", *user, *path, target)
+	return withOutput(out.err, ExitError)
 }
 
 // fullRef turns a branch name into refs/heads/<name>; full refs stay.
@@ -305,10 +306,42 @@ func (a App) decide(ctx context.Context, cfg *config.Config, git *gitx.Repo, r t
 	if out.AuditErr != nil {
 		return 0, out.AuditErr
 	}
-	if out.Allow {
-		return ExitOK, nil
+	if !out.Allow {
+		return ExitError, nil
 	}
-	return ExitError, nil
+	summary, err := allowedSummary(ctx, git, oldOID, newOID, out.Touched)
+	if err != nil {
+		return 0, err
+	}
+	write(stdio.Err, summary)
+	return ExitOK, nil
+}
+
+// allowedSummary is the result line of an allowed test: whether a rule
+// applied and how many commits the hook took as new. A branch created in a
+// clone where its commits are on other branches has no new commits.
+func allowedSummary(ctx context.Context, git *gitx.Repo, oldOID, newOID string, touched bool) (string, error) {
+	if module.IsZero(newOID) {
+		return "allowed: the ref is deleted\n", nil
+	}
+	o := gitx.RevListOptions{Include: []string{newOID}, NotBranchesTags: true, Max: maxRangeCommits}
+	if !module.IsZero(oldOID) {
+		o.Exclude = []string{oldOID}
+	}
+	commits, err := git.RevList(ctx, o)
+	if err != nil {
+		return "", err
+	}
+	what := "no rule was touched"
+	if touched {
+		what = "the rules allow the change"
+	}
+	line := fmt.Sprintf("allowed: %s, %d new commits\n", what, len(commits))
+	if len(commits) == 0 && module.IsZero(oldOID) {
+		line += "  the commits of the new ref are already on other refs of this repository, so the hook takes none as new;\n" +
+			"  to check them as a push does, run test in a mirror copy of the project (git clone --mirror)\n"
+	}
+	return line, nil
 }
 
 // resolve returns the object a revision names, "" for all zeros.

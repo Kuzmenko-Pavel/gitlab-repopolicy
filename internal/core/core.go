@@ -73,6 +73,8 @@ type Outcome struct {
 	AuditErr error
 	// ReceiveID is the receive_id of the events, for an event written after Run.
 	ReceiveID string
+	// Touched is false when no rule of any module applied to the push.
+	Touched bool
 }
 
 // Run decides on one receive. It never returns an error: a failure is a decision.
@@ -270,14 +272,16 @@ func (r *receive) outcome() Outcome {
 			auditErr = errors.Join(auditErr, r.deps.Audit.Write(e))
 		}
 	}
-	if r.settings.Mode == config.ModeAudit {
-		return Outcome{Allow: true, AuditErr: auditErr, ReceiveID: r.id}
-	}
-	if r.deny {
+	out := Outcome{Allow: true, AuditErr: auditErr, ReceiveID: r.id, Touched: len(r.events) > 0}
+	switch {
+	case r.settings.Mode == config.ModeAudit:
+	case r.deny:
 		who := report.Pusher{Username: r.req.Env.Principal.Username, GLID: r.req.Env.Principal.GLID}
-		return Outcome{Allow: false, Stderr: report.Rejection(r.sections, who), AuditErr: auditErr, ReceiveID: r.id}
+		out.Allow, out.Stderr = false, report.Rejection(r.sections, who)
+	default:
+		out.Stdout = report.Warnings(r.warnings, r.notices)
 	}
-	return Outcome{Allow: true, Stdout: report.Warnings(r.warnings, r.notices), AuditErr: auditErr, ReceiveID: r.id}
+	return out
 }
 
 // acceptedChange reports the events of a policy change that the push makes.

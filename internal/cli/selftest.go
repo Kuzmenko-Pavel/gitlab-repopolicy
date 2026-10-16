@@ -139,6 +139,10 @@ func (a App) checkAudit(c *checks, cfg *config.Config) {
 		c.warn("audit", "%s belongs to %s, the directory to %s: the hook may not be able to append", cfg.Audit.File, owner, dirOwner)
 		return
 	}
+	if info.Mode().Perm()&0o004 != 0 {
+		c.warn("audit", "%s is readable by everyone (%s): audit holds usernames and paths; install-hook sets 0640", cfg.Audit.File, info.Mode().Perm())
+		return
+	}
 	c.ok("audit", "%s, owner %s", cfg.Audit.File, ownerOf(info))
 }
 
@@ -226,6 +230,17 @@ func checkToken(ctx context.Context, c *checks, cfg *config.Config) {
 		c.fail("account", "%s is not external; instance service accounts are", u.Username)
 	default:
 		c.ok("account", "%s is a service account", u.Username)
+	}
+	groups, err := api.MaintainerGroups(ctx)
+	switch {
+	case err != nil:
+		c.fail("groups", "GET /groups: %v", err)
+	case len(groups) == 0:
+		c.fail("groups", "%s is a Maintainer of no group, so the hook sees no project: add it to the top-level groups, gitlab-repopolicy coverage lists them", u.Username)
+	case len(groups) == 100:
+		c.ok("groups", "Maintainer of 100 or more groups; gitlab-repopolicy coverage checks every top-level group")
+	default:
+		c.ok("groups", "Maintainer of %d groups; gitlab-repopolicy coverage checks every top-level group", len(groups))
 	}
 	t, err := api.TokenSelf(ctx)
 	if err != nil {

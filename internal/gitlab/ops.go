@@ -175,6 +175,14 @@ type Group struct {
 	FullPath string `json:"full_path"`
 }
 
+// MaintainerGroups returns up to 100 groups in which the token's user is at
+// least a Maintainer, for selftest.
+func (c *Client) MaintainerGroups(ctx context.Context) ([]Group, error) {
+	var groups []Group
+	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v4/groups?min_access_level=40&per_page=%d", perPage), nil, &groups)
+	return groups, err
+}
+
 // TopLevelGroups returns every top-level group the token can see; for an
 // administrator these are all groups of the instance.
 func (c *Client) TopLevelGroups(ctx context.Context) ([]Group, error) {

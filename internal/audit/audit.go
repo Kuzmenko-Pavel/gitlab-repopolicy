@@ -29,8 +29,10 @@ const (
 
 // Event is one audit record. The writer fills Time, Enforced, Version, Git and Node.
 type Event struct {
-	Time        string      `json:"ts"`
-	Event       string      `json:"event"`
+	Time  string `json:"ts"`
+	Event string `json:"event"`
+	// ReceiveID is the same in every event of one run of the hook.
+	ReceiveID   string      `json:"receive_id,omitempty"`
 	Module      string      `json:"module,omitempty"`
 	Decision    string      `json:"decision,omitempty"`
 	Enforced    bool        `json:"enforced"`

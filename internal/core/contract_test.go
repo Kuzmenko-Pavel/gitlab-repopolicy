@@ -57,12 +57,51 @@ func TestRoot_EvaluateAbsent(t *testing.T) {
 	assert.Equal(t, []string{"TESTPOLICY"}, got.PolicyFiles)
 	assert.False(t, res.out.Allow)
 	assert.Contains(t, res.out.Stderr, "new policy has no effective administrators")
-	assert.Len(t, events(res.audit, audit.EventPolicyChange), 1, "the added file is accepted as a new version")
+	assert.Empty(t, events(res.audit, audit.EventPolicyChange), "a rejected push does not change the policy")
 
 	got = nil
 	res = r.run([]module.Module{open, m}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 	assert.Nil(t, got, "only the root decides while the anchor has no file")
 	assert.True(t, res.out.Allow)
+}
+
+func TestAudit_EventsOfOneReceive(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"a": "1"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"TESTPOLICY": "touch\n"})
+	r.stage(c2)
+	upd := module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"}
+	allow := hooked{testModule: closed, absent: func(*module.Input) (*module.Result, error) {
+		return &module.Result{Touched: true}, nil
+	}}
+	res := r.run([]module.Module{allow}, enforce, nil, "", upd)
+	require.True(t, res.out.Allow)
+	require.Len(t, events(res.audit, audit.EventPolicyChange), 1, "an accepted push records the new version")
+	id := res.audit.events[0].ReceiveID
+	assert.NotEmpty(t, id)
+	for _, e := range res.audit.events {
+		assert.Equal(t, id, e.ReceiveID, "every event of one receive has the same receive_id")
+	}
+	again := r.run([]module.Module{allow}, enforce, nil, "", upd)
+	assert.NotEqual(t, id, again.audit.events[0].ReceiveID)
+
+	failing := hooked{testModule: closed, absent: func(in *module.Input) (*module.Result, error) {
+		return &module.Result{Decision: module.Deny, Touched: true, Violations: []module.Violation{
+			{Code: module.CodeProtectedPath, Ref: in.Updates[0].Ref},
+			{Code: module.CodeAuthorizationBackend, Ref: in.Updates[0].Ref, Reason: "HTTP 401"},
+		}}, nil
+	}}
+	res = r.run([]module.Module{failing}, enforce, nil, "", upd)
+	assert.False(t, res.out.Allow)
+	assert.Empty(t, events(res.audit, audit.EventPolicyChange))
+	ev := events(res.audit, audit.EventAuthorizationBackendFailure)
+	require.Len(t, ev, 1, "a failure of GitLab names the event, so that its alert fires")
+	assert.Equal(t, module.CodeAuthorizationBackend, ev[0].Code)
+
+	res = r.run([]module.Module{failing}, Settings{Mode: config.ModeAudit, Total: 10 * time.Second}, nil, "", upd)
+	assert.True(t, res.out.Allow)
+	assert.Len(t, events(res.audit, audit.EventPolicyChange), 1, "in mode audit the push goes through with the change")
 }
 
 func TestRoot_CoverageWarning(t *testing.T) {

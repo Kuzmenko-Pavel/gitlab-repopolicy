@@ -98,6 +98,17 @@ func (r *receive) apply(l *loaded, res *module.Result) {
 	r.events = append(r.events, r.decisionEvents(l, res)...)
 }
 
+// importantCode is the code that names the event of a ref: a failure of
+// GitLab or of the hook is alerted on, so it outranks a broken rule.
+func importantCode(vs []module.Violation) string {
+	for _, v := range vs {
+		if eventFor(v.Code) != audit.EventDecision {
+			return v.Code
+		}
+	}
+	return vs[0].Code
+}
+
 // decisionEvents are the "decision" events of a module: one per ref with
 // violations or a verified signature, or one for the push when the rules were
 // touched without any.
@@ -134,7 +145,8 @@ func (r *receive) decisionEvents(l *loaded, res *module.Result) []audit.Event {
 		if len(vs) == 0 {
 			e.Decision = module.Allow.String()
 		} else {
-			e.Code = vs[0].Code
+			e.Code = importantCode(vs)
+			e.Event = eventFor(e.Code)
 		}
 		if s, ok := signed[ref]; ok {
 			e.Rules, e.Signer, e.Fingerprint = s.Rules, s.Signer, s.Fingerprint

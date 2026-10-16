@@ -5,6 +5,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"time"
@@ -70,6 +71,8 @@ type Outcome struct {
 	Stderr string
 	// AuditErr is a failure to write audit events; it does not change the decision.
 	AuditErr error
+	// ReceiveID is the receive_id of the events, for an event written after Run.
+	ReceiveID string
 }
 
 // Run decides on one receive. It never returns an error: a failure is a decision.
@@ -79,7 +82,7 @@ func Run(ctx context.Context, s Settings, d Deps, req Request) Outcome {
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Total)
 	defer cancel()
-	r := &receive{settings: s, deps: d, req: req, start: d.Clock()}
+	r := &receive{settings: s, deps: d, req: req, start: d.Clock(), id: rand.Text()}
 	r.run(ctx)
 	return r.outcome()
 }
@@ -90,6 +93,8 @@ type receive struct {
 	deps     Deps
 	req      Request
 	start    time.Time
+	// id is the receive_id of the events.
+	id string
 
 	updates    []module.RefUpdate
 	defaultRef string
@@ -224,6 +229,7 @@ func eventFor(code string) string {
 // event fills the receive fields of an audit event.
 func (r *receive) event(e audit.Event) audit.Event {
 	env := r.req.Env
+	e.ReceiveID = r.id
 	e.ProjectID = env.ProjectID
 	e.ProjectPath = env.ProjectPath
 	e.Username = env.Principal.Username
@@ -256,16 +262,29 @@ func (r *receive) outcome() Outcome {
 	// An audit failure does not change the decision; selftest checks that the log is writable.
 	var auditErr error
 	for _, e := range r.events {
+		if r.deny && r.settings.Mode == config.ModeEnforce && acceptedChange(e.Event) {
+			// The push is rejected: the policy change did not happen.
+			continue
+		}
 		if r.deps.Audit != nil {
 			auditErr = errors.Join(auditErr, r.deps.Audit.Write(e))
 		}
 	}
 	if r.settings.Mode == config.ModeAudit {
-		return Outcome{Allow: true, AuditErr: auditErr}
+		return Outcome{Allow: true, AuditErr: auditErr, ReceiveID: r.id}
 	}
 	if r.deny {
 		who := report.Pusher{Username: r.req.Env.Principal.Username, GLID: r.req.Env.Principal.GLID}
-		return Outcome{Allow: false, Stderr: report.Rejection(r.sections, who), AuditErr: auditErr}
+		return Outcome{Allow: false, Stderr: report.Rejection(r.sections, who), AuditErr: auditErr, ReceiveID: r.id}
 	}
-	return Outcome{Allow: true, Stdout: report.Warnings(r.warnings, r.notices), AuditErr: auditErr}
+	return Outcome{Allow: true, Stdout: report.Warnings(r.warnings, r.notices), AuditErr: auditErr, ReceiveID: r.id}
+}
+
+// acceptedChange reports the events of a policy change that the push makes.
+func acceptedChange(event string) bool {
+	switch event {
+	case audit.EventPolicyChange, audit.EventPolicyBootstrap, audit.EventPolicyRecovery:
+		return true
+	}
+	return false
 }

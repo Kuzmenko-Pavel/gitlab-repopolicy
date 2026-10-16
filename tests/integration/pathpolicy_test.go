@@ -249,6 +249,20 @@ func TestIdentity_ProjectNotVisible(t *testing.T) {
 	assert.Equal(t, "project_not_visible", ev[0]["reason"])
 }
 
+// TestIdentity_TokenRejected: a token that GitLab no longer accepts denies the
+// push and names the audit event, which the alert on an expired token watches.
+func TestIdentity_TokenRejected(t *testing.T) {
+	s, _ := pathStand(t, pathPolicy, nil)
+	s.API.Handle("GET", "/api/v4/projects/1/protected_branches?per_page=100&page=1", gitlabtest.Status(401))
+	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "unable to verify authorization")
+	ev := Events(s.Audit(), "authorization_backend_failure")
+	require.Len(t, ev, 1)
+	assert.Equal(t, "pathpolicy", ev[0]["module"])
+	assert.Equal(t, "authorization_backend_failure", ev[0]["code"])
+	assert.NotEmpty(t, ev[0]["receive_id"])
+}
+
 func TestIdentity_RoleBelowMaintainer(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{"group_access": map[string]any{"access_level": 30}}}))

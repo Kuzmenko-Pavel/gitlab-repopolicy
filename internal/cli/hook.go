@@ -78,7 +78,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	}, core.Request{Env: hookEnv, Updates: updates})
 	if err := git.Close(); err != nil {
 		// The decision is made; the only channel left for a failure is audit.
-		if werr := auditor.Write(audit.Event{Event: audit.EventInternalError, Reason: "git cat-file: " + err.Error(),
+		if werr := auditor.Write(audit.Event{Event: audit.EventInternalError, ReceiveID: out.ReceiveID, Reason: "git cat-file: " + err.Error(),
 			ProjectID: hookEnv.ProjectID, ProjectPath: hookEnv.ProjectPath}); werr != nil {
 			out.AuditErr = errors.Join(out.AuditErr, werr)
 		}

@@ -84,14 +84,25 @@ type User struct {
 	Active bool
 }
 
-// Validator answers the online questions of policy validation.
-type Validator interface {
+// AccessChecker answers questions about users of the project; Validator and
+// Authorizer build on it.
+type AccessChecker interface {
 	// Users looks usernames up in one request (D28). The map is keyed by the
 	// lowercased username; a missing key means the user does not exist or is
 	// not visible (blocked, banned).
 	Users(ctx context.Context, usernames []string) (map[string]User, Status)
 	// AccessLevels returns the effective access level in the project by user ID; 0 is not a member.
 	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
+}
+
+// Guard runs before the first API call of a receive: a true result stops the
+// call with the status, for example in a personal namespace or when the
+// service account does not see the project.
+type Guard func(ctx context.Context) (Status, bool)
+
+// Validator answers the online questions of policy validation.
+type Validator interface {
+	AccessChecker
 	// Known reports whether the username is in the version on the anchor:
 	// such usernames are not checked for existence again (D28).
 	Known(username string) bool
@@ -104,8 +115,7 @@ type Authorizer interface {
 	// PusherAccess is the effective access level of the pushing person; 0 is
 	// not a member, a deploy key or an unknown principal.
 	PusherAccess(ctx context.Context) (int, Status)
-	Users(ctx context.Context, usernames []string) (map[string]User, Status)
-	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
+	AccessChecker
 }
 
 // Input is everything a module may use to evaluate a push.
@@ -265,7 +275,8 @@ type Person struct {
 // PrincipalResolver resolves the pusher to a person.
 type PrincipalResolver interface {
 	// Person is zero for a deploy key or an unparsable GL_ID; the status is
-	// unknown when GitLab did not answer.
+	// unknown when GitLab did not answer. The answer is memoised for the
+	// receive, so modules call it as often as they need.
 	Person(ctx context.Context) (Person, Status)
 }
 
@@ -281,12 +292,6 @@ type VersionValidator interface {
 // core checks only usernames that the anchor version does not have (D28).
 type UsernameLister interface {
 	Usernames() []string
-}
-
-// AccessChecker is what counting admins needs; Validator and Authorizer implement it.
-type AccessChecker interface {
-	Users(ctx context.Context, usernames []string) (map[string]User, Status)
-	AccessLevels(ctx context.Context, userIDs []int64) (map[int64]int, Status)
 }
 
 // PolicyChange is a policy file that an update changes, as the core accepted it.

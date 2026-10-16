@@ -7,6 +7,7 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
 // AuthzAPI is the part of the GitLab client the authorizer uses.
@@ -16,16 +17,13 @@ type AuthzAPI interface {
 	MembersAccess(ctx context.Context, projectID int64, userIDs []int64) (map[int64]int, error)
 }
 
-// Guard runs before the first API call; a true result stops the call with the status.
-type Guard func(ctx context.Context) (module.Status, bool)
-
 // Authorizer implements module.Authorizer and module.Validator for one receive.
 // Answers are memoised: within a receive the same question is asked once.
 type Authorizer struct {
 	api       AuthzAPI
 	projectID int64
 	pusher    module.PrincipalResolver
-	guard     Guard
+	guard     module.Guard
 	known     map[string]bool
 
 	mu     sync.Mutex
@@ -34,7 +32,7 @@ type Authorizer struct {
 }
 
 // NewAuthorizer returns the authorizer of a project.
-func NewAuthorizer(api AuthzAPI, projectID int64, pusher module.PrincipalResolver, guard Guard) *Authorizer {
+func NewAuthorizer(api AuthzAPI, projectID int64, pusher module.PrincipalResolver, guard module.Guard) *Authorizer {
 	return &Authorizer{api: api, projectID: projectID, pusher: pusher, guard: guard,
 		users: map[string]module.User{}, levels: map[int64]int{}}
 }
@@ -96,7 +94,7 @@ func (a *Authorizer) Users(ctx context.Context, usernames []string) (map[string]
 	}
 	found, err := a.api.UsersByUsernames(ctx, ask)
 	if err != nil {
-		return nil, statusOf(err)
+		return nil, refs.StatusOf(err)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -144,7 +142,7 @@ func (a *Authorizer) AccessLevels(ctx context.Context, userIDs []int64) (map[int
 		levels, err = a.api.MembersAccess(ctx, a.projectID, ask)
 	}
 	if err != nil {
-		return nil, statusOf(err)
+		return nil, refs.StatusOf(err)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

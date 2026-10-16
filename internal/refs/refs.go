@@ -18,16 +18,12 @@ type API interface {
 	ProtectedTags(ctx context.Context, projectID int64) ([]string, error)
 }
 
-// Guard runs before the first API call; a non-nil status stops the call.
-// The core uses it to resolve the namespace type lazily (architecture §13.2).
-type Guard func(ctx context.Context) (module.Status, bool)
-
 // Classifier implements module.RefClassifier for one receive.
 type Classifier struct {
 	defaultRef string
 	projectID  int64
 	api        API
-	guard      Guard
+	guard      module.Guard
 
 	branches lazyList
 	tags     lazyList
@@ -40,7 +36,7 @@ type lazyList struct {
 }
 
 // New returns a classifier; defaultRef is "" when the repository has no default branch.
-func New(defaultRef string, projectID int64, api API, guard Guard) *Classifier {
+func New(defaultRef string, projectID int64, api API, guard module.Guard) *Classifier {
 	return &Classifier{defaultRef: defaultRef, projectID: projectID, api: api, guard: guard}
 }
 

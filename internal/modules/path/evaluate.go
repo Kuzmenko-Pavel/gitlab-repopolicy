@@ -18,9 +18,6 @@ type evaluation struct {
 	p   *Policy
 	in  *module.Input
 	res *module.Result
-
-	person    *module.Person
-	personErr *module.Status
 }
 
 func newEvaluation(p *Policy, in *module.Input) *evaluation {
@@ -40,15 +37,6 @@ func (e *evaluation) unknown(st module.Status, rule, ref string) {
 		code, msg = module.CodeLimitExceeded, "The push exceeds the limits of the hook (time or API calls). Split it or ask an administrator."
 	}
 	e.deny(module.Violation{Code: code, Rule: rule, Ref: ref, Reason: st.Reason(), Message: msg})
-}
-
-// pusher resolves the pushing person once per receive.
-func (e *evaluation) pusher(ctx context.Context) (module.Person, module.Status) {
-	if e.person == nil {
-		p, st := e.in.Principals.Person(ctx)
-		e.person, e.personErr = &p, &st
-	}
-	return *e.person, *e.personErr
 }
 
 // scopeOf returns the class of the ref as a change scope; it asks GitLab only
@@ -199,7 +187,7 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 		return nil
 	}
 	e.res.Touched = true
-	person, st := e.pusher(ctx)
+	person, st := e.in.Principals.Person(ctx)
 	switch {
 	case !st.IsConfirmed():
 		e.unknown(st, r.name, u.Ref)
@@ -227,7 +215,7 @@ func (r *rule) text() string {
 // policyChange decides on a change of PATHPOLICY itself (architecture §9.4).
 func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 	e.res.Touched = true
-	person, st := e.pusher(ctx)
+	person, st := e.in.Principals.Person(ctx)
 	if !st.IsConfirmed() {
 		e.unknown(st, "", u.Ref)
 		return
@@ -309,7 +297,7 @@ func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Re
 		}
 		u := updateOf(in, c.Ref)
 		e.res.Touched = true
-		person, st := e.pusher(ctx)
+		person, st := e.in.Principals.Person(ctx)
 		if !st.IsConfirmed() {
 			e.unknown(st, "", c.Ref)
 			continue
@@ -363,7 +351,7 @@ func (*Module) EvaluateInvalid(ctx context.Context, in *module.Input, parseErr e
 	}
 	msg := "PATHPOLICY on the default branch is invalid: " + parseErr.Error() + "\nNothing changes until an Owner of the project fixes or removes it."
 	if onlyPolicy {
-		person, st := e.pusher(ctx)
+		person, st := e.in.Principals.Person(ctx)
 		access := 0
 		if st.IsConfirmed() && person.Username != "" {
 			access, st = in.Authz.PusherAccess(ctx)

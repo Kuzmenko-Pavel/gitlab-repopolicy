@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
 // API is the part of the GitLab client principal resolution uses.
@@ -20,8 +20,7 @@ type API interface {
 type Resolver struct {
 	api       API
 	principal module.Principal
-	// guard runs before the first API call; a true result stops it.
-	guard func(ctx context.Context) (module.Status, bool)
+	guard     module.Guard
 
 	once   sync.Once
 	person module.Person
@@ -29,7 +28,7 @@ type Resolver struct {
 }
 
 // NewResolver returns a resolver of the pusher.
-func NewResolver(api API, p module.Principal, guard func(ctx context.Context) (module.Status, bool)) *Resolver {
+func NewResolver(api API, p module.Principal, guard module.Guard) *Resolver {
 	return &Resolver{api: api, principal: p, guard: guard}
 }
 
@@ -58,7 +57,7 @@ func (r *Resolver) resolve(ctx context.Context) (module.Person, module.Status) {
 	}
 	users, err := r.api.UsersByUsername(ctx, r.principal.Username)
 	if err != nil {
-		return module.Person{}, statusOf(err)
+		return module.Person{}, refs.StatusOf(err)
 	}
 	var userID int64
 	for _, u := range users {
@@ -72,19 +71,10 @@ func (r *Resolver) resolve(ctx context.Context) (module.Person, module.Status) {
 	}
 	personal, err := r.api.UserHasKey(ctx, userID, keyID)
 	if err != nil {
-		return module.Person{}, statusOf(err)
+		return module.Person{}, refs.StatusOf(err)
 	}
 	if !personal {
 		return module.Person{}, module.Confirmed()
 	}
 	return module.Person{Username: r.principal.Username, ID: userID}, module.Confirmed()
-}
-
-func statusOf(err error) module.Status {
-	switch gitlab.KindOf(err) {
-	case gitlab.BudgetExceeded, gitlab.Deadline:
-		return module.UnknownLimit(err.Error())
-	default:
-		return module.Unknown(err.Error())
-	}
 }

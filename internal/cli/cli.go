@@ -8,7 +8,6 @@ import (
 	"runtime"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
 
@@ -43,7 +42,7 @@ type command struct {
 // App is the composition root. Modules builds the module list from the
 // server config; tests replace it to run the core with test modules.
 type App struct {
-	Modules func(modules.Settings) []module.Module
+	Modules func(modules.Settings) modules.Set
 	// System is the operating system as root commands see it; nil is the real one.
 	System System
 }

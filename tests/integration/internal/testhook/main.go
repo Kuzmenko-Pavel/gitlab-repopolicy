@@ -10,15 +10,16 @@ import (
 	"syscall"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/cli"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/tests/integration/internal/testmodule"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	app := cli.App{Modules: func(s modules.Settings) []module.Module {
-		return append(modules.Default(s), testmodule.Modules()...)
+	app := cli.App{Modules: func(s modules.Settings) modules.Set {
+		set := modules.Default(s)
+		set.Modules = append(set.Modules, testmodule.Modules()...)
+		return set
 	}, System: testSystem{}}
 	code := app.Run(ctx, os.Args[1:], os.Environ(), cli.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	stop()

@@ -1,5 +1,5 @@
-// Package modules is the only place that names concrete policy modules
-// (architecture §20). The core and the CLI work with the list it returns.
+// Package modules builds the module list of the hook (architecture §20). The
+// core works with the list it returns.
 package modules
 
 import (
@@ -21,25 +21,42 @@ type Settings struct {
 	Clock func() time.Time
 }
 
-// Default returns the modules in evaluation order: PATHPOLICY first, because
-// it guards the files of the other modules (architecture §8).
-func Default(s Settings) []module.Module {
-	return []module.Module{
-		path.New(),
-		commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
-		tag.New(),
-	}
+// Set is the module list: the trust root and the other modules in evaluation order.
+type Set struct {
+	// Root is PATHPOLICY; it guards the files of the other modules (architecture §8).
+	Root    module.Root
+	Modules []module.Module
 }
 
-// Split separates the trust root, PATHPOLICY, from the other modules of a
-// list; root is nil when the list does not have it.
-func Split(mods []module.Module) (root module.Root, rest []module.Module) {
-	for _, m := range mods {
-		if r, ok := m.(module.Root); ok && root == nil {
-			root = r
-			continue
-		}
-		rest = append(rest, m)
+// All returns every module of the set, Root first.
+func (s Set) All() []module.Module {
+	if s.Root == nil {
+		return s.Modules
 	}
-	return root, rest
+	return append([]module.Module{s.Root}, s.Modules...)
+}
+
+// Enabled returns the set without the modules that enabled rejects.
+func (s Set) Enabled(enabled func(name string) bool) Set {
+	var out Set
+	if s.Root != nil && enabled(s.Root.Name()) {
+		out.Root = s.Root
+	}
+	for _, m := range s.Modules {
+		if enabled(m.Name()) {
+			out.Modules = append(out.Modules, m)
+		}
+	}
+	return out
+}
+
+// Default returns the modules of gitlab-repopolicy.
+func Default(s Settings) Set {
+	return Set{
+		Root: path.New(),
+		Modules: []module.Module{
+			commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
+			tag.New(),
+		},
+	}
 }

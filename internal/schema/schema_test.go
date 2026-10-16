@@ -23,7 +23,7 @@ var update = flag.Bool("update", false, "rewrite schemas/ and golden files")
 func TestSchemas(t *testing.T) {
 	dir := filepath.Join("..", "..", "schemas")
 	want := map[string][]byte{}
-	for _, m := range modules.Default(modules.Settings{}) {
+	for _, m := range modules.Default(modules.Settings{}).All() {
 		doc, ok, err := ForModule(m)
 		require.NoError(t, err, m.Name())
 		if ok {

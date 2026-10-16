@@ -25,16 +25,15 @@ import (
 // queryTimeout bounds explain, admins and validate --online.
 const queryTimeout = time.Minute
 
+// settingsOf are the module settings of the server config.
+func settingsOf(cfg *config.Config) modules.Settings {
+	return modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
+		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}
+}
+
 // enabledModules builds the modules that the server config enables.
-func (a App) enabledModules(cfg *config.Config) []module.Module {
-	var mods []module.Module
-	for _, m := range a.Modules(modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}) {
-		if cfg.ModuleEnabled(m.Name()) {
-			mods = append(mods, m)
-		}
-	}
-	return mods
+func (a App) enabledModules(cfg *config.Config) modules.Set {
+	return a.Modules(settingsOf(cfg)).Enabled(cfg.ModuleEnabled)
 }
 
 // anchorPolicy reads the PATHPOLICY of a project from its default branch,
@@ -283,7 +282,7 @@ func (a App) decide(ctx context.Context, cfg *config.Config, git *gitx.Repo, r t
 		return 0, err
 	}
 	mods := a.enabledModules(cfg)
-	if r.glID == "" && needsIdentity(mods) {
+	if r.glID == "" && needsIdentity(mods.All()) {
 		users, err := api.UsersByUsername(ctx, r.user)
 		if err != nil || len(users) != 1 {
 			return 0, fmt.Errorf("--gl-id is not given and user %s cannot be looked up: %v", r.user, err)
@@ -297,9 +296,8 @@ func (a App) decide(ctx context.Context, cfg *config.Config, git *gitx.Repo, r t
 	hookEnv := hookenv.Env{Principal: module.Principal{GLID: r.glID, Username: r.user}, Protocol: r.protocol,
 		Repository: "project-" + strconv.FormatInt(r.projectID, 10), ProjectPath: r.project, ProjectID: r.projectID,
 		Git: hookenv.GitEnv{Dir: r.dir, Path: r.path}}
-	root, rest := modules.Split(mods)
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{
-		Root: root, Modules: rest, Git: git, API: api, Audit: &gitAudit{w: w, git: git, ctx: ctx}, Clock: time.Now,
+		Root: mods.Root, Modules: mods.Modules, Git: git, API: api, Audit: &gitAudit{w: w, git: git, ctx: ctx}, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: []module.RefUpdate{{Old: oldOID, New: newOID, Ref: r.ref}}})
 	write(stdio.Err, out.Stdout)

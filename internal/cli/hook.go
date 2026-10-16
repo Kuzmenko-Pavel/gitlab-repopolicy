@@ -13,11 +13,9 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/core"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/report"
 )
 
@@ -63,14 +61,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	if err != nil {
 		return reject(stdio, "git is not available to the hook")
 	}
-	ep, err := cfg.Endpoint()
-	if err != nil {
-		return reject(stdio, "the hook configuration on the server is invalid")
-	}
-	build := CurrentBuild()
-	api, err := gitlab.New(gitlab.Options{Socket: ep.Socket, BaseURL: ep.BaseURL, CAFile: cfg.CAFile,
-		TokenFile: cfg.TokenFile, Timeout: cfg.Timeouts.HTTP.Std(), MaxCalls: cfg.MaxAPICalls,
-		UserAgent: "gitlab-repopolicy/" + build.Version})
+	api, err := apiClient(cfg, cfg.MaxAPICalls)
 	if err != nil {
 		return reject(stdio, "the hook configuration on the server is invalid")
 	}
@@ -79,18 +70,11 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 		node = ""
 	}
 	writer := audit.NewWriter(audit.Options{File: cfg.Audit.File, Enforced: cfg.Mode == config.ModeEnforce,
-		Version: build.Version, Node: node, Clock: time.Now})
-	var mods []module.Module
-	for _, m := range a.Modules(modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}) {
-		if cfg.ModuleEnabled(m.Name()) {
-			mods = append(mods, m)
-		}
-	}
-	root, rest := modules.Split(mods)
+		Version: CurrentBuild().Version, Node: node, Clock: time.Now})
+	mods := a.enabledModules(cfg)
 	auditor := &gitAudit{w: writer, git: git, ctx: ctx}
 	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std()}, core.Deps{
-		Root: root, Modules: rest, Git: git, API: api, Audit: auditor, Clock: time.Now,
+		Root: mods.Root, Modules: mods.Modules, Git: git, API: api, Audit: auditor, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: updates})
 	if err := git.Close(); err != nil {

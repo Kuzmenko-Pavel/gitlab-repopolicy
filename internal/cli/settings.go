@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/settings"
 )
 
@@ -34,18 +32,11 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}
 	log := logger(stdio.Err)
-	var mods []module.Module
-	for _, m := range a.Modules(modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}) {
-		if cfg.ModuleEnabled(m.Name()) {
-			mods = append(mods, m)
-		}
-	}
-	root, _ := modules.Split(mods)
+	mods := a.enabledModules(cfg)
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	start := time.Now()
-	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: root, Modules: mods, Workers: *workers})
+	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: mods.Root, Modules: mods.All(), Workers: *workers})
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}

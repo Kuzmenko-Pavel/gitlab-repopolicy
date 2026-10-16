@@ -17,7 +17,6 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/breakglass"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 )
 
@@ -84,15 +83,13 @@ func (a App) runSelftest(ctx context.Context, args []string, _ []string, stdio S
 }
 
 func (a App) checkModules(c *checks, cfg *config.Config) {
-	var names []string
-	for _, m := range a.Modules(modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}) {
-		if !cfg.ModuleEnabled(m.Name()) {
-			continue
-		}
+	enabled := a.enabledModules(cfg).All()
+	names := make([]string, 0, len(enabled))
+	for _, m := range enabled {
 		names = append(names, m.Name())
 	}
-	presets := commit.NewSettings(cfg.CommitPolicyPresets, cfg.Timeouts.Pattern.Std(), cfg.Timeouts.PatternBudget.Std(), time.Now)
+	s := settingsOf(cfg)
+	presets := commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)
 	if cfg.ModuleEnabled(commit.New(presets).Name()) {
 		for _, e := range presets.PresetErrors() {
 			c.fail("modules", "%s", e)

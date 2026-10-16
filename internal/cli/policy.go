@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -21,18 +22,18 @@ import (
 // maxRangeCommits bounds lint-commit --range.
 const maxRangeCommits = 100_000
 
-// moduleSettings are the module settings with the presets of an optional server config.
+// moduleSettings are the module settings of an optional server config; without
+// one, of the config defaults.
 func moduleSettings(configPath string) (modules.Settings, error) {
-	s := modules.Settings{PatternTimeout: 100 * time.Millisecond, PatternBudget: 2 * time.Second, Clock: time.Now}
+	cfg := config.Defaults()
 	if configPath != "" {
-		cfg, err := loadConfig(configPath)
+		c, err := loadConfig(configPath)
 		if err != nil {
-			return s, err
+			return modules.Settings{}, err
 		}
-		s.CommitPresets = cfg.CommitPolicyPresets
-		s.PatternTimeout, s.PatternBudget = cfg.Timeouts.Pattern.Std(), cfg.Timeouts.PatternBudget.Std()
+		cfg = *c
 	}
-	return s, nil
+	return settingsOf(&cfg), nil
 }
 
 // readPolicyFile reads a policy file up to the size limit of its module.
@@ -83,7 +84,7 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		out.printf("gitlab-repopolicy validate: %v\n", err)
 		return withOutput(out.err, ExitError)
 	}
-	mods := a.Modules(s)
+	mods := a.Modules(s).All()
 	var v module.Validator
 	if *online {
 		ctx2, cancel := context.WithTimeout(ctx, queryTimeout)

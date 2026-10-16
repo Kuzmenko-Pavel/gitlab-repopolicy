@@ -108,6 +108,16 @@ func write(w io.Writer, s string) {
 
 // loadConfig reads and parses the server config.
 func loadConfig(path string) (*config.Config, error) {
+	data, err := readConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	return config.Parse(data)
+}
+
+// readConfig reads a config file up to one byte over the size limit, which
+// the parser then rejects.
+func readConfig(path string) ([]byte, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: the config path is a flag of the hook wrapper
 	if err != nil {
 		return nil, err
@@ -116,10 +126,7 @@ func loadConfig(path string) (*config.Config, error) {
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	if err != nil {
-		return nil, err
-	}
-	return config.Parse(data)
+	return data, err
 }
 
 // reject denies the push before the core runs: without a working config the

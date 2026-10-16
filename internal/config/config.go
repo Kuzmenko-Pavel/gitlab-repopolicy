@@ -135,6 +135,28 @@ func Defaults() Config {
 	}
 }
 
+// Presets reads only commitpolicy_presets of a server config, for validate
+// and lint-commit on a developer machine: the other keys, such as the URL and
+// the token of the server, are neither needed nor checked.
+func Presets(data []byte) (map[string]any, error) {
+	tree, err := strictyaml.DecodeTree(data, MaxSize)
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	if tree.Kind != strictyaml.Map {
+		return nil, fmt.Errorf("config: line %d: expected a mapping", tree.Line)
+	}
+	v, ok := tree.Fields["commitpolicy_presets"]
+	if !ok || v.Kind == strictyaml.Null {
+		return nil, nil
+	}
+	presets, ok := v.Interface().(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("config: line %d: commitpolicy_presets: expected a mapping", v.Line)
+	}
+	return presets, nil
+}
+
 // Parse decodes data over Defaults and validates the result.
 func Parse(data []byte) (*Config, error) {
 	cfg := Defaults()

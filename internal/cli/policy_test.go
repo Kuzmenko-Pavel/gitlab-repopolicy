@@ -94,3 +94,34 @@ func TestLintCommit_Usage(t *testing.T) {
 	assert.Equal(t, ExitError, code, "outside of a repository")
 	assert.Contains(t, errOut, "git")
 }
+
+func TestLintCommit_Ruleset(t *testing.T) {
+	policy := "version: 1\nrulesets:\n  - name: protected\n    refs: protected\n    rules:\n      type-enum: {level: error, value: [feat, fix]}\n" +
+		"  - name: all\n    rules:\n      header-max-length: {level: error, value: 20}\n"
+	inDir(t, map[string]string{"COMMITPOLICY": policy})
+	code, out, _ := run(t, "lint-commit", "-m", "chore: a header longer than twenty")
+	assert.Equal(t, ExitError, code)
+	assert.Contains(t, out, "[protected]")
+	assert.Contains(t, out, "[all]", "without --ruleset every ruleset applies")
+	code, out, _ = run(t, "lint-commit", "--ruleset", "all", "-m", "chore: a header longer than twenty")
+	assert.Equal(t, ExitError, code)
+	assert.NotContains(t, out, "[protected]")
+	code, out, _ = run(t, "lint-commit", "--ruleset", "protected", "--ruleset", "all", "-m", "fix: short")
+	assert.Equal(t, ExitOK, code, out)
+	code, _, errOut := run(t, "lint-commit", "--ruleset", "release", "-m", "fix: short")
+	assert.Equal(t, ExitError, code)
+	assert.Contains(t, errOut, `ruleset "release" is not in the file; it has protected, all`)
+}
+
+func TestLintCommit_PresetsOnlyConfig(t *testing.T) {
+	inDir(t, map[string]string{
+		"COMMITPOLICY": "version: 1\nextends: org\nrulesets:\n  - name: r\n",
+		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\ncommitpolicy_presets:\n  org:\n    rules:\n      type-enum: {level: error, value: [feat]}\n",
+	})
+	code, out, errOut := run(t, "lint-commit", "--config", "config.yaml", "-m", "fix: no")
+	assert.Equal(t, ExitError, code, errOut)
+	assert.Contains(t, out, `type-enum: "fix" is not one of feat`, "the preset applies, the rest of the config is not read")
+	code, out, _ = run(t, "validate", "--config", "config.yaml")
+	assert.Equal(t, ExitOK, code)
+	assert.Contains(t, out, "COMMITPOLICY: valid")
+}

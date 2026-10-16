@@ -1,0 +1,18 @@
+# PATHPOLICY stays with the platform team; the other policy files and the
+# GitLab agent configuration are delegated to their owners by path rules.
+version: 1
+
+admins: [platform-lead]
+
+rules:
+  - name: commit-policy
+    paths: ["COMMITPOLICY"]
+    allow: [dev-lead, platform-lead]
+
+  - name: tag-policy
+    paths: ["TAGPOLICY"]
+    allow: [release-lead, platform-lead]
+
+  - name: kubernetes-agents
+    paths: [".gitlab/agents/**"]
+    allow: [cluster-owner]

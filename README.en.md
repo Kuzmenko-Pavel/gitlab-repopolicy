@@ -1,6 +1,13 @@
 [![Українська](https://img.shields.io/badge/lang-Українська-lightgrey.svg)](README.md)
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.en.md)
 
+[![CI](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/actions/workflows/ci.yml?query=branch%3Amain)
+[![e2e](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/actions/workflows/e2e.yml?query=branch%3Amain)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kuzmenko-Pavel/gitlab-repopolicy/badge)](https://scorecard.dev/viewer/?uri=github.com/Kuzmenko-Pavel/gitlab-repopolicy)
+[![Release](https://img.shields.io/github/v/release/Kuzmenko-Pavel/gitlab-repopolicy?sort=semver&include_prereleases)](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases)
+[![License](https://img.shields.io/github/license/Kuzmenko-Pavel/gitlab-repopolicy)](./LICENSE)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](#documentation)
+
 # gitlab-repopolicy
 
 Server-side checks of repository rules for GitLab Self-Managed. A global `pre-receive` hook of Gitaly checks every push against policy files that live in the repository itself:

@@ -78,9 +78,11 @@ YAMLLINT_VERSION := 1.38.0
 # Go tools, one module per tool under tools/<name>.
 TOOLS  := actionlint benchstat cosign gitleaks golangci-lint goreleaser govulncheck syft
 BINARY := bin/gitlab-repopolicy
-# Commits of this author are not linted: Dependabot capitalizes "Bump" and has
-# no option to change it. The PR title, which becomes the squash commit, still is.
+# Dependabot capitalizes "Bump" from the commit history and resets the PR title on
+# every rebase, so its commits and PR titles are not linted. The squash commit on
+# main is linted on push; merge with gh pr merge --subject in lower case.
 DEPENDABOT_EMAIL := 49699333+dependabot[bot]@users.noreply.github.com
+DEPENDABOT_LOGIN := dependabot[bot]
 # Repository slug for release URLs and keyless signature identity.
 GITHUB_REPOSITORY_SLUG := Kuzmenko-Pavel/gitlab-repopolicy
 # Consumer verification of release assets in the current directory.
@@ -149,6 +151,10 @@ code-lint-commits: code-build
 	git show "$$policy:COMMITPOLICY" > bin/COMMITPOLICY.base; \
 	$(BINARY) lint-commit --range "$$range" -f bin/COMMITPOLICY.base --skip-author '$(DEPENDABOT_EMAIL)'; \
 	if [ -n "$(GITHUB_EVENT_PATH)" ] && jq -e '.pull_request' "$(GITHUB_EVENT_PATH)" > /dev/null; then \
+		if [ "$$(jq -r '.pull_request.user.login // ""' "$(GITHUB_EVENT_PATH)")" = '$(DEPENDABOT_LOGIN)' ]; then \
+			echo "code-lint-commits: pull request of $(DEPENDABOT_LOGIN), the title is linted as the squash commit on main"; \
+			exit 0; \
+		fi; \
 		title=$$(jq -r '.pull_request.title' "$(GITHUB_EVENT_PATH)"); \
 		number=$$(jq -r '.pull_request.number' "$(GITHUB_EVENT_PATH)"); \
 		msg="$$title (#$$number)"; \

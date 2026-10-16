@@ -33,7 +33,7 @@ make code-lint test-unit test-integration
 | --- | --- |
 | `code-fmt` | форматує Go-код |
 | `code-lint` | golangci-lint з правилами залежностей пакетів, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом |
-| `code-lint-commits` | повідомлення комітів після `BASE_REF` за `COMMITPOLICY`, взятою з `BASE_REF`, а не з гілки. Коміти Dependabot пропускаються, бо він пише `Bump` з великої літери і змінити це не можна. Заголовок PR, з якого виходить squash-коміт, перевіряється завжди |
+| `code-lint-commits` | повідомлення комітів після `BASE_REF` за `COMMITPOLICY`, взятою з `BASE_REF`, а не з гілки. Коміти й заголовки PR від Dependabot пропускаються: він бере регістр `Bump` з історії й повертає заголовок при кожному rebase. Його PR мержаться з `gh pr merge --squash --subject "<тип>(deps): bump ..."`, і squash-коміт у main перевіряється під час push |
 | `code-generate` | перегенерує `schemas/` і golden-файли виводу push |
 | `code-build` | бінарник у `bin/gitlab-repopolicy` |
 | `test-unit` | unit-тести з race detector |

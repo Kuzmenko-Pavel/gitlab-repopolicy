@@ -13,7 +13,7 @@ type schemaFile struct {
 }
 
 type schemaRuleset struct {
-	Name    string       `yaml:"name" schema:"required"`
+	Name    schemaName   `yaml:"name" schema:"required"`
 	Refs    schemaRefs   `yaml:"refs" desc:"all (default), default, protected or a list of ref patterns such as refs/heads/release/*."`
 	Format  schemaFormat `yaml:"format" desc:"conventional (default): type(scope)!: subject; free: the header is the subject."`
 	Except  schemaExcept `yaml:"except"`
@@ -107,6 +107,7 @@ type schemaExamples struct {
 type (
 	schemaUsers   []string
 	schemaVersion int
+	schemaName    string
 	schemaMode    string
 	schemaFormat  string
 	schemaLevel   string
@@ -124,6 +125,9 @@ func enum(values ...string) map[string]any {
 
 func (schemaVersion) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "const": 1}
+}
+func (schemaName) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
 }
 func (schemaMode) JSONSchema() map[string]any   { return enum("warn", "enforce") }
 func (schemaFormat) JSONSchema() map[string]any { return enum("conventional", "free") }

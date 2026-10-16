@@ -139,8 +139,8 @@ func TestTagPolicy_SignerNotAllowed(t *testing.T) {
 	s, base, _, dev := tagStand(t)
 	s.makeTag("v1.0.0-prod", "v1.0.0-prod", base, "commit", &dev)
 	r := s.Push(alice, "refs/tags/v1.0.0-prod")
-	assertDenied(t, r, "TAGPOLICY [prod] refs/tags/v1.0.0-prod: tag signer not allowed", "Prod releases are signed by lead.",
-		"signed by: dev ("+dev.fpr+")", "allowed:   lead")
+	assertDenied(t, r, "TAGPOLICY rule \"prod\", tag v1.0.0-prod: this key may not sign these tags", "Prod releases are signed by lead.",
+		`signed with: key "dev" from TAGPOLICY (`, dev.fpr, "allowed keys: lead")
 	assert.Empty(t, s.RemoteRev("refs/tags/v1.0.0-prod"))
 	ev := Events(s.Audit(), "decision")
 	require.Len(t, ev, 1)
@@ -149,34 +149,33 @@ func TestTagPolicy_SignerNotAllowed(t *testing.T) {
 
 	stranger := sshSigner(t)
 	s.makeTag("v1.0.1-prod", "v1.0.1-prod", base, "commit", &stranger)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.1-prod"), "tag signer not allowed", "a key that is not in TAGPOLICY", stranger.fpr)
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.1-prod"), "this key may not sign these tags", "a key that is not in TAGPOLICY", stranger.fpr)
 }
 
 func TestTagPolicy_Lightweight(t *testing.T) {
 	s, base, _, _ := tagStand(t)
 	s.git(s.Work, "update-ref", "refs/tags/v1.0.0-prod", base)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "TAGPOLICY [prod] refs/tags/v1.0.0-prod: tag is not signed")
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "TAGPOLICY rule \"prod\", tag v1.0.0-prod: the tag must be signed")
 }
 
 func TestTagPolicy_Unsigned(t *testing.T) {
 	s, base, _, _ := tagStand(t)
 	s.git(s.Work, "tag", "-a", "-m", "release", "v1.0.0-prod", base)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "tag is not signed", "git tag -s v1.0.0-prod")
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "the tag must be signed", "git tag -s v1.0.0-prod")
 }
 
 func TestTagPolicy_TagNameMismatch(t *testing.T) {
 	s, base, _, dev := tagStand(t)
 	// A staging tag object, validly signed by dev, pushed under a prod name.
 	s.makeTag("v1.0.0-prod", "v1.0.0-staging", base, "commit", &dev)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "tag object does not match ref",
-		`named "v1.0.0-staging", but it is pushed as "v1.0.0-prod"`)
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), `the tag was signed as "v1.0.0-staging" but is pushed as "v1.0.0-prod"`)
 }
 
 func TestTagPolicy_TagOfTag(t *testing.T) {
 	s, base, lead, _ := tagStand(t)
 	inner := s.makeTag("inner", "inner", base, "commit", nil)
 	s.makeTag("v1.0.0-prod", "v1.0.0-prod", inner, "tag", &lead)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "tag object does not match ref", "points to a tag")
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "the tag points to a tag, not a commit")
 }
 
 func TestTagPolicy_OutsideRules(t *testing.T) {
@@ -195,7 +194,7 @@ func TestTagPolicy_MoveAndDelete(t *testing.T) {
 	next := s.Commit("next", map[string]string{"a": "1"})
 	s.Seed("HEAD:refs/heads/main")
 	s.git(s.Work, "tag", "-f", "-a", "-m", "moved", "v1.0.0-prod", next)
-	assertDenied(t, s.Push(alice, "+refs/tags/v1.0.0-prod"), "tag is not signed")
+	assertDenied(t, s.Push(alice, "+refs/tags/v1.0.0-prod"), "the tag must be signed")
 
 	s.makeTag("v1.0.0-prod", "v1.0.0-prod", next, "commit", &lead)
 	assertAllowed(t, s.Push(alice, "+refs/tags/v1.0.0-prod"))
@@ -210,14 +209,14 @@ func TestTagPolicy_SHA256(t *testing.T) {
 	s.makeTag("v1.0.0-prod", "v1.0.0-prod", base, "commit", &lead)
 	assertAllowed(t, s.Push(alice, "refs/tags/v1.0.0-prod"))
 	s.makeTag("v1.0.1-prod", "v1.0.1-prod", base, "commit", &dev)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.1-prod"), "tag signer not allowed")
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.1-prod"), "this key may not sign these tags")
 }
 
 func TestTagPolicy_InvalidAnchor(t *testing.T) {
 	lead := sshSigner(t)
 	s, base := mainWith(t, map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + lead.key + "\nrules:\n  - name: prod\n    tags: 'v.*'\n    signers: [nobody]\n"})
 	s.makeTag("v1.0.0", "v1.0.0", base, "commit", &lead)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0"), "TAGPOLICY refs/tags/v1.0.0: policy is invalid", `"nobody" is not a label in keys`)
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0"), "TAGPOLICY, tag v1.0.0: TAGPOLICY in main is broken", `"nobody" is not a label in keys`)
 	require.NotEmpty(t, Events(s.Audit(), "invalid_policy"))
 
 	// Branches and tag deletions pass.
@@ -230,7 +229,7 @@ func TestTagPolicy_InvalidAnchor(t *testing.T) {
 func TestTagPolicy_InvalidNewVersionOnFeatureBranch(t *testing.T) {
 	s, _, _, _ := tagStand(t)
 	s.Commit("break the policy", map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + strings.TrimSpace(sshSigner(t).key) + "\nrules:\n  - name: prod\n    tags: 'v('\n    signers: [lead]\n"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "TAGPOLICY refs/heads/feature: new policy version is invalid", "tags:")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "TAGPOLICY, branch feature: the changed TAGPOLICY is invalid", "tags:")
 
 	private := "version: 1\nkeys:\n  lead: |\n    -----BEGIN OPENSSH PRIVATE KEY-----\n    b3BlbnNzaC1rZXktdjEAAAAA\n    -----END OPENSSH PRIVATE KEY-----\n"
 	s.Commit("leak a key", map[string]string{"TAGPOLICY": private})
@@ -250,7 +249,7 @@ func TestTagPolicy_ExpiredKeyInNewVersion(t *testing.T) {
 	require.NoError(t, w.Close())
 	expired := tagSigner{key: pub.String()}
 	s.Commit("add an expired key", map[string]string{"TAGPOLICY": tagPolicyFor(expired, dev)})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "new policy version is invalid", "keys.lead: the key", "expired")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "is invalid", "keys.lead: the key", "expired")
 }
 
 func TestTagPolicy_DeletionChecksWithOldPolicy(t *testing.T) {
@@ -258,7 +257,7 @@ func TestTagPolicy_DeletionChecksWithOldPolicy(t *testing.T) {
 	s.Commit("remove TAGPOLICY", map[string]string{"TAGPOLICY": ""})
 	s.makeTag("v1.0.0-prod", "v1.0.0-prod", base, "commit", &dev)
 	r := s.Push(alice, "HEAD:refs/heads/main", "refs/tags/v1.0.0-prod")
-	assertDenied(t, r, "tag signer not allowed")
+	assertDenied(t, r, "this key may not sign these tags")
 	assert.NotEqual(t, s.Rev("HEAD"), s.RemoteRev("refs/heads/main"), "the push is atomic for the hook")
 
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))

@@ -15,7 +15,7 @@ import (
 // The e2e part of PATHPOLICY: principals, admins and Owner recovery against
 // the real members API.
 
-const adminDenied = "gitlab-repopolicy: PATHPOLICY policy change denied. See push output."
+const adminDenied = "gitlab-repopolicy: only PATHPOLICY admins may change PATHPOLICY (admins: "
 
 // policyWithAdmins is ciPolicy with other admins.
 func policyWithAdmins(admins ...string) string {
@@ -37,7 +37,7 @@ func TestAcceptance_UnknownUsername(t *testing.T) {
 	ghost := uniq("ghost")
 	_, err := commit(t, user("alice"), p, "main", "", "chore: add path policy",
 		create("PATHPOLICY", strings.Replace(ciPolicy, "allow: [alice]", "allow: [alice, "+ghost+"]", 1)))
-	requireHookDenied(t, err, "gitlab-repopolicy: PATHPOLICY new policy version is invalid. See push output.")
+	requireHookDenied(t, err, "gitlab-repopolicy: the changed PATHPOLICY is invalid: ")
 	e := requireEvent(t, p, "deny of the policy", decisionOn("refs/heads/main"))
 	assert.Equal(t, "invalid_policy_update", e.Code)
 	require.Len(t, e.Violations, 1)
@@ -127,7 +127,8 @@ func TestRecovery_OwnerViaParentGroup(t *testing.T) {
 }
 
 // TestRecovery_NonOwnerDenied: in recovery a Maintainer is
-// refused, and the push output names the recovery condition.
+// refused like outside recovery: the output names the admins of the
+// default branch and does not offer recovery.
 func TestRecovery_NonOwnerDenied(t *testing.T) {
 	t.Parallel()
 	p := lostAdmin(t, "non-owner", removeMember(t))
@@ -136,7 +137,8 @@ func TestRecovery_NonOwnerDenied(t *testing.T) {
 	g.commitFile("PATHPOLICY", policyWithAdmins("alice"), "chore: change path policy")
 	out, err := g.push(httpsURL(alice.Token, p.Path), "", "HEAD:refs/heads/main")
 	requirePushDenied(t, out, err, adminDenied)
-	assert.Contains(t, out, "Without an effective admin, an Owner of the project may change it (recovery).")
+	assert.Contains(t, out, "admins: admin-")
+	assert.NotContains(t, out, "Owner")
 	e := requireEvent(t, p, "deny of alice", func(e auditEvent) bool { return e.Event == "decision" && e.Decision == "deny" })
 	assert.Equal(t, "policy_admin_violation", e.Code)
 	assert.Equal(t, "http", e.Protocol)

@@ -61,7 +61,7 @@ func TestTrust_InvalidAnchorPolicyFailMode(t *testing.T) {
 	t.Run("FailClosed", func(t *testing.T) {
 		s, _ := mainWith(t, map[string]string{"GUARDPOLICY": "rules: []\n"})
 		s.Commit("any change", map[string]string{"a.txt": "a"})
-		assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "GUARDPOLICY refs/heads/main: policy is invalid")
+		assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "GUARDPOLICY, branch main: the policy in the default branch is broken")
 		assert.Len(t, Events(s.Audit(), "invalid_policy"), 1)
 	})
 	t.Run("FailOpen", func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestTrust_NoAnchor(t *testing.T) {
 
 	empty := NewStand(t)
 	empty.Commit("first", map[string]string{"GUARDPOLICY": guardNobody})
-	assertDenied(t, empty.Push(alice, "HEAD:refs/heads/main"), "new policy version is invalid")
+	assertDenied(t, empty.Push(alice, "HEAD:refs/heads/main"), "is invalid")
 }
 
 func TestEntry_NonProjectRepositoryAllowedSilently(t *testing.T) {
@@ -118,7 +118,7 @@ func TestAcceptance_PolicyFileKinds(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 			change(s)
-			assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "new policy version is invalid")
+			assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "is invalid")
 		})
 	}
 }

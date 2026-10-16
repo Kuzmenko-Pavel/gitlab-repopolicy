@@ -29,6 +29,7 @@ func (r *receive) newInput() *module.Input {
 		Refs:           refs.New(r.defaultRef, r.req.Env.ProjectID, r.deps.API, r.guard),
 		Changes:        changes.New(r.deps.Git, r.defaultRef),
 		Principal:      r.req.Env.Principal,
+		Protocol:       r.req.Env.Protocol,
 		Principals:     resolver,
 		Objects:        objects{git: r.deps.Git},
 		Clock:          r.deps.Clock,
@@ -80,7 +81,7 @@ func (r *receive) checkServiceAccount(ctx context.Context) module.Status {
 	}
 	r.events = append(r.events, r.event(audit.Event{Event: audit.EventAuthorizationBackendFailure,
 		Code: module.CodeAuthorizationBackend, Reason: reason}))
-	return module.Unknown(reason)
+	return module.UnknownSetup(reason)
 }
 
 // objects adapts gitx to module.ObjectReader.

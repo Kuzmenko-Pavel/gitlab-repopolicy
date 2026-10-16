@@ -155,6 +155,7 @@ func (p Principal) Kind() (PrincipalKind, int64) {
 type Status struct {
 	confirmed bool
 	limit     bool
+	setup     bool
 	reason    string
 }
 
@@ -167,6 +168,14 @@ func Unknown(reason string) Status { return Status{reason: reason} }
 // UnknownLimit is the status of a question left unanswered because the call
 // budget or the time limit of the receive ran out (limit_exceeded).
 func UnknownLimit(reason string) Status { return Status{limit: true, reason: reason} }
+
+// UnknownSetup is the status of a question that GitLab will not answer until
+// the server is set up right, for example the token is rejected or the
+// service account does not see the project: retrying does not help.
+func UnknownSetup(reason string) Status { return Status{setup: true, reason: reason} }
+
+// IsSetup reports whether the answer is unknown because of the setup of the server.
+func (s Status) IsSetup() bool { return !s.confirmed && s.setup }
 
 // IsLimit reports whether the answer is unknown because a limit ran out.
 func (s Status) IsLimit() bool { return !s.confirmed && s.limit }

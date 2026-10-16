@@ -237,7 +237,7 @@ func TestRecovery_OwnerDeniedWhenAdminsAlive(t *testing.T) {
 	e := policyChange("owner", 50)
 	res := e.evaluate(t, basePolicy)
 	assert.Equal(t, []string{module.CodePolicyAdmin}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "Owner recovery is possible only while no admin is effective")
+	assert.Contains(t, res.Violations[0].Facts, "admins: platform-lead, sre-lead")
 	assert.Contains(t, res.Violations[0].Reason, "2 effective admins")
 }
 
@@ -247,7 +247,7 @@ func TestRecovery_LastAdminRemoved(t *testing.T) {
 	res := e.evaluate(t, basePolicy)
 	assert.Equal(t, module.Allow, res.Decision)
 	require.Len(t, res.Notices, 1)
-	assert.Contains(t, res.Notices[0], "PATHPOLICY recovery by Owner owner")
+	assert.Contains(t, res.Notices[0], "PATHPOLICY is changed by Owner owner because it has no working admins")
 	require.Len(t, res.Events, 1)
 	assert.Equal(t, "policy_recovery", res.Events[0].Event)
 }
@@ -277,7 +277,7 @@ func TestRecovery_NonOwnerDenied(t *testing.T) {
 	e.authz.users = map[string]module.User{}
 	res := e.evaluate(t, basePolicy)
 	assert.Equal(t, []string{module.CodePolicyAdmin}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "an Owner of the project may change it (recovery)")
+	assert.Equal(t, module.CodePolicyAdmin, res.Violations[0].Code)
 }
 
 func TestRecovery_PushAlsoTouchesProtected(t *testing.T) {
@@ -377,7 +377,7 @@ func TestDeletionWarning(t *testing.T) {
 	res := e.evaluate(t, basePolicy)
 	assert.Equal(t, module.Allow, res.Decision)
 	require.Len(t, res.Notices, 1)
-	assert.Contains(t, res.Notices[0], "COMMITPOLICY and TAGPOLICY can then be changed by anyone")
+	assert.Contains(t, res.Notices[0], "anyone who can push may change COMMITPOLICY and TAGPOLICY")
 }
 
 func TestAcceptance_LockoutPrevented(t *testing.T) {
@@ -388,8 +388,14 @@ func TestAcceptance_LockoutPrevented(t *testing.T) {
 	assert.Empty(t, p.Validate(context.Background(), a))
 	a.levels = map[int64]int{1: 30, 2: 30}
 	got := p.Validate(context.Background(), a)
-	require.Len(t, got, 1)
+	require.Len(t, got, 2, "one line per admin, without the role GitLab returned")
 	assert.Equal(t, module.CodeLockoutPrevented, got[0].Code)
+	assert.Equal(t, `admin "platform-lead" is not an active user with Maintainer or higher in this project`, got[0].Msg)
+	a.levels = map[int64]int{1: 40, 2: 30}
+	got = p.Validate(context.Background(), a)
+	require.Len(t, got, 2)
+	assert.True(t, got[0].Warning, "a file with a working admin is valid")
+	assert.Equal(t, "1 of 2 admins work", got[1].Msg)
 	a.usersSt = module.Unknown("timeout")
 	got = p.Validate(context.Background(), a)
 	require.Len(t, got, 1)

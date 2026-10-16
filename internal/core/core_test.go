@@ -194,7 +194,7 @@ func TestModulePanic_FailClosed(t *testing.T) {
 	r.stage(c2)
 	res := r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 	assert.False(t, res.out.Allow)
-	assert.Contains(t, res.out.Stderr, "TESTPOLICY: push could not be verified")
+	assert.Contains(t, res.out.Stderr, "TESTPOLICY: internal error: the push was not checked and is rejected")
 	assert.NotContains(t, res.out.Stderr, "boom", "panic details stay in audit")
 	ev := events(res.audit, audit.EventInternalError)
 	require.Len(t, ev, 1)
@@ -209,7 +209,7 @@ func TestModulePanic_FailOpen(t *testing.T) {
 	r.stage(c2)
 	res := r.run([]module.Module{open}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 	assert.True(t, res.out.Allow)
-	assert.Contains(t, res.out.Stdout, "skipped because of an internal error")
+	assert.Contains(t, res.out.Stdout, "OPENPOLICY was not checked because of an internal error")
 }
 
 func TestLimits_Total(t *testing.T) {
@@ -223,7 +223,7 @@ func TestLimits_Total(t *testing.T) {
 	res := r.run([]module.Module{closed}, s, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.False(t, res.out.Allow)
-	assert.Contains(t, res.out.Stderr, "limits (time 200ms")
+	assert.Contains(t, res.out.Stderr, "limit reached: the time of a push (timeouts.total 200ms)")
 	assert.Equal(t, module.CodeLimitExceeded, events(res.audit, audit.EventDecision)[0].Code)
 }
 
@@ -241,7 +241,7 @@ func TestInvalidAnchorPolicy(t *testing.T) {
 
 	res = r.run([]module.Module{closed, open}, enforce, nil, "", upd)
 	assert.False(t, res.out.Allow, "FailClosed: deny")
-	assert.Contains(t, res.out.Stderr, "TESTPOLICY refs/heads/main: policy is invalid")
+	assert.Contains(t, res.out.Stderr, "TESTPOLICY, branch main: the policy in the default branch is broken")
 	assert.Len(t, events(res.audit, audit.EventInvalidPolicy), 2)
 
 	res = r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: zero40, Ref: "refs/heads/old"})
@@ -267,7 +267,7 @@ func TestPolicyFileKinds(t *testing.T) {
 			r.stage(c2)
 			res := r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
 			assert.False(t, res.out.Allow)
-			assert.Contains(t, res.out.Stderr, "policy is invalid")
+			assert.Contains(t, res.out.Stderr, "the policy in the default branch is broken")
 		})
 	}
 }
@@ -280,7 +280,7 @@ func TestAcceptance(t *testing.T) {
 	r.stage(bad)
 	res := r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: zero40, New: bad, Ref: "refs/heads/feature"})
 	assert.False(t, res.out.Allow, "invalid new version is rejected on a feature branch")
-	assert.Contains(t, res.out.Stderr, "new policy version is invalid")
+	assert.Contains(t, res.out.Stderr, "the changed TESTPOLICY is invalid")
 	assert.Contains(t, res.out.Stderr, "bad-new is rejected at acceptance")
 
 	r.git(r.work, "reset", "-q", "--hard", c1)

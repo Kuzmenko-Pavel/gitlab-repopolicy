@@ -122,6 +122,8 @@ func StatusOf(err error) module.Status {
 	switch gitlab.KindOf(err) {
 	case gitlab.BudgetExceeded, gitlab.Deadline:
 		return module.UnknownLimit(err.Error())
+	case gitlab.Unauthorized:
+		return module.UnknownSetup(err.Error())
 	default:
 		return module.Unknown(err.Error())
 	}

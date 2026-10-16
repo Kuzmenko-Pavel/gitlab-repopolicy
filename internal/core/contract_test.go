@@ -56,7 +56,7 @@ func TestRoot_EvaluateAbsent(t *testing.T) {
 	assert.Equal(t, c1, got.Anchor)
 	assert.Equal(t, []string{"TESTPOLICY"}, got.PolicyFiles)
 	assert.False(t, res.out.Allow)
-	assert.Contains(t, res.out.Stderr, "new policy has no effective administrators")
+	assert.Contains(t, res.out.Stderr, "the changed PATHPOLICY would have no working admin")
 	assert.Empty(t, events(res.audit, audit.EventPolicyChange), "a rejected push does not change the policy")
 
 	got = nil
@@ -235,7 +235,7 @@ func TestAuditFailureKeepsDecision(t *testing.T) {
 		Request{Env: env, Updates: []module.RefUpdate{{Old: c1, New: c2, Ref: "refs/heads/main"}}})
 	assert.False(t, out.Allow)
 	assert.ErrorContains(t, out.AuditErr, "disk full")
-	assert.Contains(t, out.Stderr, "user: alice (key 5)")
+	assert.Contains(t, out.Stderr, "checked as: alice (SSH key 5)")
 }
 
 type listedPolicy struct{ users []string }

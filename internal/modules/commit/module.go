@@ -93,12 +93,17 @@ func (m *Module) Parse(blob []byte) (module.Policy, error) {
 }
 
 // EvaluateInvalid skips the check when the policy on the anchor is invalid.
-func (*Module) EvaluateInvalid(_ context.Context, _ *module.Input, parseErr error) (*module.Result, error) {
+func (*Module) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
+	branch := "the default branch"
+	if in.Refs != nil {
+		branch = strings.TrimPrefix(in.Refs.Default(), "refs/heads/")
+	}
 	return &module.Result{
 		Decision: module.Warn,
 		Touched:  true,
 		Violations: []module.Violation{{Code: module.CodeInvalidPolicy,
-			Message: "COMMITPOLICY on the default branch is invalid: " + parseErr.Error() + "\nCommit messages are not checked until it is fixed."}},
+			Title: "COMMITPOLICY in " + branch + " is broken, so commit messages are not checked until it is fixed",
+			Facts: []string{"problem: COMMITPOLICY " + parseErr.Error()}}},
 		Events: []audit.Event{{Event: audit.EventInvalidCommitPolicy, Decision: "warn", Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}},
 	}, nil
 }

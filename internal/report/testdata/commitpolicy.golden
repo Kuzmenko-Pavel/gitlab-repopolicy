@@ -1,22 +1,17 @@
-gitlab-repopolicy: push rejected (COMMITPOLICY: 3 violations)
+gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
 
-COMMITPOLICY [conventional] refs/heads/main: commit message format
-  Commits follow Conventional Commits.
+COMMITPOLICY ruleset "conventional", branch main: 2 commit messages do not follow the format
+  required: type(scope): subject, for example feat(api): add refunds
+  types: feat, fix
   commits:
     3f2a9c1aa "Fix deploy."
       - type-enum: "Fix" is not one of feat, fix
       - subject-full-stop: the subject must not end with a full stop
     9b1d2e3ff "wip"
       - header: expected "type(scope): subject"
-  fix: git rebase -i and reword, or enable squash on merge
+  Commits follow Conventional Commits.
+  how to fix: git rebase -i and reword these commits, then push again
 
-COMMITPOLICY [conventional] refs/heads/main: commit message check timed out
-  commits:
-    77aa01bc2 "feat: x"
-      - pattern: not checked in time (match timeout)
-
-COMMITPOLICY [conventional] refs/heads/import: push could not be verified
-  More than 10000 commits enter the ref; COMMITPOLICY does not check pushes this large.
-
-user: alice (id 314)
-GL-HOOK-ERR: gitlab-repopolicy: COMMITPOLICY [conventional] commit message format; COMMITPOLICY [conventional] commit message check timed out; COMMITPOLICY [conventional] push could not be verified. See push output.
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
+checked as: alice (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: 2 commit messages do not follow the format (COMMITPOLICY ruleset "conventional", branch main)

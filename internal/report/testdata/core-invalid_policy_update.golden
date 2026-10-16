@@ -1,9 +1,0 @@
-gitlab-repopolicy: push rejected (PATHPOLICY: 1 violation)
-
-PATHPOLICY refs/heads/feature: new policy version is invalid
-  files:
-    PATHPOLICY
-      - line 3: field allwo not found in type
-
-user: alice (id 314)
-GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY new policy version is invalid. See push output.

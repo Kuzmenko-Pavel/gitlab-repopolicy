@@ -18,10 +18,12 @@ type evaluation struct {
 	p   *Policy
 	in  *module.Input
 	res *module.Result
+	// recovered are the refs of an Owner recovery in this push.
+	recovered map[string]bool
 }
 
 func newEvaluation(p *Policy, in *module.Input) *evaluation {
-	return &evaluation{p: p, in: in, res: &module.Result{}}
+	return &evaluation{p: p, in: in, res: &module.Result{}, recovered: map[string]bool{}}
 }
 
 func (e *evaluation) deny(v module.Violation) {
@@ -32,11 +34,38 @@ func (e *evaluation) deny(v module.Violation) {
 
 // unknown turns an unanswered question into a denial: PATHPOLICY fails closed.
 func (e *evaluation) unknown(st module.Status, rule, ref string) {
-	code, msg := module.CodeAuthorizationBackend, "GitLab could not confirm the authorization. Retry later; administrators are alerted."
-	if st.IsLimit() {
-		code, msg = module.CodeLimitExceeded, "The push exceeds the limits of the hook (time or API calls). Split it or ask an administrator."
+	e.deny(Unanswered(st, rule, ref))
+}
+
+// Unanswered is the denial when GitLab did not answer a question of a rule:
+// a limit of the push, a setting of the server or a failure of the API. None
+// of them is the fault of the pusher.
+func Unanswered(st module.Status, rule, ref string) module.Violation {
+	v := module.Violation{Code: module.CodeAuthorizationBackend, Rule: rule, Ref: ref, Reason: st.Reason()}
+	switch {
+	case st.IsLimit():
+		v.Code = module.CodeLimitExceeded
+		v.Facts = []string{"limit reached: " + limitName(st.Reason())}
+		v.Hint = "if the push is large, push it in parts; if it is small, the limit is too low on the server"
+		v.Summary = "the check did not finish within the server limits (" + limitName(st.Reason()) + "); the push is rejected"
+	case st.IsSetup():
+		v.Title = "this project is not connected to gitlab-repopolicy correctly"
+		v.Facts = []string{"this is a setting of the server, not a problem with your permissions; retrying will not help"}
+		v.Summary = "this project is not connected to gitlab-repopolicy correctly; not a problem with your permissions, ask an instance administrator"
+	default:
+		v.Facts = []string{"this is a problem of the server, not of your permissions"}
+		v.Hint = "retry in a few minutes"
+		v.Summary = "could not check permissions: the GitLab API did not answer; not a problem with your permissions, retry in a few minutes"
 	}
-	e.deny(module.Violation{Code: code, Rule: rule, Ref: ref, Reason: st.Reason(), Message: msg})
+	return v
+}
+
+// limitName names the limit that ran out, after the error of the GitLab client.
+func limitName(reason string) string {
+	if strings.Contains(reason, "budget") {
+		return "the number of GitLab API calls of a push (max_api_calls)"
+	}
+	return "the time of a push (timeouts.total)"
 }
 
 // scopeOf returns the class of the ref as a change scope; it asks GitLab only
@@ -64,6 +93,12 @@ func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 		}
 		if err := e.update(ctx, u); err != nil {
 			return nil, err
+		}
+	}
+	for i, v := range e.res.Violations {
+		if v.Code == module.CodeProtectedPath && e.recovered[v.Ref] {
+			// The people of the rule are the admins who left: an Owner recovers PATHPOLICY first.
+			e.res.Violations[i].Hint = "a recovery push may change only PATHPOLICY: push these files after the new PATHPOLICY is in the default branch"
 		}
 	}
 	return e.res, nil
@@ -130,11 +165,18 @@ func (e *evaluation) notCommit(ctx context.Context, u module.RefUpdate) {
 			return
 		}
 		if applies {
-			e.deny(module.Violation{Code: module.CodeTagObjectInvalid, Rule: r.name, Ref: u.Ref,
-				Message: "The tag does not point to a commit, so its content cannot be checked."})
+			e.deny(notCommitTag(r.name, u.Ref))
 			return
 		}
 	}
+}
+
+func notCommitTag(rule, ref string) module.Violation {
+	name := strings.TrimPrefix(ref, "refs/tags/")
+	return module.Violation{Code: module.CodeTagObjectInvalid, Rule: rule, Ref: ref,
+		Title:   "the tag does not point to a commit, so its files cannot be checked",
+		Hint:    fmt.Sprintf("tag a commit: git tag -s %s <commit>", name),
+		Summary: fmt.Sprintf("tag %s does not point to a commit, so its files cannot be checked", name)}
 }
 
 // ruleScope returns the scope of a rule for the ref and whether the rule applies to it.
@@ -193,23 +235,48 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 		e.unknown(st, r.name, u.Ref)
 	case person.Username == "":
 		e.deny(module.Violation{Code: module.CodeUnknownPrincipal, Rule: r.name, Ref: u.Ref, Items: hit,
-			Message: "Protected paths are changed only by people: a deploy key cannot change them.",
+			Facts:   []string{e.notAPerson(), "may change them: " + strings.Join(r.allow, ", ")},
+			Hint:    "push with your own SSH key or HTTPS, or with a project access token whose bot user is in the rule",
+			Summary: fmt.Sprintf("%s: only people listed in PATHPOLICY rule %s may change it", filesText(names), r.name),
 			Reason:  "principal is not a person: " + e.in.Principal.GLID})
 		e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventUnknownPrincipal, Ref: u.Ref, OldRev: u.Old, NewRev: u.New,
 			Violations: []audit.Violation{{Rule: r.name, Paths: names}}})
 	case !r.allows(person.Username):
 		e.deny(module.Violation{Code: module.CodeProtectedPath, Rule: r.name, Ref: u.Ref, Items: hit,
-			Message: r.text(), Reason: "not in allow: " + person.Username})
+			Facts:   []string{"may change them: " + strings.Join(r.allow, ", ")},
+			Message: r.message, Hint: r.advice(),
+			Summary: fmt.Sprintf("you may not change %s (PATHPOLICY rule %s; may change: %s)", filesText(names), r.name, strings.Join(r.allow, ", ")),
+			Reason:  "not in allow: " + person.Username})
 	}
 	return nil
 }
 
-// text is the message of the rule, or the list of people who may change the paths.
-func (r *rule) text() string {
-	if r.message != "" {
-		return r.message
+// advice is what to do about a denied change of the paths: a rule for every
+// branch also stops a merge request from the branch.
+func (r *rule) advice() string {
+	if r.refs.Kind == module.RefsAll {
+		return "this rule applies to every branch: ask one of them to push the change"
 	}
-	return "Allowed to change these paths: " + strings.Join(r.allow, ", ") + "."
+	return "ask one of them to make the change, or to merge it from your branch"
+}
+
+// filesText names the files of a denial in one line.
+func filesText(files []string) string {
+	switch len(files) {
+	case 0:
+		return "these files"
+	case 1:
+		return files[0]
+	}
+	return fmt.Sprintf("%s and %d more files", files[0], len(files)-1)
+}
+
+// notAPerson says why the pusher is no person, with what the pusher knows.
+func (e *evaluation) notAPerson() string {
+	if kind, id := e.in.Principal.Kind(); kind == module.PrincipalKey {
+		return fmt.Sprintf("pushed with SSH key %d, which is not a personal key of a GitLab user", id)
+	}
+	return "the push is not made by a GitLab user"
 }
 
 // policyChange decides on a change of PATHPOLICY itself.
@@ -222,7 +289,8 @@ func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 	}
 	if person.Username == "" {
 		e.deny(module.Violation{Code: module.CodeUnknownPrincipal, Ref: u.Ref, Items: []module.Item{{Name: File}},
-			Message: "PATHPOLICY is changed only by people: a deploy key cannot change it."})
+			Title: "only PATHPOLICY admins may change PATHPOLICY", Facts: []string{e.notAPerson(), "admins: " + strings.Join(e.p.admins, ", ")},
+			Summary: "only PATHPOLICY admins may change PATHPOLICY (admins: " + strings.Join(e.p.admins, ", ") + ")"})
 		return
 	}
 	access, st := e.in.Authz.PusherAccess(ctx)
@@ -234,11 +302,8 @@ func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 		e.deletionWarning(u)
 		return
 	}
-	adminText := "PATHPOLICY is changed by its admins: " + strings.Join(e.p.admins, ", ") + "."
 	if access < module.AccessOwner {
-		e.deny(module.Violation{Code: module.CodePolicyAdmin, Ref: u.Ref, Items: []module.Item{{Name: File}},
-			Message: adminText + "\nWithout an effective admin, an Owner of the project may change it (recovery).",
-			Reason:  fmt.Sprintf("not an effective admin, access level %d", access)})
+		e.deny(e.adminOnly(u.Ref, fmt.Sprintf("not an effective admin, access level %d", access)))
 		return
 	}
 	n, st := countAdmins(ctx, e.in.Authz, e.p.admins)
@@ -246,19 +311,29 @@ func (e *evaluation) policyChange(ctx context.Context, u module.RefUpdate) {
 	case !st.IsConfirmed():
 		e.unknown(st, "", u.Ref)
 	case n > 0:
-		e.deny(module.Violation{Code: module.CodePolicyAdmin, Ref: u.Ref, Items: []module.Item{{Name: File}},
-			Message: adminText + "\nOwner recovery is possible only while no admin is effective.",
-			Reason:  fmt.Sprintf("owner recovery refused: %d effective admins", n)})
+		e.deny(e.adminOnly(u.Ref, fmt.Sprintf("owner recovery refused: %d effective admins", n)))
 	default:
-		e.recovery(u, person, "no effective admins")
+		e.recovery(u, person, "it has no working admins")
 		e.deletionWarning(u)
 	}
+}
+
+// adminOnly is the denial of a change of PATHPOLICY by somebody who is not
+// one of its admins.
+func (e *evaluation) adminOnly(ref, reason string) module.Violation {
+	admins := strings.Join(e.p.admins, ", ")
+	return module.Violation{Code: module.CodePolicyAdmin, Ref: ref, Items: []module.Item{{Name: File}},
+		Facts:   []string{"admins: " + admins},
+		Hint:    "ask one of them to make this change; this applies to every branch, including yours",
+		Summary: "only PATHPOLICY admins may change PATHPOLICY (admins: " + admins + ")",
+		Reason:  reason}
 }
 
 // recovery records an Owner recovery: allowed, printed and alerted.
 func (e *evaluation) recovery(u module.RefUpdate, person module.Person, reason string) {
 	e.res.Touched = true
-	e.res.Notices = append(e.res.Notices, fmt.Sprintf("PATHPOLICY recovery by Owner %s on %s: %s.", person.Username, u.Ref, reason))
+	e.recovered[u.Ref] = true
+	e.res.Notices = append(e.res.Notices, fmt.Sprintf("PATHPOLICY is changed by Owner %s because %s. This is logged.", person.Username, reason))
 	e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventPolicyRecovery, Decision: "allow",
 		Ref: u.Ref, OldRev: u.Old, NewRev: u.New, Reason: reason})
 }
@@ -282,8 +357,8 @@ func (e *evaluation) deletionWarning(u module.RefUpdate) {
 		}
 	}
 	if len(left) > 0 {
-		e.res.Notices = append(e.res.Notices, fmt.Sprintf("warning: PATHPOLICY is removed on %s; %s can then be changed by anyone who can push.",
-			u.Ref, strings.Join(left, " and ")))
+		e.res.Notices = append(e.res.Notices, fmt.Sprintf("push accepted; %s deletes PATHPOLICY. After it is merged into the default branch, anyone who can push may change %s, and no files are protected.",
+			strings.TrimPrefix(strings.TrimPrefix(u.Ref, "refs/heads/"), "refs/tags/"), strings.Join(left, " and ")))
 	}
 }
 
@@ -311,7 +386,9 @@ func (*Module) EvaluateAbsent(ctx context.Context, in *module.Input) (*module.Re
 		}
 		if access < module.AccessMaintainer {
 			e.deny(module.Violation{Code: module.CodePolicyAdmin, Ref: c.Ref, Items: []module.Item{{Name: File}},
-				Message: "The first PATHPOLICY of a project is added to the default branch by a Maintainer or Owner.",
+				Title:   "the first PATHPOLICY of a project is added by a Maintainer or Owner",
+				Hint:    "ask a Maintainer of the project to add it",
+				Summary: "the first PATHPOLICY of a project is added to the default branch by a Maintainer or Owner",
 				Reason:  fmt.Sprintf("bootstrap needs Maintainer, access level %d", access)})
 			continue
 		}
@@ -349,7 +426,13 @@ func (*Module) EvaluateInvalid(ctx context.Context, in *module.Input, parseErr e
 	if len(refs) == 0 {
 		return e.res, nil
 	}
-	msg := "PATHPOLICY on the default branch is invalid: " + parseErr.Error() + "\nNothing changes until an Owner of the project fixes or removes it."
+	branch := strings.TrimPrefix(in.Refs.Default(), "refs/heads/")
+	broken := module.Violation{Code: module.CodeInvalidPolicy,
+		Title: "PATHPOLICY in " + branch + " is broken, so no changes are accepted",
+		Facts: []string{"this is not caused by your change", "problem: PATHPOLICY " + parseErr.Error()},
+		Hint: "who can fix it: an Owner of the project, with a push that changes only PATHPOLICY\n" +
+			"admins of PATHPOLICY cannot fix it while the file is unreadable",
+		Summary: "PATHPOLICY in " + branch + " is broken, no changes are accepted; not caused by your change, an Owner of the project must fix it"}
 	if onlyPolicy {
 		person, st := e.in.Principals.Person(ctx)
 		access := 0
@@ -362,13 +445,15 @@ func (*Module) EvaluateInvalid(ctx context.Context, in *module.Input, parseErr e
 			return e.res, nil
 		case access >= module.AccessOwner:
 			for _, u := range refs {
-				e.recovery(u, person, "the policy on the anchor is invalid")
+				e.recovery(u, person, "the PATHPOLICY in the default branch is broken")
 			}
 			return e.res, nil
 		}
 	}
 	for _, u := range refs {
-		e.deny(module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref, Message: msg})
+		v := broken
+		v.Ref = u.Ref
+		e.deny(v)
 	}
 	e.res.Events[0].Decision = "deny"
 	return e.res, nil

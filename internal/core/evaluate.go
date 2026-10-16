@@ -58,13 +58,14 @@ func (r *receive) moduleFailed(ctx context.Context, l *loaded, err error) {
 	if errors.Is(err, module.ErrLimitExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		code = module.CodeLimitExceeded
 	}
-	v := module.Violation{Code: code, Message: coreMessage(code, r.settings.Total), Reason: err.Error()}
+	v := r.coreViolation(code, err, err.Error())
 	e := audit.Event{Event: eventFor(code), Module: l.mod.Name(), Code: code, Reason: err.Error(), PolicyBlob: l.blob}
 	if l.mod.OnInvalid() == module.FailOpen {
-		v.Message = "The check was skipped because of an internal error."
+		v.Title = l.mod.File() + " was not checked because of an internal error"
 		if code == module.CodeLimitExceeded {
-			v.Message = "The check was skipped: the push exceeds the limits."
+			v.Title = l.mod.File() + " was not checked: the push exceeds the server limits"
 		}
+		v.Hint, v.Summary = "", ""
 		e.Decision = "warn"
 		r.addWarning(l.mod.File(), v)
 	} else {

@@ -37,8 +37,8 @@ func TestCommitPolicy_Enforce(t *testing.T) {
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 	s.Commit("WIP stuff.", map[string]string{"a": "2"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
-	assertDenied(t, r, "COMMITPOLICY [conventional] refs/heads/main: commit message format", `"WIP stuff."`,
-		`header: expected "type(scope): subject"`, "fix: git rebase -i and reword")
+	assertDenied(t, r, "COMMITPOLICY ruleset \"conventional\", branch main: 1 commit message does not follow the format", `"WIP stuff."`,
+		`header: expected "type(scope): subject"`, "how to fix: reword the commit")
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	last := ev[len(ev)-1]
@@ -49,7 +49,7 @@ func TestCommitPolicy_Enforce(t *testing.T) {
 func TestCommitPolicy_InvalidNewVersionOnFeatureBranch(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitPolicy})
 	s.Commit("feat: typo in the policy", map[string]string{"COMMITPOLICY": strings.Replace(commitPolicy, "type-enum", "type-enun", 1)})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "COMMITPOLICY refs/heads/feature: new policy version is invalid",
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "COMMITPOLICY, branch feature: the changed COMMITPOLICY is invalid",
 		`unknown rule "type-enun"`)
 }
 
@@ -121,7 +121,7 @@ func TestCommitPolicy_CreateProtectedFromFeature(t *testing.T) {
 	s.Commit("feat: not allowed on release", map[string]string{"a": "1"})
 	s.Seed("HEAD:refs/heads/feature")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature2"))
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY [release] refs/heads/release/1", `type-enum: "feat"`)
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY ruleset \"release\", branch release/1", `type-enum: "feat"`)
 }
 
 func TestCommitPolicy_WarnVsEnforce(t *testing.T) {
@@ -129,7 +129,7 @@ func TestCommitPolicy_WarnVsEnforce(t *testing.T) {
 	s.Commit("chore: tidy", map[string]string{"a": "1"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "gitlab-repopolicy: warning (COMMITPOLICY: 1 violation)")
+	assert.Contains(t, r.Output, "gitlab-repopolicy: push accepted with 1 warning")
 	assert.Contains(t, r.Output, `type-enum: "chore" is not one of feat, fix`)
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
@@ -146,7 +146,7 @@ func TestCommitPolicy_TooManyCommits(t *testing.T) {
 			s.fastImport(base, "refs/heads/many", 10_001)
 			r := s.Push(alice, "refs/heads/many:refs/heads/main")
 			assert.Equal(t, tc.allowed, r.OK, r.Output)
-			assert.Contains(t, r.Output, "More than 10000 commits enter the ref")
+			assert.Contains(t, r.Output, "limit reached: more than 10000 commits enter the ref")
 		})
 	}
 }
@@ -156,7 +156,7 @@ func TestCommitPolicy_InvalidAnchorSkipped(t *testing.T) {
 	s.Commit("anything", map[string]string{"a": "1"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "COMMITPOLICY on the default branch is invalid")
+	assert.Contains(t, r.Output, "COMMITPOLICY in main is broken, so commit messages are not checked until it is fixed")
 	assert.Len(t, Events(s.Audit(), "invalid_commit_policy"), 1)
 }
 
@@ -165,8 +165,8 @@ func TestCommitPolicy_ProtectedClassAPIFailure(t *testing.T) {
 	s.Commit("bad", map[string]string{"a": "1"})
 	r := s.Push(alice, "HEAD:refs/heads/feature")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "COMMITPOLICY [protected] refs/heads/feature: unable to verify authorization")
-	assert.Contains(t, r.Output, "this ruleset is skipped")
+	assert.Contains(t, r.Output, "COMMITPOLICY ruleset \"protected\", branch feature: commit messages were not checked by this ruleset: the GitLab API did not answer")
+	assert.Contains(t, r.Output, "push accepted with 1 warning")
 }
 
 func TestCommitPolicy_FeatureBranchFree(t *testing.T) {

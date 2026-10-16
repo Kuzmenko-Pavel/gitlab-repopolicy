@@ -376,8 +376,8 @@ func TestCLI_ValidateOnline(t *testing.T) {
 	r = s.Run(nil, "validate", "-f", file, "--online", "--config", s.config, "--project", "acme/platform/app")
 	assert.Equal(t, 0, r.Code, r.Stdout)
 	assert.Contains(t, r.Stdout, "PATHPOLICY: valid\n")
-	assert.Contains(t, r.Stdout, `warning: admin "bob" has access level 30, Maintainer (40) is required`)
-	assert.Contains(t, r.Stdout, "warning: 1 of 2 admins are effective")
+	assert.Contains(t, r.Stdout, `warning: admin "bob" is not an active user with Maintainer or higher in this project`)
+	assert.Contains(t, r.Stdout, "warning: 1 of 2 admins work")
 }
 
 // TestCLI_Test: gitlab-repopolicy test decides like the hook without a push.

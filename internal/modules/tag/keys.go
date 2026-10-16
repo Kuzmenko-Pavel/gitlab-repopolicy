@@ -19,6 +19,13 @@ const (
 	formatSSH
 )
 
+func (f keyFormat) String() string {
+	if f == formatSSH {
+		return "SSH"
+	}
+	return "OpenPGP"
+}
+
 // key is one entry of keys: exactly one public key.
 type key struct {
 	label  string

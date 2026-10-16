@@ -127,6 +127,8 @@ type Input struct {
 	Changes ChangeSet
 	// Principal is the identity of the pusher as GL_ID and GL_USERNAME.
 	Principal Principal
+	// Protocol is GL_PROTOCOL: ssh, http, or web for the GitLab UI and API.
+	Protocol string
 	// Principals resolves the pusher to a person; an SSH key is checked to be
 	// personal. It calls the API lazily.
 	Principals PrincipalResolver
@@ -191,13 +193,23 @@ type Signature struct {
 type Violation struct {
 	Code string
 	Rule string
-	Ref  string
+	// RuleKind names the rule in the output: "ruleset" for COMMITPOLICY, empty for a rule.
+	RuleKind string
+	Ref      string
+	// Title replaces the title of the code when the code alone does not tell
+	// what happened, for example which check of a signature failed.
+	Title string
+	// Facts are lines before the items, such as who may change the files.
+	Facts []string
 	// Items are the files or commits the violation is about, in output order.
 	Items []Item
-	// Message is the user text from the policy; empty means the default text.
+	// Message is the user text from the policy, printed after the items.
 	Message string
-	// Hint is a fixed remedy line, for example how to reword commits.
+	// Hint says what to do; it may have several lines.
 	Hint string
+	// Summary is the line the GitLab UI shows, where the rest of the output
+	// is lost; empty means the title.
+	Summary string
 	// Reason may hold API results; it goes only to audit.
 	Reason string
 }

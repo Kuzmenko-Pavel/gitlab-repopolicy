@@ -52,9 +52,9 @@ func TestVerify_SignerFromOtherRule(t *testing.T) {
 	v := res.Violations[0]
 	assert.Equal(t, module.CodeTagSignerNotAllowed, v.Code)
 	assert.Equal(t, "prod", v.Rule)
-	assert.Contains(t, v.Message, "Prod releases are signed by release-lead.")
-	assert.Contains(t, v.Message, fmt.Sprintf("signed by: dev-lead (%X)", dev.PrimaryKey.Fingerprint))
-	assert.Contains(t, v.Message, "allowed:   release-lead")
+	assert.Contains(t, text(v), "Prod releases are signed by release-lead.")
+	assert.Contains(t, text(v), fmt.Sprintf(`signed with: key "dev-lead" from TAGPOLICY (OpenPGP, %X)`, dev.PrimaryKey.Fingerprint))
+	assert.Contains(t, text(v), "allowed keys: release-lead (OpenPGP)")
 	require.Len(t, res.Signatures, 1, "the signer goes to audit also on a denial")
 	assert.Equal(t, "dev-lead", res.Signatures[0].Signer)
 
@@ -68,13 +68,13 @@ func TestVerify_KeyNotInFile(t *testing.T) {
 	p := mustParse(t, policyYAML(twoRules, map[string]string{"release-lead": armorPublic(t, lead), "dev-lead": newSSH(t, "ed25519").line}))
 	res := push(t, p, "refs/tags/v1.2.3-prod", "tag", signPGP(t, stranger, tagPayload("v1.2.3-prod", "commit"), now, crypto.SHA256))
 	assert.Equal(t, []string{module.CodeTagSignerNotAllowed}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "a key that is not in TAGPOLICY")
+	assert.Contains(t, text(res.Violations[0]), "a key that is not in TAGPOLICY")
 	assert.Empty(t, res.Signatures)
 
 	other := newSSH(t, "ed25519")
 	res = push(t, p, "refs/tags/v1.2.3-prod", "tag", append(tagPayload("v1.2.3-prod", "commit"), sshSign(t, other, tagPayload("v1.2.3-prod", "commit"), "git", "sha512", "")...))
 	assert.Equal(t, []string{module.CodeTagSignerNotAllowed}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, ssh.FingerprintSHA256(other.signer.PublicKey()))
+	assert.Contains(t, text(res.Violations[0]), ssh.FingerprintSHA256(other.signer.PublicKey()))
 }
 
 func TestTagObject(t *testing.T) {
@@ -94,7 +94,7 @@ func TestTagObject(t *testing.T) {
 		// A signed staging tag object pushed under a prod name.
 		res := push(t, p, "refs/tags/v1.2.3-prod", "tag", signed("v1.2.3-staging", "commit"))
 		assert.Equal(t, []string{module.CodeTagObjectInvalid}, codes(res))
-		assert.Contains(t, res.Violations[0].Message, `named "v1.2.3-staging"`)
+		assert.Contains(t, text(res.Violations[0]), `signed as "v1.2.3-staging"`)
 	})
 	t.Run("tag of tag", func(t *testing.T) {
 		res := push(t, p, "refs/tags/v1.2.3-prod", "tag", signed("v1.2.3-prod", "tag"))
@@ -161,7 +161,7 @@ func TestVerify_X509(t *testing.T) {
 	data := append(tagPayload("v1.2.3-prod", "commit"), "-----BEGIN SIGNED MESSAGE-----\nMIIB\n-----END SIGNED MESSAGE-----\n"...)
 	res := push(t, p, "refs/tags/v1.2.3-prod", "tag", data)
 	assert.Equal(t, []string{module.CodeTagNotSigned}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "OpenPGP and SSH signatures are supported")
+	assert.Contains(t, text(res.Violations[0]), "OpenPGP and SSH signatures are supported")
 }
 
 func TestVerify_ExpiredKey(t *testing.T) {
@@ -182,7 +182,7 @@ func TestVerify_ExpiredKey(t *testing.T) {
 			}
 			res := push(t, p, "refs/tags/v1.2.3-prod", "tag", signPGP(t, e, tagPayload("v1.2.3-prod", "commit"), created.Add(time.Minute), crypto.SHA256))
 			require.Equal(t, []string{module.CodeTagSignatureInvalid}, codes(res))
-			assert.Contains(t, res.Violations[0].Message, "expired")
+			assert.Contains(t, text(res.Violations[0]), "expired")
 		})
 	}
 }
@@ -278,7 +278,7 @@ func TestVerify_OpenPGPTimeAndHash(t *testing.T) {
 	require.NoError(t, w.Close())
 	res = push(t, p, "refs/tags/v1.2.3-prod", "tag", append(payload, b.Bytes()...))
 	require.Equal(t, []string{module.CodeTagSignatureInvalid}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "hash function 1")
+	assert.Contains(t, text(res.Violations[0]), "hash function 1")
 }
 
 func TestVerify_SSH(t *testing.T) {
@@ -326,7 +326,7 @@ func TestVerify_SSH(t *testing.T) {
 			}
 			res := push(t, p, ref, "tag", c.data)
 			require.Equal(t, []string{module.CodeTagSignatureInvalid}, codes(res))
-			assert.Contains(t, res.Violations[0].Message, c.want)
+			assert.Contains(t, text(res.Violations[0]), c.want)
 		})
 	}
 }
@@ -403,7 +403,7 @@ func TestVerify_RealTools(t *testing.T) {
 	t.Run("sha1", func(t *testing.T) {
 		res := pushAt(t, p, "refs/tags/v1.0.0-sha1", []byte(read("v1.0.0-sha1.tag")), later)
 		require.Equal(t, []string{module.CodeTagSignatureInvalid}, codes(res))
-		assert.Contains(t, res.Violations[0].Message, "SHA-1")
+		assert.Contains(t, text(res.Violations[0]), "SHA-1")
 	})
 	t.Run("renamed", func(t *testing.T) {
 		data := strings.Replace(read("v1.0.0-ssh-rsa.tag"), "tag v1.0.0-ssh-rsa", "tag v1.0.0-ssh-rsb", 1)
@@ -429,7 +429,7 @@ func TestVerify_SSH_SecurityKeys(t *testing.T) {
 			// Without the user presence flag the signature is rejected.
 			res = push(t, p, "refs/tags/"+name+"-no-touch", "tag", []byte(readTestdata(t, "sk", name+"-no-touch.tag")))
 			require.Equal(t, []string{module.CodeTagSignatureInvalid}, codes(res))
-			assert.Contains(t, res.Violations[0].Message, "user presence")
+			assert.Contains(t, text(res.Violations[0]), "user presence")
 		})
 	}
 }
@@ -447,7 +447,7 @@ func TestEvaluate_OverlapWithoutCommonSigner(t *testing.T) {
 	payload := tagPayload("v1", "commit")
 	res := push(t, p, "refs/tags/v1", "tag", append(payload, sshSign(t, a, payload, "git", "sha512", "")...))
 	require.Equal(t, []string{module.CodeTagSignerNotAllowed}, codes(res))
-	assert.Contains(t, res.Violations[0].Message, "allowed:   b")
+	assert.Contains(t, text(res.Violations[0]), "allowed keys: b")
 
 	res = push(t, p, "refs/tags/v1", "tag", tagPayload("v1", "commit"))
 	require.Equal(t, []string{module.CodeTagNotSigned}, codes(res))
@@ -465,4 +465,9 @@ func TestModule(t *testing.T) {
 	assert.Empty(t, p.Validate(context.Background(), nil))
 	_, err = m.Parse([]byte("version: 1\n"))
 	require.Error(t, err)
+}
+
+// text is everything a violation prints.
+func text(v module.Violation) string {
+	return strings.Join(append(append([]string{v.Title}, v.Facts...), v.Message, v.Hint), "\n")
 }

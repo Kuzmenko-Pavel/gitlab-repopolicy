@@ -52,6 +52,11 @@ func TestStatus(t *testing.T) {
 	l := UnknownLimit("budget")
 	assert.True(t, l.IsLimit())
 	assert.False(t, l.IsConfirmed())
+	assert.False(t, l.IsSetup())
+	u := UnknownSetup("project_not_visible")
+	assert.True(t, u.IsSetup())
+	assert.False(t, u.IsLimit())
+	assert.False(t, s.IsSetup())
 	var zero Status
 	assert.False(t, zero.IsConfirmed(), "zero status is unknown")
 	assert.Equal(t, "no answer", zero.Reason())

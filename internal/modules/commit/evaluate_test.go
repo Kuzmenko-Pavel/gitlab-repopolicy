@@ -238,7 +238,7 @@ func TestUnknownRule_Anchor(t *testing.T) {
 	repo.entering["refs/heads/main"] = []string{repo.add("c", "feat: ok\n", 1)}
 	res := evaluate(t, "version: 1\nrulesets: [{name: r, rules: {future-rule: {level: error}}}]\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Warn, res.Decision)
-	assert.Contains(t, res.Violations[0].Message, "future-rule")
+	assert.Contains(t, res.Violations[0].Title, "future-rule")
 }
 
 func TestUnknownRule_NewVersion(t *testing.T) {

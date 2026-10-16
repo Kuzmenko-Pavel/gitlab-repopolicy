@@ -71,28 +71,26 @@ func (p *Policy) Validate(ctx context.Context, v module.Validator) []module.Prob
 	if !status.IsConfirmed() {
 		return append(problems, module.Problem{Unknown: true, Msg: "admins cannot be checked: " + status.Reason()})
 	}
-	var missing []module.Problem
+	// The pusher sees these lines: they say which admin does not work, not
+	// the role or the state GitLab returned.
+	var missing []string
 	for _, ad := range report {
-		switch {
-		case ad.Effective:
-			continue
-		case !ad.Exists:
-			missing = append(missing, module.Problem{Warning: true, Msg: fmt.Sprintf("admin %q does not exist or is blocked", ad.Username)})
-		case !ad.Active:
-			missing = append(missing, module.Problem{Warning: true, Msg: fmt.Sprintf("admin %q is not active", ad.Username)})
-		default:
-			missing = append(missing, module.Problem{Warning: true,
-				Msg: fmt.Sprintf("admin %q has access level %d, Maintainer (40) is required", ad.Username, ad.Access)})
+		if !ad.Effective {
+			missing = append(missing, fmt.Sprintf("admin %q is not an active user with Maintainer or higher in this project", ad.Username))
 		}
 	}
 	if len(missing) == len(report) {
-		return append(problems, module.Problem{Code: module.CodeLockoutPrevented,
-			Msg: "none of the admins is an active user with at least Maintainer access to the project"})
+		for _, m := range missing {
+			problems = append(problems, module.Problem{Code: module.CodeLockoutPrevented, Msg: m})
+		}
+		return problems
+	}
+	for _, m := range missing {
+		problems = append(problems, module.Problem{Warning: true, Msg: m})
 	}
 	if len(missing) > 0 {
-		problems = append(problems, missing...)
 		problems = append(problems, module.Problem{Warning: true,
-			Msg: fmt.Sprintf("%d of %d admins are effective", len(report)-len(missing), len(report))})
+			Msg: fmt.Sprintf("%d of %d admins work", len(report)-len(missing), len(report))})
 	}
 	return problems
 }

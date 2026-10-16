@@ -53,7 +53,7 @@ func TestPaths(t *testing.T) {
 			s := featureStand(t, guardAll, files)
 			s.git(s.Work, "checkout", "-q", "-B", "feature")
 			change(s)
-			assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "GUARDPOLICY [ci] refs/heads/feature")
+			assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "GUARDPOLICY rule \"ci\", branch feature")
 			assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
 		})
 	}
@@ -74,7 +74,7 @@ func TestRefs_ForcePushRollbackDefault(t *testing.T) {
 	s.Seed("HEAD:refs/heads/main")
 	s.git(s.Work, "reset", "-q", "--hard", base)
 	r := s.Push(bob, "HEAD:refs/heads/main")
-	assertDenied(t, r, "GUARDPOLICY [ci] refs/heads/main", "ci.yml")
+	assertDenied(t, r, "GUARDPOLICY rule \"ci\", branch main", "ci.yml")
 }
 
 func TestRefs_ForcePushRollbackProtected(t *testing.T) {
@@ -82,7 +82,7 @@ func TestRefs_ForcePushRollbackProtected(t *testing.T) {
 	s.Commit("ci v2", map[string]string{"ci.yml": "v2"})
 	s.Seed("HEAD:refs/heads/release/1")
 	s.git(s.Work, "reset", "-q", "--hard", base)
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), "GUARDPOLICY [release] refs/heads/release/1")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), "GUARDPOLICY rule \"release\", branch release/1")
 }
 
 func TestRefs_RebaseFeatureOnMain(t *testing.T) {
@@ -107,7 +107,7 @@ func TestRefs_MergeIntoListedRefNetDiff(t *testing.T) {
 	s.git(s.Work, "checkout", "-q", "-B", "rel", base)
 	s.git(s.Work, "merge", "-q", "--no-ff", "-m", "merge", "feature")
 	r := s.Push(bob, "HEAD:refs/heads/release/1")
-	assertDenied(t, r, "GUARDPOLICY [release] refs/heads/release/1", "ci.yml")
+	assertDenied(t, r, "GUARDPOLICY rule \"release\", branch release/1", "ci.yml")
 	assert.Zero(t, s.ProtectedCalls(), "a ref from the rule's own list needs no API")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/release/1"))
 }
@@ -117,7 +117,7 @@ func TestRefs_CreateProtectedFromFeature(t *testing.T) {
 	s.git(s.Work, "checkout", "-q", "-b", "feature")
 	s.Commit("ci on feature", map[string]string{"ci.yml": "x"})
 	s.Seed("HEAD:refs/heads/feature")
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/2"), "GUARDPOLICY [release] refs/heads/release/2", "ci.yml")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/2"), "GUARDPOLICY rule \"release\", branch release/2", "ci.yml")
 }
 
 func TestRefs_BranchFromOldCommit(t *testing.T) {
@@ -135,7 +135,7 @@ func TestRefs_BranchFromMergeRequestRef(t *testing.T) {
 	c := s.Commit("from a fork", map[string]string{"ci.yml": "x"})
 	s.Seed("HEAD:refs/merge-requests/1/head")
 	s.Protected(nil, nil)
-	assertDenied(t, s.Push(bob, c+":refs/heads/taken"), "GUARDPOLICY [ci] refs/heads/taken", "ci.yml")
+	assertDenied(t, s.Push(bob, c+":refs/heads/taken"), "GUARDPOLICY rule \"ci\", branch taken", "ci.yml")
 }
 
 func TestRefs_AnnotatedTag(t *testing.T) {
@@ -143,7 +143,7 @@ func TestRefs_AnnotatedTag(t *testing.T) {
 	s.Protected(nil, []string{"v*"})
 	s.Commit("ci", map[string]string{"ci.yml": "x"})
 	s.git(s.Work, "tag", "-a", "-m", "release", "v1")
-	assertDenied(t, s.Push(bob, "refs/tags/v1"), "GUARDPOLICY [ci] refs/tags/v1", "ci.yml")
+	assertDenied(t, s.Push(bob, "refs/tags/v1"), "GUARDPOLICY rule \"ci\", tag v1", "ci.yml")
 	assertAllowed(t, s.Push(alice, "refs/tags/v1"))
 }
 
@@ -237,7 +237,7 @@ func TestRefs_ProtectedClassLazy(t *testing.T) {
 func TestRefs_ProtectedClassAPIFailure(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	s.Commit("ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "unable to verify authorization")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "could not check permissions")
 	assert.NotContains(t, s.Push(alice, "HEAD:refs/heads/feature").Output, "HTTP 404", "API details stay in audit")
 }
 
@@ -245,7 +245,7 @@ func TestRefs_TagToNonCommit(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	tree := s.Rev("HEAD^{tree}")
 	s.git(s.Work, "tag", "-a", "-m", "tree", "vt", tree)
-	assertDenied(t, s.Push(bob, "refs/tags/vt"), "tag object does not match ref")
+	assertDenied(t, s.Push(bob, "refs/tags/vt"), "the tag does not match its ref")
 }
 
 func TestRefs_OtherNamespacesIgnored(t *testing.T) {

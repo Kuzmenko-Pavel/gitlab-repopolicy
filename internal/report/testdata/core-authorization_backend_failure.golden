@@ -1,6 +1,10 @@
-gitlab-repopolicy: push rejected (gitlab-repopolicy: 1 violation)
+gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
 
-gitlab-repopolicy refs/heads/feature: unable to verify authorization
+branch feature: could not check permissions: the GitLab API did not answer
+  this is a problem of the server, not of your change
+  retry in a few minutes
+  who can help: your GitLab administrators
 
-user: alice (id 314)
-GL-HOOK-ERR: gitlab-repopolicy: unable to verify authorization. See push output.
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
+checked as: alice (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: could not check permissions: the GitLab API did not answer (branch feature)

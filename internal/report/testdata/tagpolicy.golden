@@ -1,22 +1,15 @@
-gitlab-repopolicy: push rejected (TAGPOLICY: 5 violations)
+gitlab-repopolicy: push rejected by the rules of this repository (2 problems)
 
-TAGPOLICY refs/tags/v3.159.0: policy is invalid
-  TAGPOLICY on the default branch is invalid: rule prod: signers: "x" is not a label in keys
-  No tag can be created or moved until it is fixed on the default branch.
-
-TAGPOLICY [prod] refs/tags/v3.156.0-prod: tag signer not allowed
+TAGPOLICY rule "prod", tag v3.156.0-prod: this key may not sign these tags
+  signed with: key "dev-lead" from TAGPOLICY (SSH, SHA256:budi)
+  allowed keys: release-lead (OpenPGP), sre-lead (SSH)
   Prod releases are signed by release-lead or sre-lead.
-  signed by: dev-lead (4528A421CE40AA6A717FF2112DA7684307491280)
-  allowed:   release-lead, sre-lead
 
-TAGPOLICY [prod] refs/tags/v3.157.0-prod: tag object does not match ref
-  The tag object is named "v3.157.0-staging", but it is pushed as "v3.157.0-prod". Push a tag signed under its own name.
+TAGPOLICY rule "staging", tag v3.156.0-staging: the tag must be signed
+  it is a lightweight tag, it has no signature
+  allowed signing keys: release-lead (OpenPGP)
+  how to fix: git tag -d v3.156.0-staging && git tag -s v3.156.0-staging -m "v3.156.0-staging" && git push origin v3.156.0-staging
 
-TAGPOLICY [prod] refs/tags/v3.158.0-prod: tag signature is invalid
-  The signature cannot be accepted: the signing key is expired.
-
-TAGPOLICY [staging] refs/tags/v3.156.0-staging: tag is not signed
-  The tag is not signed. Create it with git tag -s v3.156.0-staging
-
-user: alice (id 314)
-GL-HOOK-ERR: gitlab-repopolicy: TAGPOLICY [prod] tag signer not allowed; TAGPOLICY [staging] tag is not signed; TAGPOLICY [prod] tag object does not match ref; 2 more. See push output.
+rules: PATHPOLICY, TAGPOLICY in main
+checked as: bob (SSH key 7)
+GL-HOOK-ERR: gitlab-repopolicy: this key may not sign these tags (TAGPOLICY rule "prod", tag v3.156.0-prod) (+1 more: TAGPOLICY: the tag must be signed)

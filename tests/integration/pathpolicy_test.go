@@ -61,13 +61,13 @@ func TestPathPolicy_PolicyAndProtectedFileSamePush(t *testing.T) {
 	s.Commit("feat: bob adds himself and changes ci", map[string]string{
 		"PATHPOLICY": strings.Replace(pathPolicy, "allow: [alice]", "allow: [alice, bob]", 1), "ci.yml": "v2"})
 	r := s.Push(bob, "HEAD:refs/heads/feature")
-	assertDenied(t, r, "PATHPOLICY [ci] refs/heads/feature: modification denied", "PATHPOLICY refs/heads/feature: policy change denied")
+	assertDenied(t, r, "PATHPOLICY rule \"ci\", branch feature: you may not change these files", "PATHPOLICY, branch feature: only PATHPOLICY admins may change PATHPOLICY")
 }
 
 func TestPathPolicy_InvalidNewVersionOnFeatureBranch(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.Commit("feat: broken policy", map[string]string{"PATHPOLICY": strings.Replace(pathPolicy, "allow: [dev-lead]", "allow: []", 1)})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY refs/heads/feature: new policy version is invalid", "allow: 1 to 50 usernames")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY, branch feature: the changed PATHPOLICY is invalid", "allow: 1 to 50 usernames")
 }
 
 func TestPathPolicy_WeakPolicyOnBranchIgnored(t *testing.T) {
@@ -76,23 +76,23 @@ func TestPathPolicy_WeakPolicyOnBranchIgnored(t *testing.T) {
 	s.Commit("feat: weaken", map[string]string{"PATHPOLICY": "version: 1\nadmins: [alice]\n"})
 	s.Seed("HEAD:refs/heads/weak")
 	s.Commit("feat: ci on the weak branch", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/weak"), "PATHPOLICY [ci] refs/heads/weak")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/weak"), "PATHPOLICY rule \"ci\", branch weak")
 }
 
 func TestPathPolicy_InvalidAnchorBlocksAllButRecovery(t *testing.T) {
 	s, base := pathStand(t, "version: 1\nadmins: []\n", nil)
 	s.Commit("feat: anything", map[string]string{"src.txt": "x"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY refs/heads/feature: policy is invalid")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY, branch feature: PATHPOLICY in main is broken")
 	assert.Len(t, Events(s.Audit(), "invalid_policy"), 1)
 	s.Seed(base + ":refs/heads/old")
 	assertAllowed(t, s.Push(bob, ":refs/heads/old"))
 
 	s.git(s.Work, "reset", "-q", "--hard", base)
 	s.Commit("fix: repair the policy", map[string]string{"PATHPOLICY": pathPolicy})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "policy is invalid")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "is broken")
 	r := s.Push(owner, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "PATHPOLICY recovery by Owner owner")
+	assert.Contains(t, r.Output, "PATHPOLICY is changed by Owner owner because")
 	assert.Len(t, Events(s.Audit(), "policy_recovery"), 1)
 }
 
@@ -111,17 +111,17 @@ func TestDelegation_OwnerDeletesCommitPolicy(t *testing.T) {
 func TestDelegation_NonOwnerDenied(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, map[string]string{"COMMITPOLICY": commitPolicy})
 	s.Commit("chore: adjust commit rules", map[string]string{"COMMITPOLICY": strings.Replace(commitPolicy, "chore]", "chore, docs]", 1)})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY [commit-policy] refs/heads/feature: modification denied")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"commit-policy\", branch feature: you may not change these files")
 	s.git(s.Work, "reset", "-q", "--hard", "HEAD~1")
 	s.Commit("chore: drop commit rules", map[string]string{"COMMITPOLICY": ""})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY [commit-policy]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"commit-policy\"")
 }
 
 func TestDelegation_DelegateCannotChangePathPolicy(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.Commit("chore: delegate more", map[string]string{"PATHPOLICY": pathPolicy + "  - name: tags\n    paths: [TAGPOLICY]\n    allow: [dev-lead]\n"})
 	r := s.Push(devLead, "HEAD:refs/heads/feature")
-	assertDenied(t, r, "PATHPOLICY refs/heads/feature: policy change denied", "PATHPOLICY is changed by its admins: alice.")
+	assertDenied(t, r, "PATHPOLICY, branch feature: only PATHPOLICY admins may change PATHPOLICY", "admins: alice")
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "policy_admin_violation", ev[len(ev)-1]["code"])
@@ -132,7 +132,7 @@ func TestDelegation_AdminDeletesPathPolicyThenBootstrap(t *testing.T) {
 	s.Commit("chore: remove path policy", map[string]string{"PATHPOLICY": ""})
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "PATHPOLICY is removed on refs/heads/main; COMMITPOLICY can then be changed by anyone")
+	assert.Contains(t, r.Output, "anyone who can push may change COMMITPOLICY")
 	s.Commit("chore: bring the policy back", map[string]string{"PATHPOLICY": pathPolicy})
 	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "added to the default branch by a Maintainer or Owner")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
@@ -142,7 +142,7 @@ func TestDelegation_AdminDeletesPathPolicyThenBootstrap(t *testing.T) {
 func TestDelegation_BroadRuleAndDelegationAnd(t *testing.T) {
 	s, _ := pathStand(t, pathBroad, map[string]string{"COMMITPOLICY": commitPolicy})
 	s.Commit("chore: adjust", map[string]string{"COMMITPOLICY": strings.Replace(commitPolicy, "chore]", "chore, docs]", 1)})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY [commit-policy]")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"commit-policy\"")
 	assertAllowed(t, s.Push(devLead, "HEAD:refs/heads/feature"))
 }
 
@@ -158,7 +158,7 @@ func TestDelegation_RenamePolicyFile(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, map[string]string{"COMMITPOLICY": commitPolicy})
 	s.Commit("chore: move the commit rules", map[string]string{"COMMITPOLICY": "", "docs/COMMITPOLICY": commitPolicy})
 	// The removal of the old path is a protected change.
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY [commit-policy]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"commit-policy\"")
 	r := s.Push(devLead, "HEAD:refs/heads/feature")
 	assertAllowed(t, r)
 	assert.NotContains(t, r.Output, "docs/COMMITPOLICY: new policy version", "a file under another path is not a policy")
@@ -168,7 +168,7 @@ func TestBootstrap_DeveloperDenied(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"a.txt": "a"})
 	s.Team()
 	s.Commit("chore: add path policy", map[string]string{"PATHPOLICY": pathPolicy})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY refs/heads/main: policy change denied")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY, branch main: the first PATHPOLICY of a project is added by a Maintainer or Owner")
 }
 
 func TestBootstrap_MaintainerAllowed(t *testing.T) {
@@ -185,7 +185,7 @@ func TestBootstrap_NoEffectiveAdmin(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"a.txt": "a"})
 	s.Team()
 	s.Commit("chore: add path policy", map[string]string{"PATHPOLICY": strings.Replace(pathPolicy, "admins: [alice]", "admins: [bob]", 1)})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "new policy has no effective administrators")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "the changed PATHPOLICY would have no working admin")
 }
 
 func TestPaths_NestedRulesAnd(t *testing.T) {
@@ -194,7 +194,7 @@ func TestPaths_NestedRulesAnd(t *testing.T) {
 	s.Commit("feat: stage", map[string]string{"deploy/stage/x": "1"})
 	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
 	s.Commit("feat: prod", map[string]string{"deploy/prod/x": "1"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY [prod]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"prod\"")
 }
 
 func TestPathPolicy_PathKinds(t *testing.T) {
@@ -219,7 +219,7 @@ func TestPathPolicy_PathKinds(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := pathStand(t, pathPolicy, map[string]string{"src/conf.yml": "x", "deploy/keep.yml": "k"})
 			change(s)
-			assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY [ci]")
+			assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "PATHPOLICY rule \"ci\"")
 			assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
 		})
 	}
@@ -233,7 +233,7 @@ func TestPathPolicy_MergeIntoReleaseByNonOwner(t *testing.T) {
 	s.Seed("HEAD:refs/heads/feature")
 	s.git(s.Work, "checkout", "-q", "-B", "rel", base)
 	s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'release/1'", "feature")
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), "PATHPOLICY [release-ci] refs/heads/release/1", "ci.yml")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), "PATHPOLICY rule \"release-ci\", branch release/1", "ci.yml")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/release/1"))
 }
 
@@ -242,7 +242,7 @@ func TestIdentity_ProjectNotVisible(t *testing.T) {
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.Status(404))
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
 	r := s.Push(alice, "HEAD:refs/heads/feature")
-	assertDenied(t, r, "unable to verify authorization")
+	assertDenied(t, r, "this project is not connected to gitlab-repopolicy correctly")
 	assert.NotContains(t, r.Output, "project_not_visible", "API details stay in audit")
 	ev := Events(s.Audit(), "authorization_backend_failure")
 	require.NotEmpty(t, ev)
@@ -255,7 +255,7 @@ func TestIdentity_TokenRejected(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.API.Handle("GET", "/api/v4/projects/1/protected_branches?per_page=100&page=1", gitlabtest.Status(401))
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "unable to verify authorization")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "this project is not connected to gitlab-repopolicy correctly")
 	ev := Events(s.Audit(), "authorization_backend_failure")
 	require.Len(t, ev, 1)
 	assert.Equal(t, "pathpolicy", ev[0]["module"])
@@ -267,7 +267,7 @@ func TestIdentity_RoleBelowMaintainer(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{"group_access": map[string]any{"access_level": 30}}}))
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "unable to verify authorization")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "this project is not connected to gitlab-repopolicy correctly")
 	ev := Events(s.Audit(), "authorization_backend_failure")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "role_below_maintainer", ev[0]["reason"])
@@ -288,14 +288,14 @@ func TestNamespace_GroupTwoSegments(t *testing.T) {
 	s.Project = "acme/app"
 	s.API.Handle("GET", "/api/v4/users?username=acme", gitlabtest.OK([]any{}))
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY [ci]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY rule \"ci\"")
 	assert.Equal(t, 1, s.API.Calls("GET", "/api/v4/users?username=acme"))
 }
 
 func TestNamespace_GroupThreeSegments(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY [ci]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY rule \"ci\"")
 	assert.Zero(t, s.API.Calls("GET", "/api/v4/users?username=acme"), "three segments are always a group")
 }
 
@@ -304,13 +304,13 @@ func TestNamespace_LookupFailure(t *testing.T) {
 	s.Project = "acme/app"
 	s.API.Handle("GET", "/api/v4/users?username=acme", gitlabtest.Status(500))
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY [ci]")
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "PATHPOLICY rule \"ci\"")
 }
 
 func TestLimits_NewCommits(t *testing.T) {
 	s, base := pathStand(t, pathPolicy, nil)
 	s.fastImport(base, "refs/heads/many", 50_001)
-	assertDenied(t, s.Push(alice, "refs/heads/many:refs/heads/many"), "push could not be verified")
+	assertDenied(t, s.Push(alice, "refs/heads/many:refs/heads/many"), "the check did not finish within the server limits")
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "limit_exceeded", ev[len(ev)-1]["code"])

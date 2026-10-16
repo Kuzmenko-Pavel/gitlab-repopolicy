@@ -50,7 +50,7 @@ func TestHook_RejectsWhenItCannotWork(t *testing.T) {
 			assert.Equal(t, ExitError, code)
 			assert.Empty(t, out)
 			assert.Contains(t, errOut, tt.want)
-			assert.Contains(t, errOut, "GL-HOOK-ERR: gitlab-repopolicy: push could not be verified")
+			assert.Contains(t, errOut, "GL-HOOK-ERR: gitlab-repopolicy: internal error: ")
 		})
 	}
 }

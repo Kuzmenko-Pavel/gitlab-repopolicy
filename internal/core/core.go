@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -56,6 +57,8 @@ type Deps struct {
 type Settings struct {
 	Mode  config.Mode
 	Total time.Duration
+	// Help is printed in denials: who to ask and where the rules are explained.
+	Help config.Help
 }
 
 // Request is the receive as Gitaly passed it.
@@ -123,7 +126,7 @@ type receive struct {
 func (r *receive) run(ctx context.Context) {
 	defer func() {
 		if p := recover(); p != nil {
-			r.fail(module.CodeInternalError, fmt.Sprintf("panic: %v", p))
+			r.fail(module.CodeInternalError, nil, fmt.Sprintf("panic: %v", p))
 		}
 	}()
 	for _, u := range r.req.Updates {
@@ -168,9 +171,8 @@ func (r *receive) isPersonal(ctx context.Context) bool {
 }
 
 // fail records a core violation that rejects the push.
-func (r *receive) fail(code, reason string) {
-	v := module.Violation{Code: code, Reason: reason, Message: coreMessage(code, r.settings.Total)}
-	r.addSection(report.CoreSection, v)
+func (r *receive) fail(code string, err error, reason string) {
+	r.addSection(report.CoreSection, r.coreViolation(code, err, reason))
 	r.events = append(r.events, r.event(audit.Event{Event: eventFor(code), Decision: "deny", Code: code, Reason: reason}))
 }
 
@@ -178,9 +180,9 @@ func (r *receive) fail(code, reason string) {
 func (r *receive) failErr(ctx context.Context, err error) {
 	switch {
 	case errors.Is(err, module.ErrLimitExceeded), errors.Is(ctx.Err(), context.DeadlineExceeded):
-		r.fail(module.CodeLimitExceeded, err.Error())
+		r.fail(module.CodeLimitExceeded, err, err.Error())
 	default:
-		r.fail(module.CodeInternalError, err.Error())
+		r.fail(module.CodeInternalError, err, err.Error())
 	}
 }
 
@@ -205,16 +207,27 @@ func (r *receive) addWarning(name string, vs ...module.Violation) {
 	r.warnings = append(r.warnings, report.Section{Name: name, Violations: vs})
 }
 
-func coreMessage(code string, total time.Duration) string {
+// coreViolation is a denial of the core: a limit of the push or an internal
+// error. Neither is the fault of the pusher; reason goes only to audit.
+func (r *receive) coreViolation(code string, err error, reason string) module.Violation {
+	v := module.Violation{Code: code, Reason: reason}
 	switch code {
 	case module.CodeLimitExceeded:
-		return fmt.Sprintf("The push is too large to verify within the limits (time %s, API calls, commits). Split it or ask an administrator.", total)
-	case module.CodeInternalError:
-		return "An internal error stopped the verification. Administrators are alerted; retry later."
-	case module.CodeAuthorizationBackend:
-		return "GitLab could not confirm the authorization. Retry later; administrators are alerted."
+		limit := fmt.Sprintf("the time of a push (timeouts.total %s)", r.settings.Total)
+		hint := "if the push is large, push it in parts; if it is small, the limit is too low on the server"
+		if errors.Is(err, module.ErrLimitExceeded) {
+			limit = strings.TrimSuffix(err.Error(), ": "+module.ErrLimitExceeded.Error()) + " in one ref"
+			hint = "push the branch in parts, for example git push origin <commit>:refs/heads/<branch>, then the rest"
+		}
+		v.Facts = []string{"limit reached: " + limit}
+		v.Hint = hint
+		v.Summary = "the check did not finish within the server limits (" + limit + "); the push is rejected"
+	default:
+		v.Facts = []string{"this is a problem of the server, not of your change"}
+		v.Hint = "retry once; if it repeats, report this id: " + r.id
+		v.Summary = "internal error: the push was not checked and is rejected; retry once, if it repeats report id " + r.id
 	}
-	return ""
+	return v
 }
 
 func eventFor(code string) string {
@@ -276,12 +289,30 @@ func (r *receive) outcome() Outcome {
 	switch {
 	case r.settings.Mode == config.ModeAudit:
 	case r.deny:
-		who := report.Pusher{Username: r.req.Env.Principal.Username, GLID: r.req.Env.Principal.GLID}
-		out.Allow, out.Stderr = false, report.Rejection(r.sections, who)
+		out.Allow, out.Stderr = false, report.Rejection(r.sections, r.reportContext())
 	default:
-		out.Stdout = report.Warnings(r.warnings, r.notices)
+		out.Stdout = report.Warnings(r.warnings, r.notices, r.reportContext())
 	}
 	return out
+}
+
+// reportContext is the frame of the output: the rules on the anchor, the
+// pusher and where to get help.
+func (r *receive) reportContext() report.Context {
+	env := r.req.Env
+	c := report.Context{
+		Pusher:  report.Pusher{Username: env.Principal.Username, GLID: env.Principal.GLID, Protocol: env.Protocol},
+		Branch:  strings.TrimPrefix(r.defaultRef, "refs/heads/"),
+		Anchor:  r.anchor,
+		Contact: r.settings.Help.Contact,
+		DocsURL: r.settings.Help.DocsURL,
+	}
+	for _, l := range r.policies {
+		if l.present {
+			c.Files = append(c.Files, l.mod.File())
+		}
+	}
+	return c
 }
 
 // acceptedChange reports the events of a policy change that the push makes.

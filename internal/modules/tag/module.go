@@ -51,14 +51,23 @@ func (*policy) Validate(context.Context, module.Validator) []module.Problem { re
 func (*Module) EvaluateInvalid(_ context.Context, in *module.Input, parseErr error) (*module.Result, error) {
 	ev := audit.Event{Event: audit.EventInvalidPolicy, Decision: "allow", Code: module.CodeInvalidPolicy, Reason: parseErr.Error()}
 	res := &module.Result{}
-	msg := "TAGPOLICY on the default branch is invalid: " + parseErr.Error() +
-		"\nNo tag can be created or moved until it is fixed on the default branch."
+	branch := "the default branch"
+	if in.Refs != nil {
+		branch = strings.TrimPrefix(in.Refs.Default(), "refs/heads/")
+	}
+	broken := module.Violation{Code: module.CodeInvalidPolicy,
+		Title:   "TAGPOLICY in " + branch + " is broken, so no tag can be created or moved",
+		Facts:   []string{"this is not caused by your tag; branches are not affected", "problem: TAGPOLICY " + parseErr.Error()},
+		Hint:    "who can fix it: the people who may change TAGPOLICY by the rules of PATHPOLICY",
+		Summary: "TAGPOLICY in " + branch + " is broken, no tag can be created or moved; not caused by your tag, it must be fixed in " + branch}
 	for _, u := range in.Updates {
 		if !u.IsTag() || u.Kind() == module.Delete {
 			continue
 		}
 		res.Decision, res.Touched = module.Deny, true
-		res.Violations = append(res.Violations, module.Violation{Code: module.CodeInvalidPolicy, Ref: u.Ref, Message: msg})
+		v := broken
+		v.Ref = u.Ref
+		res.Violations = append(res.Violations, v)
 	}
 	if res.Touched {
 		ev.Decision = "deny"

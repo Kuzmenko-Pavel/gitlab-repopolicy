@@ -21,7 +21,7 @@ import (
 // operation reaches the hook with the identity of the person behind it.
 
 // ciDenied is the GL-HOOK-ERR line of a change of ci/ by someone not in allow.
-const ciDenied = "gitlab-repopolicy: PATHPOLICY [ci] modification denied. See push output."
+const ciDenied = "gitlab-repopolicy: you may not change ci/"
 
 // withCIPolicy creates a project protected by ciPolicy.
 func withCIPolicy(t *testing.T, name string) *project {
@@ -43,7 +43,7 @@ func TestOps_HTTPSPush(t *testing.T) {
 
 	out, err := g.push(httpsURL(user("bob").Token, p.Path), "", "HEAD:refs/heads/bob-ci")
 	requirePushDenied(t, out, err, ciDenied)
-	assert.Contains(t, out, "Allowed to change these paths: ALICE.")
+	assert.Contains(t, out, "may change them: ALICE")
 	assert.False(t, branchExists(t, p, "bob-ci"))
 	deny := requireEvent(t, p, "deny of bob", decisionOn("refs/heads/bob-ci"))
 	assert.Equal(t, "deny", deny.Decision)
@@ -91,7 +91,8 @@ func TestOps_SSHDeployKey(t *testing.T) {
 	g := clone(t, alice.Token, p.Path)
 	g.commitFile("ci/build.yml", "build", "ci: change the build")
 	out, err := g.push(sshURL(p.Path), gl.state.Projects[groupProject].DeployKey, "HEAD:refs/heads/deploy-ci")
-	requirePushDenied(t, out, err, "gitlab-repopolicy: PATHPOLICY [ci] principal type not allowed. See push output.")
+	requirePushDenied(t, out, err, "gitlab-repopolicy: ci/")
+	require.Contains(t, out, "only people listed in PATHPOLICY rule ci may change it")
 	assert.False(t, branchExists(t, p, "deploy-ci"))
 	e := requireEvent(t, p, "deny of the deploy key", decisionOn("refs/heads/deploy-ci"))
 	assert.Equal(t, "unknown_principal", e.Code)
@@ -403,7 +404,7 @@ func pushSignedTag(t *testing.T, p *project, tag string) {
 	assert.Equal(t, "alice", e.Signer)
 }
 
-const tagDenied = "gitlab-repopolicy: TAGPOLICY [release] tag is not signed. See push output."
+const tagDenied = "gitlab-repopolicy: tags of this rule must be signed, and GitLab cannot sign a tag created in the UI or API"
 
 // TestOps_TagViaUI: GitLab cannot sign a tag it creates, so a
 // release tag from the UI is refused and the same tag signed by alice passes.

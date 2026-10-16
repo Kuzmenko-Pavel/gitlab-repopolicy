@@ -140,23 +140,22 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		if len(warnings) > 0 && len(problems) == 0 && !unknown {
 			r.addWarning(l.mod.File(), module.Violation{
 				Code: module.CodeInvalidPolicyUpdate, Ref: u.Ref,
+				Title: "the changed " + l.mod.File() + " has warnings",
 				Items: []module.Item{{Name: l.mod.File(), Details: warnings}},
 			})
 		}
 	}
 	switch {
 	case len(problems) > 0:
-		v := module.Violation{Code: code, Ref: u.Ref,
-			Message: "Fix the file before pushing; the hook validates every new version on any branch.",
-			Items:   []module.Item{{Name: l.mod.File(), Details: problems}}}
-		r.addSection(l.mod.File(), v)
+		r.addSection(l.mod.File(), changedInvalid(l.mod.File(), code, u.Ref, problems))
 		r.events = append(r.events, r.event(audit.Event{Event: audit.EventDecision, Module: l.mod.Name(), Decision: "deny",
 			Code: code, Ref: u.Ref, OldRev: u.Old, NewRev: u.New, PolicyBlob: f.blob,
 			Violations: []audit.Violation{{Code: code, Paths: []string{l.mod.File()}, Reason: strings.Join(problems, "; ")}}}))
 	case unknown:
-		v := module.Violation{Code: module.CodeAuthorizationBackend, Ref: u.Ref, Message: coreMessage(module.CodeAuthorizationBackend, 0),
-			Items: []module.Item{{Name: l.mod.File()}}}
-		r.addSection(l.mod.File(), v)
+		r.addSection(l.mod.File(), module.Violation{Code: module.CodeAuthorizationBackend, Ref: u.Ref,
+			Title: "could not check the changed " + l.mod.File() + ": the GitLab API did not answer",
+			Facts: []string{"this is a problem of the server, not of your change"}, Hint: "retry in a few minutes",
+			Summary: "could not check the changed " + l.mod.File() + ": the GitLab API did not answer; not caused by your change, retry in a few minutes"})
 		r.events = append(r.events, r.event(audit.Event{Event: audit.EventAuthorizationBackendFailure, Module: l.mod.Name(), Decision: "deny",
 			Code: module.CodeAuthorizationBackend, Ref: u.Ref, OldRev: u.Old, NewRev: u.New, PolicyBlob: f.blob}))
 	default:
@@ -167,6 +166,26 @@ func (r *receive) acceptFile(ctx context.Context, u module.RefUpdate, l *loaded)
 		r.events = append(r.events, r.event(base))
 	}
 	return nil
+}
+
+// changedInvalid is the denial of a new version of a policy file: the
+// problems with their lines, and how to check the file before a push.
+func changedInvalid(file, code, ref string, problems []string) module.Violation {
+	v := module.Violation{Code: code, Ref: ref, Title: "the changed " + file + " is invalid",
+		Items:   []module.Item{{Name: file, Details: problems}},
+		Hint:    "every changed policy file is checked, on any branch\ncheck it before a push: gitlab-repopolicy validate -f " + file,
+		Summary: "the changed " + file + " is invalid: " + problems[0]}
+	if code == module.CodeLockoutPrevented {
+		v.Title = ""
+		v.Hint = "fix the admins and push again; check them before a push: gitlab-repopolicy validate --online -f " + file
+	}
+	for _, p := range problems {
+		if strings.Contains(p, "private key") {
+			v.Hint += "\nthe commit with the private key stays in the history of your branch: remove it with git rebase -i and push it nowhere"
+			break
+		}
+	}
+	return v
 }
 
 // validatorFor is the authorizer that knows the usernames of the anchor version.

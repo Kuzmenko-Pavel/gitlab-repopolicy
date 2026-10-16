@@ -1,31 +1,23 @@
-gitlab-repopolicy: push rejected (PATHPOLICY: 6 violations)
+gitlab-repopolicy: push rejected by the rules of this repository (3 problems)
 
-PATHPOLICY refs/heads/main: policy change denied
-  PATHPOLICY is changed by its admins: platform-lead.
-  Without an effective admin, an Owner of the project may change it (recovery).
+PATHPOLICY rule "ci-config", branch petro/s01: you may not change these files
+  may change them: olena.platform, ivan.sre
+  files:
+    Makefile
+  CI and deploy logic belong to the platform team (#platform).
+  this rule applies to every branch: ask one of them to push the change
+
+PATHPOLICY, branch petro/s01: only PATHPOLICY admins may change PATHPOLICY
+  admins: olena.platform, ivan.sre
   files:
     PATHPOLICY
+  ask one of them to make this change; this applies to every branch, including yours
 
-PATHPOLICY refs/heads/feature: new policy has no effective administrators
-  files:
-    PATHPOLICY
-      - none of the admins is an active user with at least Maintainer access to the project
+PATHPOLICY, branch petro/s01: PATHPOLICY in main is broken, so no changes are accepted
+  this is not caused by your change
+  problem: PATHPOLICY line 3: version: 2 is not supported, use 1
+  who can help: #gitlab-support
 
-PATHPOLICY refs/heads/feature: policy is invalid
-  PATHPOLICY on the default branch is invalid: line 3: bad
-
-PATHPOLICY [ci-config] refs/heads/main: modification denied
-  Allowed to change these paths: platform-lead, sre-lead.
-  files:
-    .gitlab-ci.yml
-
-PATHPOLICY [deploy] refs/heads/main: principal type not allowed
-  Protected paths are changed only by people: a deploy key cannot change them.
-  files:
-    deploy/prod.yml
-
-PATHPOLICY [prod-values] refs/heads/release/1: unable to verify authorization
-  GitLab could not confirm the authorization. Retry later; administrators are alerted.
-
-user: bob (id 3)
-GL-HOOK-ERR: gitlab-repopolicy: PATHPOLICY [ci-config] modification denied; PATHPOLICY policy change denied; PATHPOLICY new policy has no effective administrators; 3 more. See push output.
+rules: PATHPOLICY in main (ca191b7); docs: https://wiki.example/repopolicy
+checked as: petro.dev (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: you may not change Makefile (PATHPOLICY rule ci-config; may change: olena.platform, ivan.sre) (+2 more: PATHPOLICY: only PATHPOLICY admins may change PATHPOLICY; PATHPOLICY: PATHPOLICY in main is broken, so no changes are accepted)

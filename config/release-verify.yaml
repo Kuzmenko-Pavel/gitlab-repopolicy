@@ -2,8 +2,9 @@
 # signature of the release tag against TAGPOLICY of this repository.
 mode: enforce
 
-# Only TAGPOLICY runs and it does not use the API, so gitlab_url and token_file
-# are never read. They point nowhere: a call would fail and deny.
+# Only TAGPOLICY runs, and the TAGPOLICY of this repository has no rule with
+# protected, the only part of TAGPOLICY that asks the API; so gitlab_url and
+# token_file are never read. They point nowhere: a call would fail.
 gitlab_url: http+unix://%2Fnonexistent%2Fgitlab-repopolicy.sock
 token_file: /nonexistent/gitlab-repopolicy/token
 

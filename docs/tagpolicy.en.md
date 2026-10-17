@@ -14,7 +14,8 @@ Who changes TAGPOLICY itself is set by a PATHPOLICY path rule ([pathpolicy.en.md
 ```yaml
 # examples/signed-releases/TAGPOLICY
 # Release tags: staging is signed by release-lead or dev-lead, prod only by
-# release-lead. Tags that match no rule, such as build-42, are not checked.
+# release-lead, and a prod tag must be protected in GitLab. Tags that match no
+# rule, such as build-42, are not checked.
 version: 1
 
 rules:
@@ -24,7 +25,10 @@ rules:
   - name: prod
     tags: 'v\d+\.\d+\.\d+-prod'
     signers: [release-lead]
-    message: Prod releases are signed by release-lead.
+    protected: true
+    message: >-
+      Prod releases are signed by release-lead.
+      Protect v*-prod in Settings > Repository > Protected tags.
 
 keys:
   release-lead: |

@@ -269,3 +269,23 @@ func TestTagPolicy_BranchesNotAffected(t *testing.T) {
 	s.Commit("feature", map[string]string{"a": "1"})
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/v1.0.0-prod"))
 }
+
+// TestTagPolicy_Protected: a new tag under a rule with protected must be a
+// protected tag of the project; a signed tag is denied only for that.
+func TestTagPolicy_Protected(t *testing.T) {
+	lead, dev := pgpSigner(t), sshSigner(t)
+	policy := strings.Replace(tagPolicyFor(lead, dev), "    signers: [lead]\n", "    signers: [lead]\n    protected: true\n", 1)
+	s, base := mainWith(t, map[string]string{"TAGPOLICY": policy})
+	s.Protected(nil, nil)
+	s.makeTag("v1.0.0-prod", "v1.0.0-prod", base, "commit", &lead)
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0-prod"), "the tag must be protected, but the project does not protect it",
+		"GL-HOOK-ERR: gitlab-repopolicy: tag v1.0.0-prod must be protected (TAGPOLICY rule prod)")
+
+	s.Protected(nil, []string{"v*"})
+	assertAllowed(t, s.Push(alice, "refs/tags/v1.0.0-prod"))
+
+	s.makeTag("v1.0.0-staging", "v1.0.0-staging", base, "commit", &dev)
+	before := s.ProtectedCalls()
+	assertAllowed(t, s.Push(alice, "refs/tags/v1.0.0-staging"))
+	assert.Equal(t, before, s.ProtectedCalls(), "a rule without protected does not ask GitLab")
+}

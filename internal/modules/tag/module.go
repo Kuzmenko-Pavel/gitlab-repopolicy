@@ -1,7 +1,8 @@
 // Package tag is the TAGPOLICY module: a tag whose name matches a rule is
 // accepted only when it is signed by a key that the rule allows. It is
-// FailClosed and does not call the API: the check relies only on the tag object
-// and the public keys in the file itself.
+// FailClosed: the signature check relies only on the tag object and the public
+// keys in the file itself. The API is asked only when a tag is created under a
+// rule with protected, and its failure only warns.
 package tag
 
 import (
@@ -31,7 +32,7 @@ func (*Module) OnInvalid() module.FailMode { return module.FailClosed }
 // MaxPolicySize raises the file limit for armored keys.
 func (*Module) MaxPolicySize() int { return maxPolicySize }
 
-// Needs is empty: TAGPOLICY does not use the API.
+// Needs is empty: the protection of a tag comes from Input.Refs, not from the authorizer.
 func (*Module) Needs() module.Needs { return module.Needs{} }
 
 // Parse decodes a TAGPOLICY file offline.

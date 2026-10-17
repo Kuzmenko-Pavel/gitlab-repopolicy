@@ -18,7 +18,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/buildinfo"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
 // RequiredScopes are the scopes of the service account token, exactly.
@@ -89,11 +89,11 @@ func (a App) checkModules(c *checks, cfg *config.Config) {
 	for _, m := range enabled {
 		names = append(names, m.Name())
 	}
-	s := settingsOf(cfg)
-	presets := commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)
-	if cfg.ModuleEnabled(commit.New(presets).Name()) {
-		for _, e := range presets.PresetErrors() {
-			c.fail("modules", "%s", e)
+	for _, m := range enabled {
+		if r, ok := m.(module.PresetReporter); ok {
+			for _, e := range r.PresetErrors() {
+				c.fail("modules", "%s", e)
+			}
 		}
 	}
 	if len(names) == 0 {

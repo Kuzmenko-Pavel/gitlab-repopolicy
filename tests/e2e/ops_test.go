@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -544,4 +545,34 @@ func TestOps_EmptyProjectFirstBranch(t *testing.T) {
 	}
 	require.NoError(t, gl.root(t.Context(), http.MethodGet, p.api(""), nil, &got))
 	assert.Equal(t, "main", got.DefaultBranch)
+}
+
+// TestOps_BranchPolicy: a branch created in the GitLab UI or API goes through
+// BRANCHPOLICY like a pushed one: a wrong name is denied, and a release branch
+// is accepted only once the project protects release/*.
+func TestOps_BranchPolicy(t *testing.T) {
+	t.Parallel()
+	p := newProject(t, "branch-standard")
+	alice := user("alice")
+	mustCommit(t, alice, p, "main", "", "feat: add the branch standard", create("BRANCHPOLICY", `version: 1
+rules:
+  - name: release
+    match: "release/*"
+    pattern: 'release/v[0-9]+\.[0-9]+\.[0-9]+'
+    protected: true
+  - name: work
+    match: "*"
+    pattern: '[a-z0-9.]+/[a-z0-9._/-]+'
+`))
+	newBranch := func(name string) error {
+		return gl.api(t.Context(), alice.Token, http.MethodPost,
+			p.api("/repository/branches?branch="+url.QueryEscape(name)+"&ref=main"), nil, nil)
+	}
+	requireHookDenied(t, newBranch("1-fix-login"), "branch 1-fix-login breaks BRANCHPOLICY rule work")
+	requireHookDenied(t, newBranch("release/v1.0.0"), "branch release/v1.0.0 must be protected")
+	require.NoError(t, gl.root(t.Context(), http.MethodPost, p.api("/protected_branches"), map[string]any{
+		"name": "release/*", "push_access_level": accessMaintainer, "merge_access_level": accessDeveloper,
+	}, nil))
+	require.NoError(t, newBranch("release/v1.0.0"))
+	require.NoError(t, newBranch("alice/x"))
 }

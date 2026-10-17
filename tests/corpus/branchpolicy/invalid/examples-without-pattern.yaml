@@ -1,0 +1,5 @@
+version: 1
+rules:
+  - name: r
+    match: "r/*"
+    examples: {valid: [r/x]}

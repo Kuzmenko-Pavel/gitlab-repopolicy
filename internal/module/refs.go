@@ -190,3 +190,25 @@ func (s Status) Reason() string {
 	}
 	return s.reason
 }
+
+// MatchPattern reports whether name matches a GitLab protected branch or tag pattern,
+// where "*" matches any sequence of characters, including "/".
+func MatchPattern(pattern, name string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == name
+	}
+	if !strings.HasPrefix(name, parts[0]) {
+		return false
+	}
+	name = name[len(parts[0]):]
+	last := parts[len(parts)-1]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(name, p)
+		if i < 0 {
+			return false
+		}
+		name = name[i+len(p):]
+	}
+	return strings.HasSuffix(name, last)
+}

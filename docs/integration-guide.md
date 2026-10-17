@@ -55,7 +55,7 @@ COMMITPOLICY - найбезпечніший старт: він не загрож
 - захищайте не лише `.gitlab-ci.yml`, а все, що визначає, що виконає deploy-job: includes, `Makefile`, скрипти. Захист самого `.gitlab-ci.yml` без `Makefile` декоративний, якщо job викликає `make`
 - шлях CI-конфігурації проєкту, якщо він не `.gitlab-ci.yml`, теж має бути в правилі. Його звіряє `settings-check`
 - компоненти з CI/CD Catalog фіксуйте на тегах: їхня логіка живе в проєкті компонента і захищається там
-- делегуйте COMMITPOLICY і TAGPOLICY їхнім власникам path-правилами ([examples/delegation/PATHPOLICY](../examples/delegation/PATHPOLICY))
+- делегуйте COMMITPOLICY, TAGPOLICY і BRANCHPOLICY їхнім власникам path-правилами ([examples/delegation/PATHPOLICY](../examples/delegation/PATHPOLICY))
 
 Перевіряйте policy до merge: `gitlab-repopolicy validate --online --config /etc/gitlab-repopolicy/config.yaml --project <проєкт>` і `explain` ([pathpolicy.md](pathpolicy.md#перевірка-без-push)).
 

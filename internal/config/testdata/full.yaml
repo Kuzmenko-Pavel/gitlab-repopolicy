@@ -14,7 +14,6 @@ modules:
   commitpolicy: disabled
 default_branch: [main, master]
 settings_check:
-  protected_branches: [main]
   protected_tags: ["v*"]
   job_token_push: false
 commitpolicy_presets:

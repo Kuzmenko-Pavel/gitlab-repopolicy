@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - name: a
+    match: "x/*"
+  - name: b
+    match: "x/*"

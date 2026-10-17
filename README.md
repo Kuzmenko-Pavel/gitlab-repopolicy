@@ -17,6 +17,7 @@
 | [PATHPOLICY](docs/pathpolicy.md) | хто може змінювати певні файли: CI-конфігурацію, deploy-логіку, prod-значення |
 | [COMMITPOLICY](docs/commitpolicy.md) | яким має бути формат commit messages |
 | [TAGPOLICY](docs/tagpolicy.md) | хто може випускати релізи: тег приймається лише з підписом дозволеного ключа OpenPGP або SSH |
+| [BRANCHPOLICY](docs/branchpolicy.md) | як називаються нові гілки і які з них мають бути захищені в GitLab |
 
 ## Навіщо
 
@@ -78,11 +79,12 @@ Policy-файли не мають розширення, тому редакто�
 
 ```json
 {
-  "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml" },
+  "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
     "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
     "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
@@ -96,7 +98,7 @@ Policy-файли не мають розширення, тому редакто�
 | [install.md](docs/install.md) | встановлення за типами інсталяцій, перевірка релізу, service account |
 | [configuration.md](docs/configuration.md) | `config.yaml` сервера |
 | [operations.md](docs/operations.md) | audit і алерти, recovery, break-glass, ротація токена, `settings-check`, оновлення, типові проблеми |
-| [pathpolicy.md](docs/pathpolicy.md), [commitpolicy.md](docs/commitpolicy.md), [tagpolicy.md](docs/tagpolicy.md) | довідник policy-файлів |
+| [pathpolicy.md](docs/pathpolicy.md), [commitpolicy.md](docs/commitpolicy.md), [tagpolicy.md](docs/tagpolicy.md), [branchpolicy.md](docs/branchpolicy.md) | довідник policy-файлів |
 | [integration-guide.md](docs/integration-guide.md) | порядок увімкнення на робочому інстансі |
 | [architecture.md](docs/architecture.md) | як влаштовано |
 | [threat-model.md](docs/threat-model.md) | від чого захищає і від чого ні |

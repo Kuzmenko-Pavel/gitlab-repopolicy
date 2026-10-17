@@ -4,7 +4,7 @@ Operational contract for AI and code agents working in this repository. Product 
 
 ## Project
 
-`gitlab-repopolicy` is a Go binary for the global `pre-receive.d` hook of GitLab Gitaly. It enforces repository-local policies from `PATHPOLICY`, `COMMITPOLICY` and `TAGPOLICY` on every push. Architecture: [docs/architecture.md](docs/architecture.md).
+`gitlab-repopolicy` is a Go binary for the global `pre-receive.d` hook of GitLab Gitaly. It enforces repository-local policies from `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY` and `BRANCHPOLICY` on every push. Architecture: [docs/architecture.md](docs/architecture.md).
 
 ## Commands
 
@@ -27,7 +27,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `internal/core` | anchor, policy loading, acceptance, module order, budgets, aggregation |
 | `internal/module` | module contract: `Module`, `Policy`, `Input`, `Result` |
 | `internal/modules` | `Default(Settings)`, the module list of the hook |
-| `internal/modules/{path,commit,tag}` | PATHPOLICY, COMMITPOLICY, TAGPOLICY |
+| `internal/modules/{path,commit,tag,branch}` | PATHPOLICY, COMMITPOLICY, TAGPOLICY, BRANCHPOLICY |
 | `internal/{changes,gitx,refs,identity,gitlab,hookenv,config,strictyaml,report,audit}` | core infrastructure |
 | `internal/{install,settings,coverage,token,breakglass}` | operational commands, called only from `cli` |
 | `internal/{spec,schema,buildinfo}` | format of policy files and its validator, JSON Schema generation, build metadata |
@@ -48,7 +48,7 @@ Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 
 Do not weaken these, not even in test configuration:
 
-- PATHPOLICY and TAGPOLICY fail closed; COMMITPOLICY fails open only where the documentation says so
+- PATHPOLICY and TAGPOLICY fail closed; COMMITPOLICY and BRANCHPOLICY fail open only where the documentation says so
 - policy is read only from the anchor: the tip of the default branch before the push
 - `version: 1` schemas of PATHPOLICY and TAGPOLICY are frozen; COMMITPOLICY only gains new rules in its catalogue
 - refusal codes and the audit event format are a public contract

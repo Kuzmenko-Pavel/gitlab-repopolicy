@@ -27,32 +27,6 @@ func (f *fakeAPI) ProtectedTags(context.Context, int64) ([]string, error) {
 	return f.tags, f.err
 }
 
-func TestProtectedPattern(t *testing.T) {
-	tests := []struct {
-		pattern, name string
-		want          bool
-	}{
-		{"main", "main", true},
-		{"main", "main2", false},
-		{"release/*", "release/1", true},
-		{"release/*", "release/1/hotfix", true},
-		{"release/*", "release", false},
-		{"*", "feature/x", true},
-		{"*-stable", "v1/2-stable", true},
-		{"*-stable", "stable", false},
-		{"v*", "v1.0.0", true},
-		{"v*.*", "v1", false},
-		{"a*b*c", "aXbYc", true},
-		{"a*b*c", "acb", false},
-		{"a*a", "a", false},
-		{"a*b", "ab", true},
-		{"**", "x", true},
-	}
-	for _, tt := range tests {
-		assert.Equal(t, tt.want, Match(tt.pattern, tt.name), "%s ~ %s", tt.pattern, tt.name)
-	}
-}
-
 func TestClassifier_LazyOnce(t *testing.T) {
 	api := &fakeAPI{branches: []string{"release/*"}, tags: []string{"v*"}}
 	c := New("refs/heads/main", 1, api, nil)

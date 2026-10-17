@@ -19,3 +19,4 @@ modules:
   pathpolicy: disabled
   commitpolicy: disabled
   tagpolicy: enabled
+  branchpolicy: disabled

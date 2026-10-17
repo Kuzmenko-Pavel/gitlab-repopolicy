@@ -17,6 +17,7 @@ Server-side checks of repository rules for GitLab Self-Managed. A global `pre-re
 | [PATHPOLICY](docs/pathpolicy.en.md) | who may change certain files: CI configuration, deploy logic, prod values |
 | [COMMITPOLICY](docs/commitpolicy.en.md) | what format commit messages must have |
 | [TAGPOLICY](docs/tagpolicy.en.md) | who may release: a tag is accepted only with a signature of an allowed OpenPGP or SSH key |
+| [BRANCHPOLICY](docs/branchpolicy.en.md) | how new branches are named and which of them must be protected in GitLab |
 
 ## Why
 
@@ -78,11 +79,12 @@ Policy files have no extension, so the editor has to be told that they are YAML 
 
 ```json
 {
-  "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml" },
+  "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
     "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
     "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
@@ -96,7 +98,7 @@ Check a file locally with the same code as the hook: `gitlab-repopolicy validate
 | [install.en.md](docs/install.en.md) | installation by installation type, release verification, service account |
 | [configuration.en.md](docs/configuration.en.md) | the server `config.yaml` |
 | [operations.en.md](docs/operations.en.md) | audit and alerts, recovery, break-glass, token rotation, `settings-check`, upgrades, common problems |
-| [pathpolicy.en.md](docs/pathpolicy.en.md), [commitpolicy.en.md](docs/commitpolicy.en.md), [tagpolicy.en.md](docs/tagpolicy.en.md) | policy file reference |
+| [pathpolicy.en.md](docs/pathpolicy.en.md), [commitpolicy.en.md](docs/commitpolicy.en.md), [tagpolicy.en.md](docs/tagpolicy.en.md), [branchpolicy.en.md](docs/branchpolicy.en.md) | policy file reference |
 | [integration-guide.en.md](docs/integration-guide.en.md) | the order of turning it on in a production instance |
 | [architecture.en.md](docs/architecture.en.md) | how it works |
 | [threat-model.en.md](docs/threat-model.en.md) | what it protects from and what not |

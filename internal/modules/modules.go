@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/branch"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
@@ -14,7 +15,9 @@ import (
 // Settings are the parts of the server config that modules need; the CLI fills them in.
 type Settings struct {
 	// CommitPresets is commitpolicy_presets of the server config, undecoded.
-	CommitPresets  map[string]any
+	CommitPresets map[string]any
+	// BranchPresets is branchpolicy_presets of the server config, undecoded.
+	BranchPresets  map[string]any
 	PatternTimeout time.Duration
 	PatternBudget  time.Duration
 	// Clock measures time budgets.
@@ -57,6 +60,7 @@ func Default(s Settings) Set {
 		Modules: []module.Module{
 			commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
 			tag.New(),
+			branch.New(branch.NewSettings(s.BranchPresets)),
 		},
 	}
 }

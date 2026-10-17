@@ -66,6 +66,9 @@ func (s *Settings) PresetErrors() []string {
 	return out
 }
 
+// PresetErrors lists presets of the server config that cannot be used.
+func (m *Module) PresetErrors() []string { return m.settings.PresetErrors() }
+
 // Module is COMMITPOLICY. It is FailOpen: a broken policy or a failure of the
 // API skips the check with a warning instead of blocking merges.
 type Module struct {

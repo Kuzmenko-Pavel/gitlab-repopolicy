@@ -45,6 +45,7 @@ modules:
   pathpolicy: enabled
   commitpolicy: enabled
   tagpolicy: enabled
+  branchpolicy: enabled
 
 # Allowed names of the default branch, used by the hook and by settings-check.
 # The hook rejects every push to a project whose default branch has another
@@ -56,10 +57,9 @@ default_branch: [main]
 # What settings-check expects of every project with PATHPOLICY. Empty values
 # are not checked and are the default; the values below are examples.
 # ci_config_path, principals and the protection of the default branch are
-# always checked. protected_branches are branches to protect besides the
-# default one, protected_tags are checked in projects with TAGPOLICY.
+# always checked, the branches that BRANCHPOLICY requires to be protected too;
+# protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
 
@@ -70,5 +70,7 @@ help:
   contact: ""
   docs_url: ""
 
-# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+# Presets for "extends:" in COMMITPOLICY and in BRANCHPOLICY; examples are in
+# docs/configuration.md.
 commitpolicy_presets: {}
+branchpolicy_presets: {}

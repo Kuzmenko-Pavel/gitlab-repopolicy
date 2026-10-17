@@ -183,9 +183,9 @@ Deleting a policy file is not a new version but a return to the state without th
 | What is deleted | Who may | After the merge into the default branch |
 | --- | --- | --- |
 | PATHPOLICY | an admin, in recovery an Owner | no rules; the next PATHPOLICY is added by a Maintainer+ |
-| COMMITPOLICY, TAGPOLICY | whoever the anchor PATHPOLICY rule allows; without a rule, anyone with push access | no checks of commit format or tag signatures |
+| COMMITPOLICY, TAGPOLICY, BRANCHPOLICY | whoever the anchor PATHPOLICY rule allows; without a rule, anyone with push access | no checks of commit format, tag signatures or branch names |
 
-If PATHPOLICY is deleted while COMMITPOLICY or TAGPOLICY stay, anyone with push access can change them. The hook warns about this on acceptance. A directory `PATHPOLICY/` in place of the file is a policy change too (a deletion and an invalid new version).
+If PATHPOLICY is deleted while COMMITPOLICY, TAGPOLICY or BRANCHPOLICY stay, anyone with push access can change them. The hook warns about this on acceptance. A directory `PATHPOLICY/` in place of the file is a policy change too (a deletion and an invalid new version).
 
 ## Denials
 

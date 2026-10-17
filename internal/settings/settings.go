@@ -1,6 +1,7 @@
 // Package settings implements settings-check: it compares the settings of
-// projects with PATHPOLICY against the expectations of the server config and
-// checks that the principals of their policies still exist.
+// projects with PATHPOLICY or BRANCHPOLICY against the expectations of the
+// server config and of BRANCHPOLICY, and checks that the principals of their
+// policies still exist.
 // Settings live in the database of Rails, the hook never sees them change, so
 // this is detection, not prevention.
 package settings
@@ -15,7 +16,6 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/config"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
 // API is the part of the GitLab client that settings-check uses.
@@ -78,7 +78,8 @@ type Options struct {
 	Expected config.SettingsCheck
 	// DefaultBranches are the allowed names of the default branch; empty is not checked.
 	DefaultBranches []string
-	// Guard is the PATHPOLICY module; Modules are all enabled modules, for principals.
+	// Guard is the PATHPOLICY module, nil when it is disabled; Modules are
+	// all enabled modules, for principals and BRANCHPOLICY.
 	Guard   module.Root
 	Modules []module.Module
 }
@@ -88,8 +89,8 @@ type Options struct {
 // to list the projects is an error; a project GitLab does not answer for is a
 // drift of the check "unavailable", never a silent pass.
 func Run(ctx context.Context, api API, o Options) (Report, error) {
-	if o.Guard == nil {
-		return Report{}, errors.New("the PATHPOLICY module is disabled")
+	if o.Guard == nil && moduleOf(o, branchPolicyFile) == nil {
+		return Report{}, errors.New("the PATHPOLICY and BRANCHPOLICY modules are disabled")
 	}
 	projects, err := api.MemberProjects(ctx)
 	if err != nil {
@@ -121,10 +122,19 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 		return res
 	}
 	guard, ref, found, err := guardPolicy(ctx, api, o, p)
+	if err != nil {
+		return unavailable("read PATHPOLICY", err)
+	}
+	if !found {
+		// Only the default branch name and the protection BRANCHPOLICY requires:
+		// the other checks guard PATHPOLICY.
+		ref = p.DefaultBranch
+	}
+	branches, hasBranch, err := branchPolicy(ctx, api, o, p, ref, drift)
 	switch {
 	case err != nil:
-		return unavailable("read "+o.Guard.File(), err)
-	case !found:
+		return unavailable("read BRANCHPOLICY", err)
+	case !found && !hasBranch:
 		return nil
 	}
 	exp := o.Expected
@@ -135,27 +145,19 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 		drift(CheckAccess, "the service account has access level %d, Maintainer (40) is required to see the settings", level)
 		return res
 	}
+	if !found {
+		if r := checkBranches(ctx, api, p, branches, false, drift); r != nil {
+			return unavailable("protected branches", r)
+		}
+		return res
+	}
 	if guard == nil {
 		drift(CheckPolicy, "%s on %s cannot be parsed", o.Guard.File(), ref)
 	} else {
 		checkCIConfig(p, o.Guard, guard, drift)
 	}
-	// The default branch is always protected: PATHPOLICY is read from it.
-	have, err := api.ProtectedBranches(ctx, p.ID)
-	if err != nil {
+	if err := checkBranches(ctx, api, p, branches, true, drift); err != nil {
 		return unavailable("protected branches", err)
-	}
-	var missing []string
-	if p.DefaultBranch != "" && !slices.ContainsFunc(have, func(pattern string) bool { return refs.Match(pattern, p.DefaultBranch) }) {
-		missing = append(missing, p.DefaultBranch+" (the default branch)")
-	}
-	for _, b := range missingFrom(exp.ProtectedBranches, have) {
-		if b != p.DefaultBranch {
-			missing = append(missing, b)
-		}
-	}
-	if len(missing) > 0 {
-		drift(CheckProtected, "not protected: %s", strings.Join(missing, ", "))
 	}
 	tags, err := hasTagPolicy(ctx, api, o, p, ref)
 	if err != nil {
@@ -184,11 +186,82 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 	return res
 }
 
+// checkBranches: the project protects the patterns that BRANCHPOLICY requires
+// and, for a project with PATHPOLICY, which is read from it, the default
+// branch. A pattern counts as protected when a protected branch pattern of the
+// project matches its text: release/* is covered by release/* and by *.
+func checkBranches(ctx context.Context, api API, p gitlab.Project, required []string, defaultBranch bool, drift func(string, string, ...any)) error {
+	if len(required) == 0 && !defaultBranch {
+		return nil
+	}
+	have, err := api.ProtectedBranches(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	covered := func(name string) bool {
+		return slices.ContainsFunc(have, func(pattern string) bool { return module.MatchPattern(pattern, name) })
+	}
+	var missing []string
+	if defaultBranch && p.DefaultBranch != "" && !covered(p.DefaultBranch) {
+		missing = append(missing, p.DefaultBranch+" (the default branch)")
+	}
+	for _, m := range required {
+		if !covered(m) {
+			missing = append(missing, m+" (BRANCHPOLICY)")
+		}
+	}
+	if len(missing) > 0 {
+		drift(CheckProtected, "not protected: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// branchPolicyFile is the file of BRANCHPOLICY; its protected rules name the
+// patterns a project must protect.
+const branchPolicyFile = "BRANCHPOLICY"
+
+// branchPolicy reads BRANCHPOLICY on ref and returns the patterns its rules
+// with protected require; a file that cannot be parsed is a drift.
+func branchPolicy(ctx context.Context, api API, o Options, p gitlab.Project, ref string, drift func(string, string, ...any)) ([]string, bool, error) {
+	m := moduleOf(o, branchPolicyFile)
+	if m == nil || ref == "" {
+		return nil, false, nil
+	}
+	data, err := api.RawFile(ctx, p.ID, m.File(), ref, m.MaxPolicySize())
+	if gitlab.KindOf(err) == gitlab.NotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	pol, err := m.Parse(data)
+	if err != nil {
+		drift(CheckPolicy, "%s on %s cannot be parsed", m.File(), ref)
+		return nil, true, nil
+	}
+	if l, ok := pol.(module.ProtectedBranchLister); ok {
+		return l.ProtectedBranches(), true, nil
+	}
+	return nil, true, nil
+}
+
+func moduleOf(o Options, file string) module.Module {
+	for _, m := range o.Modules {
+		if m.File() == file {
+			return m
+		}
+	}
+	return nil
+}
+
 // guardPolicy reads PATHPOLICY from the default branch, or from the expected
 // default branch when the current one has none: a switch of the default
 // branch to one without PATHPOLICY is a drift, not a project without policy.
 // The policy is nil when the file cannot be parsed.
 func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (module.Policy, string, bool, error) {
+	if o.Guard == nil {
+		return nil, "", false, nil
+	}
 	branches := []string{p.DefaultBranch}
 	for _, e := range o.DefaultBranches {
 		if e != p.DefaultBranch {
@@ -279,7 +352,8 @@ func checkPrincipals(ctx context.Context, api API, o Options, p gitlab.Project, 
 		}
 		pol, err := m.Parse(data)
 		if err != nil {
-			if m != o.Guard {
+			// PATHPOLICY and BRANCHPOLICY report their own parse errors.
+			if m != o.Guard && m.File() != branchPolicyFile {
 				drift(CheckPolicy, "%s on %s cannot be parsed", m.File(), ref)
 			}
 			continue

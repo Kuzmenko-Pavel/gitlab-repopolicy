@@ -12,6 +12,7 @@ gitlab-repopolicy is a Go binary for the global `pre-receive` server hook of Git
 | `PATHPOLICY` | who may change certain files: CI configuration, deploy and infra configuration, other sensitive paths |
 | `COMMITPOLICY` | the format of commit messages in branches |
 | `TAGPOLICY` | who may release: a tag under a rule is accepted only with a signature of an allowed OpenPGP or SSH key |
+| `BRANCHPOLICY` | how new branches are named and which classes of branches must be protected in GitLab |
 
 GitLab Self-Managed has no mechanism that limits changes of specific files to specific people on every way a change can arrive (push, merge, Web IDE, API), and no structural server-side check of commit format. Protected branches work at the level of a branch, Code Owners only in a merge request and are bypassed by a direct push, push rules exist only in Premium and do not know who makes the change. Client-side tools (commitlint, pre-commit) are bypassed with `--no-verify` and do not see merges and the Web IDE.
 
@@ -73,6 +74,7 @@ internal/modules          the module list of the hook
 internal/modules/path     PATHPOLICY
 internal/modules/commit   COMMITPOLICY
 internal/modules/tag      TAGPOLICY
+internal/modules/branch   BRANCHPOLICY
 internal/changes          which paths and commits a push changes
 internal/gitx             child git processes in an isolated environment
 internal/hookenv          the environment and stdin that Gitaly passes to the hook
@@ -114,7 +116,7 @@ One push:
 4. **Default branch.** If `default_branch` is set in the config and the default branch of the project has another name, the push is denied with `default_branch_not_allowed`. The modules do not run: policies are not read from such a branch. The check applies to every project of the instance, including those without policies
 5. **Acceptance.** Every changed policy file in any branch is checked as a new version, even if the anchor has no policy yet: an invalid new file is denied with `invalid_policy_update`
 6. **No policy.** If the anchor has no policy files, the modules do not run. A push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
-7. **Modules.** PATHPOLICY first, then COMMITPOLICY and TAGPOLICY. Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits that no branch or tag has yet (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)). The API only if the decision depends on it
+7. **Modules.** PATHPOLICY first, then COMMITPOLICY, TAGPOLICY and BRANCHPOLICY. Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits that no branch or tag has yet (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)). The API only if the decision depends on it
 8. **Decision.** AND over modules; one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
 
 A typical run takes about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched: most of it is starting git processes. A call to the API adds 50-300 ms and is rare.

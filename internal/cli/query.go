@@ -27,7 +27,7 @@ const queryTimeout = time.Minute
 
 // settingsOf are the module settings of the server config.
 func settingsOf(cfg *config.Config) modules.Settings {
-	return modules.Settings{CommitPresets: cfg.CommitPolicyPresets,
+	return modules.Settings{CommitPresets: cfg.CommitPolicyPresets, BranchPresets: cfg.BranchPolicyPresets,
 		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}
 }
 

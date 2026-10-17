@@ -38,7 +38,7 @@ make code-lint test-unit test-integration
 | `code-build` | бінарник у `bin/gitlab-repopolicy` |
 | `test-unit` | unit-тести з race detector |
 | `test-integration` | сценарії на справжньому `git receive-pack` з git із `GIT_BIN`, корпус policy, документація: мовні пари, відносні посилання, цитати `examples/` |
-| `test-coverage` | unit і integration з покриттям у `coverage/` |
+| `test-coverage` | unit і integration з покриттям у `coverage/`. У CI job `unit` відправляє `coverage/coverage.out` у Codecov: у PR з'являються коментар з різницею покриття проти main і перевірка `codecov/project`, яка падає, якщо покриття проєкту впало більш ніж на 1% |
 | `test-fuzz` | кожна fuzz-ціль по `FUZZTIME` |
 | `test-load` | бенчмарки hook |
 | `test-e2e`, `test-e2e-down` | стенд GitLab CE і сценарії на ньому |

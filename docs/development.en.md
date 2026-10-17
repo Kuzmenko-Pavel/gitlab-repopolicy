@@ -38,7 +38,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `code-build` | the binary in `bin/gitlab-repopolicy` |
 | `test-unit` | unit tests with the race detector |
 | `test-integration` | scenarios on a real `git receive-pack` with the git from `GIT_BIN`, the policy corpus, the documentation: language pairs, relative links, quotes of `examples/` |
-| `test-coverage` | unit and integration with coverage into `coverage/` |
+| `test-coverage` | unit and integration with coverage into `coverage/`. In CI the `unit` job sends `coverage/coverage.out` to Codecov: a pull request gets a comment with the coverage difference against main and the `codecov/project` check, which fails when the project coverage drops by more than 1% |
 | `test-fuzz` | every fuzz target for `FUZZTIME` |
 | `test-load` | hook benchmarks |
 | `test-e2e`, `test-e2e-down` | the GitLab CE stand and scenarios on it |

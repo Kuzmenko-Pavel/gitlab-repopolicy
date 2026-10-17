@@ -71,6 +71,13 @@ jobs:
             go.sum
             tools/*/go.sum
       - run: make test-unit test-fuzz test-coverage
+      # A release reuses ci through workflow_call and does not need the upload.
+      - if: github.ref_type != 'tag'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/coverage.out
+          disable_search: true
 
   integration:
     runs-on: ubuntu-24.04

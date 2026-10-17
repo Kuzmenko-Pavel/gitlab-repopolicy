@@ -1,0 +1,15 @@
+# Codecov: a comment with the coverage diff on every pull request and a
+# status check that fails when the project coverage drops by more than 1%.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        informational: true
+ignore:
+  - "tests/**"
+comment:
+  layout: "diff, flags, files"

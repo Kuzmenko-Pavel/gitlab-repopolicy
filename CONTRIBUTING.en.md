@@ -9,7 +9,7 @@ Thank you for wanting to help. Bugs and ideas go to [issues](https://github.com/
 
 - Discuss a larger change (a new module, a new COMMITPOLICY rule, a change of hook behaviour) in an issue first
 - How to work with the code, tests and the e2e stand - [docs/development.en.md](docs/development.en.md). Everything goes through `make`, the entry point is `make help`. GNU make 4 or newer is required
-- A change is done when `make code-lint test-unit test-integration` pass. Changes to identity, the GitLab API client or installation also need `make test-e2e`; label such a pull request `e2e`
+- A change is done when `make code-lint test-unit test-integration` pass. Changes to identity, the GitLab API client or installation also need `make test-e2e`; label such a pull request `e2e`. ci and e2e run manually on any branch: Actions > e2e > Run workflow
 
 ## Commits
 

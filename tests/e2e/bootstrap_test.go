@@ -62,6 +62,7 @@ func (s *stand) bootstrap(ctx context.Context) error {
 		{"groups", s.ensureGroups},
 		{"projects", s.ensureProjects},
 		{"memberships", s.ensureMemberships},
+		{"member access", s.waitMemberAccess},
 		{"SSH keys", s.ensureSSHKeys},
 		{"project access token", s.ensureProjectToken},
 		{"runner", s.ensureRunner},
@@ -319,6 +320,37 @@ func (s *stand) ensureMemberships(ctx context.Context) error {
 type apiKey struct {
 	ID  int    `json:"id"`
 	Key string `json:"key"`
+}
+
+// waitMemberAccess waits until every active member sees the group project:
+// GitLab refreshes project access after a membership change in the background.
+func (s *stand) waitMemberAccess(ctx context.Context) error {
+	tokens := []string{s.state.ServiceAccount.Token}
+	for _, u := range standUsers {
+		if u.access > 0 && !u.blocked {
+			tokens = append(tokens, s.state.Users[u.username].Token)
+		}
+	}
+	path := fmt.Sprintf("/projects/%d", s.state.Projects[groupProject].ID)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	for _, token := range tokens {
+		for {
+			err := s.api(ctx, token, http.MethodGet, path, nil, nil)
+			if !isStatus(err, http.StatusNotFound) {
+				if err != nil {
+					return err
+				}
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("%s is still not visible to a member: %w", groupProject, ctx.Err())
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	return nil
 }
 
 // ensureSSHKeys registers a personal key of alice and a deploy key with push access to the group project.

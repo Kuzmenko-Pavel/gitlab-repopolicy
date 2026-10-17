@@ -7,3 +7,4 @@ token_file: /etc/gitlab-repopolicy/token
 audit:
   file: /var/log/gitlab-repopolicy/audit.log
   stdout: false
+default_branch: [main]

@@ -101,7 +101,7 @@ func project(id int64, path string) gitlab.Project {
 }
 
 func expected() config.SettingsCheck {
-	return config.SettingsCheck{DefaultBranch: []string{"main"}, ProtectedBranches: []string{"release/*"}, ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
+	return config.SettingsCheck{ProtectedBranches: []string{"release/*"}, ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
 }
 
 func healthy() *fakeAPI {
@@ -119,7 +119,7 @@ func run(t *testing.T, api *fakeAPI, exp config.SettingsCheck) Report {
 	t.Helper()
 	set := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
 	root, mods := set.Root, set.All()
-	rep, err := Run(context.Background(), api, Options{Expected: exp, Guard: root, Modules: mods})
+	rep, err := Run(context.Background(), api, Options{Expected: exp, DefaultBranches: []string{"main"}, Guard: root, Modules: mods})
 	require.NoError(t, err)
 	return rep
 }

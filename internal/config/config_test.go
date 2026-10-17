@@ -38,6 +38,7 @@ func TestParse_Full(t *testing.T) {
 	assert.True(t, cfg.ModuleEnabled("pathpolicy"))
 	assert.False(t, cfg.ModuleEnabled("commitpolicy"))
 	assert.True(t, cfg.ModuleEnabled("tagpolicy"))
+	assert.Equal(t, []string{"main", "master"}, cfg.DefaultBranch)
 	require.NotNil(t, cfg.SettingsCheck.JobTokenPush)
 	assert.False(t, *cfg.SettingsCheck.JobTokenPush)
 	assert.Contains(t, cfg.CommitPolicyPresets, "org-conventional")
@@ -66,6 +67,11 @@ func TestParse_Invalid(t *testing.T) {
 		{"zero timeout", "gitlab_url: " + socketURL + "\ntimeouts: {pattern: 0s}\n", "timeouts.pattern: must be positive"},
 		{"no api calls", "gitlab_url: " + socketURL + "\nmax_api_calls: 0\n", "max_api_calls: must be at least 1"},
 		{"module state", "gitlab_url: " + socketURL + "\nmodules: {pathpolicy: on}\n", `modules.pathpolicy: "on" is not one of enabled, disabled`},
+		{"empty default branch", "gitlab_url: " + socketURL + "\ndefault_branch: [\"\"]\n", "default_branch: an empty name"},
+		{"default branch pattern", "gitlab_url: " + socketURL + "\ndefault_branch: [\"release/*\"]\n", `default_branch: "release/*": a name, not a pattern`},
+		{"default branch ref", "gitlab_url: " + socketURL + "\ndefault_branch: [refs/heads/main]\n", "a short name without refs/heads/"},
+		{"default branch twice", "gitlab_url: " + socketURL + "\ndefault_branch: [main, main]\n", `default_branch: "main" is listed twice`},
+		{"default branch under settings_check", "gitlab_url: " + socketURL + "\nsettings_check: {default_branch: [main]}\n", "field default_branch not found"},
 		{"unknown key", "gitlab_url: " + socketURL + "\ngit_bin: /usr/bin/git\n", "field git_bin not found"},
 		{"anchor", "gitlab_url: &u " + socketURL + "\n", "anchors are not allowed"},
 	}

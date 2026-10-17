@@ -1,0 +1,11 @@
+gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+
+the default branch of this project is not allowed
+  the default branch of this project is legacy, allowed: main, master
+  this is a setting of the project, not a problem of your change
+  a Maintainer sets one of main, master as the default branch in Settings > Repository > Branch defaults
+  who can help: #gitlab-support
+
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7); docs: https://wiki.example/repopolicy
+checked as: alice (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: the default branch legacy is not one of main, master; a Maintainer fixes it in Settings > Repository > Branch defaults

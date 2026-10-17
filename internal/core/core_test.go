@@ -356,3 +356,61 @@ func fixtureGit() string {
 	}
 	return "git"
 }
+
+func TestDefaultBranch(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"a": "1"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"a": "2"})
+	r.stage(c2)
+	upd := module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"}
+	with := func(mode config.Mode, names ...string) Settings {
+		return Settings{Mode: mode, Total: 10 * time.Second, DefaultBranch: names}
+	}
+
+	assert.True(t, r.run([]module.Module{closed}, with(config.ModeEnforce, "master", "main"), nil, "", upd).out.Allow)
+	assert.True(t, r.run([]module.Module{closed}, with(config.ModeEnforce), nil, "", upd).out.Allow, "an empty list is not checked")
+
+	res := r.run([]module.Module{closed}, with(config.ModeEnforce, "master"), nil, "", upd)
+	assert.False(t, res.out.Allow)
+	assert.Contains(t, res.out.Stderr, "the default branch main is not one of master")
+	ev := events(res.audit, audit.EventDecision)
+	require.Len(t, ev, 1)
+	assert.Equal(t, module.CodeDefaultBranchNotAllowed, ev[0].Code)
+	assert.Equal(t, "deny", ev[0].Decision)
+
+	del := module.RefUpdate{Old: c1, New: zero40, Ref: "refs/heads/old"}
+	assert.False(t, r.run([]module.Module{closed}, with(config.ModeEnforce, "master"), nil, "", del).out.Allow, "deletions are checked too")
+
+	res = r.run([]module.Module{closed}, with(config.ModeAudit, "master"), nil, "", upd)
+	assert.True(t, res.out.Allow)
+	assert.Equal(t, module.CodeDefaultBranchNotAllowed, events(res.audit, audit.EventDecision)[0].Code)
+
+	git, err := gitx.Open(gitx.Env{Dir: r.bare, Path: r.path})
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, git.Close()) }()
+	env := hookenv.Env{Principal: module.Principal{GLID: "user-2", Username: "alice"}, ProjectPath: "a/b/c", ProjectID: 1}
+	out := Run(context.Background(), with(config.ModeEnforce, "master"), Deps{Modules: []module.Module{closed}, Git: git, API: &fakeAPI{},
+		Audit: &memAudit{}, Breakglass: grant{project: 1}, Clock: time.Now}, Request{Env: env, Updates: []module.RefUpdate{upd}})
+	assert.True(t, out.Allow, "break-glass comes first")
+}
+
+func TestDefaultBranch_EmptyRepository(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"a": "1"})
+	r.stage(c1)
+	settings := Settings{Mode: config.ModeEnforce, Total: 10 * time.Second, DefaultBranch: []string{"main"}}
+	dev := module.RefUpdate{Old: zero40, New: c1, Ref: "refs/heads/dev"}
+	main := module.RefUpdate{Old: zero40, New: c1, Ref: "refs/heads/main"}
+	tag := module.RefUpdate{Old: zero40, New: c1, Ref: "refs/tags/v1"}
+
+	res := r.run([]module.Module{closed}, settings, nil, "", dev)
+	assert.False(t, res.out.Allow, "GitLab would make dev the default branch")
+	assert.Contains(t, res.out.Stderr, "push main first")
+	assert.True(t, r.run([]module.Module{closed}, settings, nil, "", dev, main).out.Allow, "main comes with the push")
+	assert.True(t, r.run([]module.Module{closed}, settings, nil, "", tag).out.Allow, "a tag does not set the default branch")
+	assert.True(t, r.run([]module.Module{closed}, Settings{Mode: config.ModeEnforce, Total: 10 * time.Second}, nil, "", dev).out.Allow, "without default_branch nothing is checked")
+
+	r.publish(c1)
+	assert.True(t, r.run([]module.Module{closed}, settings, nil, "", dev).out.Allow, "a repository with branches keeps its default branch")
+}

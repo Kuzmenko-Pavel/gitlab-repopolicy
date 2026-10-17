@@ -35,13 +35,21 @@ var onMain = Context{
 
 func TestGolden(t *testing.T) {
 	t.Run("core", func(t *testing.T) {
-		for _, code := range []string{module.CodeLimitExceeded, module.CodeInternalError, module.CodeAuthorizationBackend} {
+		for _, code := range []string{module.CodeLimitExceeded, module.CodeInternalError, module.CodeAuthorizationBackend, module.CodeDefaultBranchNotAllowed} {
 			t.Run(code, func(t *testing.T) {
 				v := module.Violation{Code: code, Ref: "refs/heads/feature", Reason: "secret API detail",
 					Facts: []string{"this is a problem of the server, not of your change"}, Hint: "retry in a few minutes"}
 				c := onMain
 				if code == module.CodeInternalError {
 					c.Contact = "#gitlab-support"
+				}
+				if code == module.CodeDefaultBranchNotAllowed {
+					v.Ref = ""
+					v.Facts = []string{"the default branch of this project is legacy, allowed: main, master",
+						"this is a setting of the project, not a problem of your change"}
+					v.Hint = "a Maintainer sets one of main, master as the default branch in Settings > Repository > Branch defaults"
+					v.Summary = "the default branch legacy is not one of main, master; a Maintainer fixes it in Settings > Repository > Branch defaults"
+					c.Contact, c.DocsURL = "#gitlab-support", "https://wiki.example/repopolicy"
 				}
 				out := Rejection([]Section{{Name: CoreSection, Violations: []module.Violation{v}}}, c)
 				assert.NotContains(t, out, "secret API detail", "audit reasons never reach the user")

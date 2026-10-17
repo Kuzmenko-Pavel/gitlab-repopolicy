@@ -176,7 +176,7 @@ const memberProjects = "/api/v4/projects?membership=true&archived=false&order_by
 func TestSettingsCheck(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.Protected([]string{"main", "release/*"}, []string{"v*"})
-	s.AddConfig("settings_check:\n  default_branch: [main]\n  protected_branches: [main]\n  protected_tags: [\"v*\"]\n  job_token_push: false\n")
+	s.AddConfig("default_branch: [main]\nsettings_check:\n  protected_branches: [main]\n  protected_tags: [\"v*\"]\n  job_token_push: false\n")
 	s.API.Handle("GET", memberProjects, gitlabtest.OK(settingsProject("ci.yml", false)))
 	s.API.Handle("GET", "/api/v4/projects/1/repository/files/PATHPOLICY/raw?ref=main", gitlabtest.OK(pathPolicy))
 

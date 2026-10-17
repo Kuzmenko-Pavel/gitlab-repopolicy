@@ -77,7 +77,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	writer := audit.NewWriter(o)
 	mods := a.enabledModules(cfg)
 	auditor := &gitAudit{w: writer, git: git, ctx: ctx}
-	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std(), Help: cfg.Help}, core.Deps{
+	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std(), Help: cfg.Help, DefaultBranch: cfg.DefaultBranch}, core.Deps{
 		Root: mods.Root, Modules: mods.Modules, Git: git, API: api, Audit: auditor, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: updates})

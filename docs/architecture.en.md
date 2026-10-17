@@ -5,7 +5,12 @@
 
 ## Overview
 
-gitlab-repopolicy is a Go binary for the global `pre-receive` server hook of Gitaly. On every push it applies rules that live in the repository itself:
+gitlab-repopolicy is a Go binary for the global `pre-receive` server hook of Gitaly. When someone makes changes to a project repository (push, merge, Web IDE, API), the hook checks them against rules that live in the repository itself. Repositories of projects in groups are checked. Not checked:
+- wiki, design and snippet repositories
+- projects in a personal namespace of a user
+- the whole instance if the config has `mode: off`. With `mode: audit` the hook checks everything and writes decisions to audit, but does not deny a push
+
+Rule files:
 
 | File | What it checks |
 | --- | --- |
@@ -45,7 +50,7 @@ Principles:
        repository and quarantine objects of the push
 ```
 
-Gitaly runs the hook only after the regular GitLab permission check. The hook gets the branch and tag updates on stdin and the identity of whoever makes the change in the `GL_*` variables, and reads the repository with the same git as Gitaly. It talks to the outside only through the GitLab API and only when the decision depends on the role of a user, the type of an SSH key or whether a branch is protected.
+Gitaly runs the hook only after the regular GitLab permission check. Until the hook answers, the new objects of the push are kept in a temporary directory (quarantine): they get into the repository only if the push is accepted. The hook gets the branch and tag updates on stdin and the identity of whoever makes the change in the `GL_*` variables, and reads the repository with the same git as Gitaly. It talks to the outside only through the GitLab API and only when the decision depends on the role of a user, the type of an SSH key or whether a branch is protected.
 
 ## Responsibilities
 
@@ -92,7 +97,7 @@ internal/testmodule       a test module for checks of the core, only in tests
 
 The core does not know what a module checks, a module does not know how changes and identity are obtained. A module declares its file, its behaviour on an invalid policy (fail closed or skip) and the data it needs; the core computes only that. The linter (`depguard`, `forbidigo`) in `make code-lint` checks the dependency rules between packages.
 
-A new kind of rules is a new module and a new file; the core, the trust model and operations do not change. The module file automatically becomes a protected path, and a PATHPOLICY path rule sets its owner.
+A new kind of rules is a new module and a new file; the core, the trust model and operations do not change. The module file is not protected by itself: only a PATHPOLICY rule that covers the file protects it. Without such a rule the hook accepts a new version of the file with the warning `anyone who can push may change it`.
 
 ## External dependencies
 
@@ -111,15 +116,15 @@ The Go dependencies of the binary are `go.yaml.in/yaml/v3`, `github.com/bmatcuk/
 One push:
 
 1. **Entry.** The repository is not a project (wiki, design, snippet) - allowed without a log. `mode: off` - allowed
-2. **Anchor.** The default branch before the push. Every policy file is read only from here: a push cannot weaken the rules for itself, and a branch with a weaker policy does not authorize itself
+2. **Anchor.** The commit the default branch pointed to before the push. Every policy file is read only from here: a push cannot weaken the rules for itself, and a branch with a weaker policy does not authorize itself
 3. **Break-glass.** A valid grant for the project - allowed with a `breakglass` event
 4. **Default branch.** If `default_branch` is set in the config and the default branch of the project has another name, the push is denied with `default_branch_not_allowed`. The modules do not run: policies are not read from such a branch. The check applies to every project of the instance, including those without policies
 5. **Acceptance.** Every changed policy file in any branch is checked as a new version, even if the anchor has no policy yet: an invalid new file is denied with `invalid_policy_update`
 6. **No policy.** If the anchor has no policy files, the modules do not run. A push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
 7. **Modules.** PATHPOLICY first, then COMMITPOLICY, TAGPOLICY and BRANCHPOLICY. Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits that no branch or tag has yet (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)). The API only if the decision depends on it
-8. **Decision.** AND over modules; one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
+8. **Decision.** AND over modules. If the project is in a personal namespace, a denial does not apply: the push is allowed without a log. With `mode: audit` the decision is written to audit with `"enforced": false`, and the push goes through. Otherwise one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
 
-A typical run takes about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched: most of it is starting git processes. A call to the API adds 50-300 ms and is rare.
+The run time of the hook depends on the node, the size of the repository and the push. As a guide, about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched. Most of it is starting git processes. A call to the API adds 50-300 ms and is rare. You can measure on your own hardware with the benchmarks `tests/integration/bench_test.go` (`make test-load`).
 
 Limits that protect against DoS:
 
@@ -146,8 +151,8 @@ Step by step - [install.en.md](install.en.md), operations - [operations.en.md](o
 ## Security considerations
 
 - **Trust model.** A policy is read only from the default branch before the push. PATHPOLICY protects itself (`admins`) and, through path rules, the other policy files
-- **Identity.** Only from `GL_ID` and `GL_USERNAME`, which GitLab sets. Author, committer and commit signatures are not used for authorization. A deploy key is not a person. Client push options do not affect the decision
-- **Deny under uncertainty.** PATHPOLICY and TAGPOLICY fail closed: an API failure, an invalid policy, an internal error deny a protected change. For TAGPOLICY this concerns the signature: the `protected` check gives a warning on an API failure, because it is hygiene, not access. COMMITPOLICY skips the check with a warning on a failure: it is hygiene, not access. The exception is the acceptance of a new COMMITPOLICY version with `except.users`: if the API did not answer, the push is denied with `authorization_backend_failure`, because it is unknown whether these users exist. An API failure never turns recovery on
+- **Identity.** The principal is whoever GitLab accepted the push on behalf of: a person or a bot. The hook determines it only from `GL_ID` and `GL_USERNAME`, which GitLab sets. Author, committer and commit signatures are not used for authorization. A deploy key is not a person. Client push options do not affect the decision
+- **Deny under uncertainty.** When the hook cannot get the answer it needs, a module either denies the push (fail closed) or skips the check with a warning (fail open). PATHPOLICY and TAGPOLICY guard access and fail closed: an API failure, an invalid policy, an internal error deny a protected change. For TAGPOLICY this concerns the signature: the `protected` check gives a warning on an API failure, because it is hygiene, not access. COMMITPOLICY and BRANCHPOLICY skip the check with a warning on a failure, because it is hygiene, not access. A broken BRANCHPOLICY on the default branch writes the event `invalid_branch_policy`, a broken COMMITPOLICY `invalid_commit_policy`. The exception is the acceptance of a new COMMITPOLICY version with `except.users`: if the API did not answer, the push is denied with `authorization_backend_failure`, because it is unknown whether these users exist. An API failure never turns recovery on
 - **Git isolation.** Child git processes run without replace refs and without system and global config: `refs/replace/*` cannot hide a change from the check
 - **Untrusted input.** Policy files, stdin, commit messages and tag objects are parsed strictly and with limits; the parsers are covered by fuzz tests
 - **Confidential messages.** The user sees rules from the policy file (they are in the repository anyway), but not API results: roles, account state, error details. These go only to audit

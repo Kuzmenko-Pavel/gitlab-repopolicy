@@ -104,7 +104,7 @@ func skipped(in *module.Input, fact string) *module.Result {
 		Violations: []module.Violation{{Code: module.CodeInvalidPolicy,
 			Title: "BRANCHPOLICY in " + branch + " cannot be used, so names of new branches are not checked until it is fixed",
 			Facts: []string{fact}}},
-		Events: []audit.Event{{Event: audit.EventInvalidPolicy, Decision: "warn", Code: module.CodeInvalidPolicy, Reason: fact}},
+		Events: []audit.Event{{Event: audit.EventInvalidBranchPolicy, Decision: "warn", Code: module.CodeInvalidPolicy, Reason: fact}},
 	}
 }
 

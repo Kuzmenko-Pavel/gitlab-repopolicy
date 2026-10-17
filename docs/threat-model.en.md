@@ -3,7 +3,7 @@
 
 # Threat model
 
-gitlab-repopolicy protects the content of protected paths, the format of history and release tags from everyone who can push but does not manage the project. Project settings are out of its reach. This is the main residual risk, and only detection (`settings-check`) compensates for it.
+gitlab-repopolicy protects the content of protected paths, the format of history and release tags in project repositories from those who can make changes to them (push, merge, Web IDE, API) but do not manage the project. Wiki, design and snippet repositories, projects in a personal namespace and the whole instance with `mode: off` are not checked. Project settings are out of the reach of the hook. This is the main residual risk, and only detection (`settings-check`) compensates for it.
 
 The security of the tool does not depend on the secrecy of its code: every limitation is described here in public.
 
@@ -30,12 +30,12 @@ A Maintainer is partly inside: their git changes are limited, project settings a
 | compromised account without the right | protects | protects | protects | limited by its role |
 | compromised account with the right | no | no | protects | has the right by definition; a release tag also needs the private signing key. 2FA, SSO and audit help |
 | CI (`CI_JOB_TOKEN`) | protects | protects | protects | a job pushes as the user who started the pipeline and is checked as that user |
-
-BRANCHPOLICY is not in the table because it does not tell actors apart: the rules are the same for everyone who can create a branch. It limits which branches can be created: `deny` forbids a class, and a name that falls into no class is denied. It is hygiene, not protection against an attacker: on an API failure the `user_prefix` and `protected` checks are skipped with a warning, and existing branches are not checked.
 | deploy key | protects | protects | protects | a deploy key is not a person, even if an admin created it; for TAGPOLICY the signature decides |
 | project or group access token, service account | protects | protects | protects | the right only by an explicit username in the policy |
 | GitLab administrator | no | no | no | impersonation, membership |
 | root on a Gitaly node, the `git` user | no | no | no | writes around hooks |
+
+BRANCHPOLICY is not in the table because it does not tell actors apart. The rules are the same for everyone who can create a branch. It limits which branches can be created. `deny` forbids a class, and a name that falls into no class is denied. It is hygiene, not protection against an attacker. On an API failure the `user_prefix` and `protected` checks are skipped with a warning, and existing branches are not checked.
 
 ## Bypasses through project settings
 
@@ -57,7 +57,7 @@ If `default_branch` has several names, for example `[main, master]` during a mig
 
 - **A change of protected paths** in any way: a push over HTTPS and SSH, the merge button, auto-merge, the Web IDE, the API, revert and cherry-pick in the UI, a push from CI. The hook sees the identity of whoever makes the change, not the commit author
 - **Weakening the rules in the same push.** A policy is read from the default branch before the push; a new version of a policy cannot be used for itself
-- **A branch with its own weaker policy.** One anchor for the whole push
+- **A branch with its own weaker policy.** One anchor for the whole push: the rules for all branches and tags are taken from the commit the default branch pointed to before the push
 - **A forged author.** Author, committer and commit signatures are not used for authorization
 - **A deploy key created by an admin.** Not a person, denied on a protected path
 - **Client push options** do not affect the decision
@@ -72,13 +72,13 @@ If `default_branch` has several names, for example `[main, master]` during a mig
 
 - Projects and forks in personal namespaces are not checked. Changes from them reach group projects through a merge, which is checked
 - Import and export, restore from a backup, project transfer are operations of an Owner and an administrator
-- Between reading the anchor and updating the branch there are milliseconds. For the default branch git itself rejects an outdated state
+- Two simultaneous pushes. The hook reads the anchor at the start of its push, and another push may change the default branch in the meantime. git updates a branch only if its value is still the one the push came with, so git itself rejects an outdated state of the default branch
 - The behaviour of the code that the protected CI builds and deploys: gitlab-repopolicy protects the pipeline, not the application
 - A rename or deletion of a user frees the username. If another person takes it, they get the rights from the policy until the policy is fixed. `settings-check` reports principals that no longer exist
 - A new branch or tag on an old commit that is already in a protected branch is not checked by PATHPOLICY and COMMITPOLICY. TAGPOLICY checks the signature of such a tag
 - A merge into an unprotected branch brings no new commits: PATHPOLICY does not check it, COMMITPOLICY checks only the merge commit, not the merged commits that are already in the repository
 - A compromised private signing key: until the merge of the TAGPOLICY change that removes the key, it can sign a release. An SSH key also has no expiry: its lifetime and a separate key for signing are the responsibility of whoever adds the key to TAGPOLICY
-- The service account token reads the code, metadata and values of CI/CD variables of every group. On one Linux package node this is no more than the `git` user, which runs Rails and Gitaly, already has. With separate Gitaly nodes it is an accepted risk: protect the token file and the nodes
+- The service account token reads the code, metadata and values of CI/CD variables of every group. This is a GitLab property of the Maintainer role and the `read_api` scope, the hook does not use it. On one Linux package node this is no more than the `git` user, which runs Rails and Gitaly, already has. With separate Gitaly nodes it is an accepted risk: protect the token file and the nodes
 - The hook does not protect the GitHub repository of the project itself: here repository rules and artifact signatures keep releases intact ([release.en.md](release.en.md))
 
 ## Reporting vulnerabilities

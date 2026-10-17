@@ -50,11 +50,18 @@ If the hook cannot write an event to audit, the push is not affected, and the us
 | `policy_recovery` | an Owner changed PATHPOLICY through recovery | **yes, every one** |
 | `invalid_policy` | PATHPOLICY or TAGPOLICY in the default branch is invalid | **yes** |
 | `invalid_commit_policy` | COMMITPOLICY in the default branch is invalid (the check is skipped) | no |
+| `invalid_branch_policy` | BRANCHPOLICY in the default branch is invalid (names of new branches are not checked, the push passes with a warning) | no |
 | `authorization_backend_failure` | the API is unavailable on a protected operation, the token does not work (including a 401 while a rule is checked), the service account does not see the project (`reason`: `project_not_visible`, `role_below_maintainer`) | yes, if there are several in 5 minutes: a short API failure gives one event, a series means an expired token, a group without the service account or an unavailable API. The installation picks the threshold for its load |
 | `unknown_principal` | a deploy key or an unparsable `GL_ID` on a protected path | no |
 | `breakglass` | a break-glass grant is issued (`action: grant`), revoked (`action: revoke`) or used by the hook | **yes** |
 | `settings_drift` | `settings-check` found a difference | **yes** |
 | `internal_error` | an internal error of the binary, a failure of `token rotate` (`action: token_rotate`) | **yes** |
+
+**What a denial event is called.** Usually a denial is a `decision` event with the denial code in `code`. But if for the same branch or tag the GitLab API also did not answer or an internal error happened, the event is named after that failure: `authorization_backend_failure` or `internal_error`. The denial code itself then stays in `violations[].code`. For example, a tag with someone else's signature for which the API did not answer whether the tag is protected is an `authorization_backend_failure` event with `"decision": "deny"` and `tag_signer_not_allowed` in `violations`. So an alert on a series of `authorization_backend_failure` may also fire on ordinary denials, and all denials are found by `"decision": "deny"`, not only by `"event": "decision"`:
+
+```sh
+jq -c 'select(.decision == "deny") | {event, code, codes: [.violations[]?.code], project_path, ref}' /var/log/gitlab-repopolicy/audit.log
+```
 
 Also watch `decision` with `code: invalid_policy_update` in `mode: audit`: the hook would not have let such a policy version through in `enforce`, and after the switch it blocks the project.
 
@@ -84,7 +91,7 @@ Recovery turns on when PATHPOLICY has no effective admin left: all were removed 
 sudo gitlab-repopolicy admins --project group/project
 ```
 
-shows admins from the file, effective admins and whether recovery is on. An API failure is an error, not "0 admins".
+shows admins from the file, effective admins and whether recovery is on. An API failure is an error, not "0 admins". `admins` and `explain` read the server configuration and the token (`--config`, by default `/etc/gitlab-repopolicy/config.yaml`), so they run on a Gitaly node as root or as the git user.
 
 ```text
 $ sudo gitlab-repopolicy admins --project acme/app
@@ -240,7 +247,7 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 | `could not check permissions: the GitLab API did not answer` on protected changes | the API is unavailable or the token expired | `selftest`; `reason` in audit |
 | `this project is not connected to gitlab-repopolicy correctly` | the token is refused or the hook cannot read it (the token is read only at the first API call, so pushes without the API pass), the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | the same in a personal project | the project owner is blocked or banned: the service account token does not see such users, and the project is treated as a group project | expected behaviour, fail closed |
-| `the check did not finish within the server limits` | the push is larger than the limits (`limits`, `max_api_calls`, `timeouts`) | split the push; if the push is small, the limit is too low |
+| `the check did not finish within the server limits` | the push is larger than the limits: `max_api_calls`, `timeouts` or more than 50 000 commits whose paths PATHPOLICY checks | split the push; if the push is small, the limit is too low |
 | `internal error: the push was not checked and is rejected` with an id | an internal error of the binary | find the `internal_error` event with this `receive_id` in audit |
 | `the audit log is not writable, tell your GitLab administrators` | the hook user cannot write to `audit.file` | `sudo -u git gitlab-repopolicy selftest`, the permissions of the log directory |
 | a merge request or the Web IDE shows only "pre-receive hook declined" without text | another hook in `pre-receive.d/` denied the push without a `GL-HOOK-ERR` line | check the neighbouring files in `pre-receive.d/` |
@@ -263,7 +270,12 @@ git clone --mirror https://gitlab.example.com/acme/app.git app.git
 gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice --project acme/app --project-id 812
 ```
 
-`--project` and `--project-id` are the path and the ID of the real project: with them `test` asks the API about roles and protected branches of this very project. Without them `local/test/repository` with ID 1 is used, and the API answers are about project 1.
+`--project` and `--project-id` are the path and the ID of the real project. With them `test` asks the API about roles and protected branches of this very project. Without them `local/test/repository` with ID 1 is used, and the API answers are about project 1.
+
+What `test` needs:
+- the server configuration (`--config`, by default `/etc/gitlab-repopolicy/config.yaml`) and its token, when the rules need the API. So `test` runs on a Gitaly node as a user who can read them, for example `sudo -u git`
+- who pushes. `--user alice` sets `GL_USERNAME`, and `test` looks `GL_ID` (`user-<id>`) up through the API by the username. Without the API set it explicitly, `--gl-id user-314`, otherwise `test` fails with `--gl-id is not given and user alice cannot be looked up`
+- `--protocol` (`ssh` by default, `http` or `web`) - as if the push came this way. The `checked as:` line of the output and `protocol` in audit depend on it
 
 Exit code 0 means the push would be accepted, and `test` prints the result: `allowed: no rule was touched, 3 new commits` or `allowed: the rules allow the change, 3 new commits`. 1 is a denial with the same text the user would see, or an error. 2 is a usage error, for example a missing required flag.
 

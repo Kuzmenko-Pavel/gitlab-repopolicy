@@ -10,7 +10,19 @@
 
 # gitlab-repopolicy
 
-Серверна перевірка правил репозиторію для GitLab Self-Managed. Глобальний `pre-receive` hook Gitaly перевіряє кожен push за policy-файлами, які лежать у самому репозиторії:
+Серверна перевірка правил репозиторію для GitLab Self-Managed. Глобальний `pre-receive` hook Gitaly перевіряє push у репозиторії проєктів за policy-файлами, які лежать у самому репозиторії. Якщо push порушує правила, GitLab його відхиляє і показує, що не так і як виправити.
+
+## З чого почати
+
+| Хто ви | Що вам потрібно | Куди дивитися |
+| --- | --- | --- |
+| розробник, якому GitLab відхилив push | зрозуміти відмову і виправити коміт, тег чи гілку | документ політики з рядка відмови: [COMMITPOLICY](docs/commitpolicy.md), [TAGPOLICY](docs/tagpolicy.md), [BRANCHPOLICY](docs/branchpolicy.md), [PATHPOLICY](docs/pathpolicy.md) |
+| Maintainer проєкту | написати policy-файл, перевірити його локально і ввімкнути без зупинки роботи команди | ті самі документи політик, потім [integration-guide.md](docs/integration-guide.md) |
+| адміністратор GitLab | встановити hook, налаштувати сервер, стежити за audit | [install.md](docs/install.md), [configuration.md](docs/configuration.md), [operations.md](docs/operations.md), [integration-guide.md](docs/integration-guide.md) |
+
+## Політики
+
+Кожна політика - окремий YAML-файл у корені репозиторію.
 
 | Файл | Що вирішує |
 | --- | --- |
@@ -23,7 +35,14 @@
 
 У GitLab немає способу дозволити зміну конкретних файлів лише конкретним людям на будь-якому шляху зміни. Protected branches захищають цілу гілку, Code Owners працюють лише в merge request і обходяться прямим push, push rules є лише в Premium і не знають, хто вносить зміну. Клієнтські перевірки (commitlint, pre-commit) обходяться `--no-verify` і не бачать merge кнопкою та Web IDE.
 
-gitlab-repopolicy перевіряє зміну на сервері, хоч би як її внесли: push по HTTPS чи SSH, merge, auto-merge, Web IDE, API, push із CI. Правила версіонуються і проходять review разом з кодом. Hook може лише відмовити: права GitLab він не розширює.
+gitlab-repopolicy перевіряє зміну на сервері, тому байдуже, як її внесли: push по HTTPS чи SSH, merge кнопкою, auto-merge, Web IDE, API, push із CI. Правила версіонуються і проходять review разом з кодом. Hook може лише відмовити, права GitLab він не розширює.
+
+Коли hook нічого не перевіряє:
+- push у проєкт особистого namespace користувача (`alice/my-project`). Перевіряються лише проєкти груп
+- push у репозиторії wiki, design і snippets
+- у конфігурації сервера `mode: off`
+
+З `mode: audit` hook перевіряє все, але лише записує рішення в audit і нікому не відмовляє ([configuration.md](docs/configuration.md#mode)).
 
 ```yaml
 # examples/ci-config/PATHPOLICY
@@ -51,17 +70,36 @@ rules:
     allow: [platform-lead, release-manager]
 ```
 
-## Встановлення за п'ять команд
+## Передумови
 
-Перед цим потрібні instance service account з токеном і `custom_hooks_dir` у конфігурації Gitaly. Покроково, зокрема перевірка підпису релізу, - [docs/install.md](docs/install.md).
+Перед встановленням мають бути:
+- GitLab Self-Managed, CE або EE, з версіями з таблиці нижче
+- права root на кожній ноді, де працює Gitaly
+- instance service account з токеном (`read_api`, `self_rotate`), Maintainer у кожній top-level групі ([install.md](docs/install.md#3-service-account-і-токен))
+- `custom_hooks_dir` у конфігурації Gitaly, наприклад `/var/opt/gitlab/gitaly/custom_hooks` у `gitlab.rb` і `gitlab-ctl reconfigure`. Без нього Gitaly не запускає глобальні hooks
+- пакет `.deb` або `.rpm` з [GitHub Releases](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases) з перевіреним підписом ([install.md](docs/install.md#1-завантажити-й-перевірити-реліз))
+
+## Перший запуск
+
+Коротко для Linux package на одній ноді. Docker, окремі ноди Gitaly і всі кроки докладно - [docs/install.md](docs/install.md).
 
 ```sh
 sudo apt install ./gitlab-repopolicy_1.0.0_linux_amd64.deb
-sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # токен service account, Ctrl-D
+sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # токен service account, Enter, Ctrl-D
 sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git
 sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
+
+Що має вийти:
+- пакет ставить бінарник `/usr/bin/gitlab-repopolicy`, конфігурацію `/etc/gitlab-repopolicy/config.yaml` і вимкнені таймери
+- `cat` нічого не друкує, токен лягає у файл з правами 0440
+- `install-hook` друкує `.../pre-receive.d/50-gitlab-repopolicy: created`. З цієї миті hook перевіряє push
+- `selftest` друкує рядки `ok`, `info` або `warn`, а будь-який `FAIL` дає код виходу 1. Від root і від `git` результат має бути однаковий, бо hook працює від `git`
+
+Для робочого інстансу перед `install-hook` поставте в конфігурації `mode: audit`. Тоді hook нікому не відмовляє, а лише пише, кому відмовив би ([integration-guide.md](docs/integration-guide.md)).
+
+Перевірити, що hook справді працює, можна на тестовому проєкті. Додайте в нього PATHPOLICY і зробіть push, який її порушує ([pathpolicy.md](docs/pathpolicy.md)). Відмова видна у виводі `git push`, рішення - у `/var/log/gitlab-repopolicy/audit.log`.
 
 ## Підтримувані версії GitLab
 
@@ -89,7 +127,7 @@ Policy-файли не мають розширення, тому редакто�
 }
 ```
 
-Перевірити файл локально тим самим кодом, що й hook: `gitlab-repopolicy validate`, повідомлення комітів - `gitlab-repopolicy lint-commit`.
+Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate`, повідомлення комітів - `gitlab-repopolicy lint-commit`.
 
 ## Документація
 

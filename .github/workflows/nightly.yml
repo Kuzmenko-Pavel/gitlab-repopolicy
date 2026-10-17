@@ -102,7 +102,13 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/*/go.sum
-      - run: make release-reproduce
+      # There is nothing to rebuild before the first release.
+      - run: |
+          if [ -z "$(git tag --list 'v*')" ]; then
+            echo "reproduce: skipped, there is no release tag v* yet"
+            exit 0
+          fi
+          make release-reproduce
 
   report:
     needs: [e2e-latest, fuzz, load, dependency-scan, reproduce]

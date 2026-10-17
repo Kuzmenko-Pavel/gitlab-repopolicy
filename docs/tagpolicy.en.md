@@ -5,7 +5,7 @@
 
 TAGPOLICY answers one question: is the tag signed by a key that may release tags with this name. The file lives in the repository root as `TAGPOLICY`, its content is YAML.
 
-A release is a signed tag, and different environments are released by different people. A rule ties a regex of tag names to a set of OpenPGP or SSH public keys. The check relies only on the tag object and the keys in the file itself: neither the GitLab API nor `gpg` or `ssh-keygen` on the server is needed.
+A release is a signed tag, and different environments are released by different people. A rule ties a regex of tag names to a set of OpenPGP or SSH public keys. The signature check relies only on the tag object and the keys in the file itself: neither the GitLab API nor `gpg` or `ssh-keygen` on the server is needed. The API is needed only by a rule with `protected: true`, and only when a tag is created.
 
 Who changes TAGPOLICY itself is set by a PATHPOLICY path rule ([pathpolicy.en.md](pathpolicy.en.md)). The history of release rights is the history of this file.
 
@@ -53,6 +53,7 @@ keys:
 | `rules[].name` | yes | `[a-z0-9-]{1,63}`, unique in the file |
 | `rules[].tags` | yes | an RE2 regex, up to 256 bytes. It must match the whole tag name without `refs/tags/`, there is no need to add `^` and `$` |
 | `rules[].signers` | yes | 1-32 key labels from `keys` |
+| `rules[].protected` | no | `true` - a new tag under this rule must be a protected tag of the project in GitLab. `false` by default |
 | `rules[].message` | no | text for the person who is denied, up to 1000 characters |
 | `keys` | yes | 1-32 entries `label: key` |
 
@@ -85,6 +86,8 @@ For every new or moved tag whose name matches a rule:
    - SSH: the signature namespace is `git`, the hash is `sha256` or `sha512`, RSA only `rsa-sha2-256` or `rsa-sha2-512`, not `ssh-rsa` (SHA-1). A signature with an sk key must carry the user presence flag
 
 The SSH signature format has no signature time and no key expiry, so an SSH key is valid while it is in the file. Its lifetime and a separate key for signing (not the one used to push) are the responsibility of whoever adds the key to TAGPOLICY.
+
+Apart from the signature, if a tag is created and at least one matching rule has `protected: true`, the hook asks GitLab whether the project protects this tag (Settings > Repository > Protected tags). If not, it is denied with `tag_not_protected`. The pipeline of the tag deploys, and protected CI/CD variables and protected runners are available only to protected tags: without protection the release goes out but deploys nothing, and people search for the reason for a long time. So the denial comes at once on the push, with a hint what to set up. It is hygiene, not access: if the API did not answer, the tag is accepted with a warning. If a tag has both a signature problem and a protection problem, the output shows both. Moving a tag is not checked for protection.
 
 TAGPOLICY does not govern tag deletion: GitLab protected tags decide who may create, move and delete tags. For projects with PATHPOLICY `settings-check` checks that they are in place.
 
@@ -130,7 +133,7 @@ Rotating and revoking a key is a change of TAGPOLICY in the default branch. It a
 
 ## Denials
 
-TAGPOLICY fails closed under uncertainty, but it does not use the API, so an API failure or an expired token do not affect it.
+TAGPOLICY fails closed under uncertainty: the signature, an invalid policy and an internal error give a denial. The API is needed only by the `protected` check, and its failure or an expired token give a warning, not a denial.
 
 | Code | Title in the output | When |
 | --- | --- | --- |
@@ -138,6 +141,8 @@ TAGPOLICY fails closed under uncertainty, but it does not use the API, so an API
 | `tag_object_invalid` | the tag does not match its ref, or more precisely: the tag was signed as "x" but is pushed as "y", the tag points to a tree, not a commit | the name inside the object differs from the tag name, the tag does not point to a commit |
 | `tag_signer_not_allowed` | this key may not sign these tags | the key is not in the file or its label is not in `signers` |
 | `tag_signature_invalid` | the signature cannot be accepted | the key is expired or revoked, a weak hash, a wrong SSH namespace |
+| `tag_not_protected` | the tag must be protected, but the project does not protect it | a new tag under a rule with `protected: true`, and the project does not protect it |
+| `authorization_backend_failure`, `limit_exceeded` | could not check that the tag is protected; the tag is accepted | only a warning: the API did not answer during the `protected` check |
 | `invalid_policy` | TAGPOLICY in main is broken, so no tag can be created or moved | TAGPOLICY in the default branch is invalid: creating and moving any tag is denied, branches are not affected |
 | `invalid_policy_update` | the changed TAGPOLICY is invalid | a new version of the file failed acceptance |
 
@@ -169,4 +174,4 @@ gitlab-repopolicy test --repo . --old 0000000000000000000000000000000000000000 \
   --new "$(git rev-parse v1.4.0-prod)" --ref refs/tags/v1.4.0-prod --user release --config release-verify.yaml
 ```
 
-`test` makes the same decision as the hook, on a local repository. `release-verify.yaml` is a copy of [config/release-verify.yaml](../config/release-verify.yaml): only TAGPOLICY is enabled in it, and no API is needed. This is how the project checks its own release tags ([release.en.md](release.en.md)).
+`test` makes the same decision as the hook, on a local repository. `release-verify.yaml` is a copy of [config/release-verify.yaml](../config/release-verify.yaml): only TAGPOLICY is enabled in it, and the TAGPOLICY of the project has no rules with `protected`, so no API is needed. This is how the project checks its own release tags ([release.en.md](release.en.md)).

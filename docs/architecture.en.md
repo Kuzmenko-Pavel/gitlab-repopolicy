@@ -97,7 +97,7 @@ A new kind of rules is a new module and a new file; the core, the trust model an
 | Dependency | What for | When |
 | --- | --- | --- |
 | the git that Gitaly passes in the `PATH` of the hook | reading policies from the anchor, paths, commits, tag objects | on every push to a project |
-| GitLab REST API v4 | the role of a user in the project, personal or deploy SSH key, protected branches and tags, project visibility for the service account | only when a rule is touched, on policy acceptance and on bootstrap |
+| GitLab REST API v4 | the role of a user in the project, personal or deploy SSH key, protected branches and tags, project visibility for the service account | only when a rule is touched, on policy acceptance and on bootstrap. TAGPOLICY - only on the creation of a tag under a rule with `protected: true` |
 | GitLab GraphQL | whether usernames added to a policy exist and are active | acceptance of a new version, counting admins, `settings-check` |
 
 The API is reached through the Workhorse unix socket on the same node or over HTTPS if Gitaly runs on a separate node. One request takes up to 3 s, a push up to 30 calls. There is no cache between calls: revoked rights apply at once.
@@ -145,7 +145,7 @@ Step by step - [install.en.md](install.en.md), operations - [operations.en.md](o
 
 - **Trust model.** A policy is read only from the default branch before the push. PATHPOLICY protects itself (`admins`) and, through path rules, the other policy files
 - **Identity.** Only from `GL_ID` and `GL_USERNAME`, which GitLab sets. Author, committer and commit signatures are not used for authorization. A deploy key is not a person. Client push options do not affect the decision
-- **Deny under uncertainty.** PATHPOLICY and TAGPOLICY fail closed: an API failure, an invalid policy, an internal error deny a protected change. COMMITPOLICY skips the check with a warning on a failure: it is hygiene, not access. The exception is the acceptance of a new COMMITPOLICY version with `except.users`: if the API did not answer, the push is denied with `authorization_backend_failure`, because it is unknown whether these users exist. An API failure never turns recovery on
+- **Deny under uncertainty.** PATHPOLICY and TAGPOLICY fail closed: an API failure, an invalid policy, an internal error deny a protected change. For TAGPOLICY this concerns the signature: the `protected` check gives a warning on an API failure, because it is hygiene, not access. COMMITPOLICY skips the check with a warning on a failure: it is hygiene, not access. The exception is the acceptance of a new COMMITPOLICY version with `except.users`: if the API did not answer, the push is denied with `authorization_backend_failure`, because it is unknown whether these users exist. An API failure never turns recovery on
 - **Git isolation.** Child git processes run without replace refs and without system and global config: `refs/replace/*` cannot hide a change from the check
 - **Untrusted input.** Policy files, stdin, commit messages and tag objects are parsed strictly and with limits; the parsers are covered by fuzz tests
 - **Confidential messages.** The user sees rules from the policy file (they are in the repository anyway), but not API results: roles, account state, error details. These go only to audit

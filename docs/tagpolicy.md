@@ -5,7 +5,7 @@
 
 TAGPOLICY відповідає на одне питання: чи підписано тег ключем, якому дозволено випускати теги з таким ім'ям. Файл лежить у корені репозиторію з ім'ям `TAGPOLICY`, вміст - YAML.
 
-Реліз - це підписаний тег, і різні оточення випускають різні люди. Правило пов'язує regex імені тегу з набором публічних ключів OpenPGP або SSH. Перевірка спирається лише на об'єкт тегу і ключі з самого файлу: API GitLab, `gpg` і `ssh-keygen` на сервері не потрібні.
+Реліз - це підписаний тег, і різні оточення випускають різні люди. Правило пов'язує regex імені тегу з набором публічних ключів OpenPGP або SSH. Перевірка підпису спирається лише на об'єкт тегу і ключі з самого файлу: API GitLab, `gpg` і `ssh-keygen` на сервері не потрібні. API потрібен лише правилу з `protected: true`, і лише коли тег створюють.
 
 Хто змінює сам TAGPOLICY, задає path-правило PATHPOLICY ([pathpolicy.md](pathpolicy.md)). Історія прав на реліз - це історія цього файлу.
 
@@ -53,6 +53,7 @@ keys:
 | `rules[].name` | так | `[a-z0-9-]{1,63}`, унікальне у файлі |
 | `rules[].tags` | так | RE2 regex, до 256 байт. Має збігтися з усім ім'ям тегу без `refs/tags/`, `^` і `$` додавати не треба |
 | `rules[].signers` | так | 1-32 мітки ключів із `keys` |
+| `rules[].protected` | ні | `true` - новий тег під цим правилом має бути protected tag проєкту в GitLab. За замовчуванням `false` |
 | `rules[].message` | ні | текст для того, кому відмовили, до 1000 символів |
 | `keys` | так | 1-32 записи `мітка: ключ` |
 
@@ -85,6 +86,8 @@ keys:
    - SSH: namespace підпису `git`, хеш `sha256` або `sha512`, RSA лише `rsa-sha2-256` або `rsa-sha2-512`, не `ssh-rsa` (SHA-1). Підпис sk-ключем повинен мати прапорець присутності користувача
 
 У форматі SSH-підпису немає часу підпису і строку дії ключа, тому SSH-ключ діє, поки лежить у файлі. Строк його життя і окремий ключ для підпису (а не той, яким пушать) - відповідальність того, хто додає ключ у TAGPOLICY.
+
+Окремо від підпису, якщо тег створюють і хоча б одне правило, що збіглося, має `protected: true`, hook питає GitLab, чи захищає проєкт цей тег (Settings > Repository > Protected tags). Не захищає - відмова `tag_not_protected`. Pipeline тегу деплоїть, і protected CI/CD variables та protected runners доступні лише захищеним тегам: без захисту реліз піде, але нічого не задеплоїть, і причину довго шукатимуть. Тому відмова одразу на push, з підказкою, що налаштувати. Це гігієна, а не доступ: якщо API не відповів, тег приймається з попередженням. Якщо в тегу проблема і з підписом, і з захистом, у виводі обидві. Переміщення тегу на захист не перевіряється.
 
 Видалення тегу TAGPOLICY не регулює: хто може створювати, переміщувати й видаляти теги, вирішують protected tags GitLab. Для проєктів з PATHPOLICY їхню наявність звіряє `settings-check`.
 
@@ -130,7 +133,7 @@ GitLab не вміє підписувати теги, які створює са
 
 ## Відмови
 
-TAGPOLICY закривається за невизначеності (fail closed), але API не використовує, тому збій API чи прострочений токен на неї не впливають.
+TAGPOLICY закривається за невизначеності (fail closed): підпис, невалідна policy і внутрішня помилка дають відмову. API потрібен лише перевірці `protected`, і його збій чи прострочений токен дають попередження, а не відмову.
 
 | Код | Заголовок у виводі | Коли |
 | --- | --- | --- |
@@ -138,6 +141,8 @@ TAGPOLICY закривається за невизначеності (fail close
 | `tag_object_invalid` | the tag does not match its ref, або точніше: the tag was signed as "x" but is pushed as "y", the tag points to a tree, not a commit | ім'я в об'єкті не збігається з ім'ям тегу, тег не на коміт |
 | `tag_signer_not_allowed` | this key may not sign these tags | ключа немає у файлі або його мітки немає в `signers` |
 | `tag_signature_invalid` | the signature cannot be accepted | ключ прострочений чи відкликаний, слабкий хеш, неправильний namespace SSH |
+| `tag_not_protected` | the tag must be protected, but the project does not protect it | новий тег під правилом з `protected: true`, а проєкт його не захищає |
+| `authorization_backend_failure`, `limit_exceeded` | could not check that the tag is protected; the tag is accepted | лише попередження: API не відповів під час перевірки `protected` |
 | `invalid_policy` | TAGPOLICY in main is broken, so no tag can be created or moved | TAGPOLICY у default branch невалідна: відмова на створення і переміщення будь-якого тегу, гілки не зачеплені |
 | `invalid_policy_update` | the changed TAGPOLICY is invalid | нова версія файлу не пройшла приймання |
 
@@ -169,4 +174,4 @@ gitlab-repopolicy test --repo . --old 0000000000000000000000000000000000000000 \
   --new "$(git rev-parse v1.4.0-prod)" --ref refs/tags/v1.4.0-prod --user release --config release-verify.yaml
 ```
 
-`test` приймає те саме рішення, що й hook, на локальному репозиторії. `release-verify.yaml` - копія [config/release-verify.yaml](../config/release-verify.yaml): у ній увімкнено тільки TAGPOLICY, і API не потрібен. Так сам проєкт перевіряє свої релізні теги ([release.md](release.md)).
+`test` приймає те саме рішення, що й hook, на локальному репозиторії. `release-verify.yaml` - копія [config/release-verify.yaml](../config/release-verify.yaml): у ній увімкнено тільки TAGPOLICY, а в TAGPOLICY проєкту немає правил з `protected`, тому API не потрібен. Так сам проєкт перевіряє свої релізні теги ([release.md](release.md)).

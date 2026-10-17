@@ -249,6 +249,7 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 | hook не викликається | `custom_hooks_dir` не задано або не той, wrapper не виконуваний, ім'я закінчується на `~`, файл лежить як `custom_hooks_dir/pre-receive` | `grep -A2 '^\[hooks\]' /var/opt/gitlab/gitaly/config.toml`, `ls -l <custom_hooks_dir>/pre-receive.d/` |
 | усі зміни проєкту відхиляються: `PATHPOLICY in main is broken, so no changes are accepted` | невалідна PATHPOLICY у default branch | Owner виправляє PATHPOLICY (recovery) або break-glass |
 | теги відхиляються: `TAGPOLICY in main is broken, so no tag can be created or moved` | невалідна TAGPOLICY у default branch | виправити TAGPOLICY через merge |
+| новий тег відхиляється: `the tag must be protected, but the project does not protect it` | правило TAGPOLICY з `protected: true`, а тег не захищено в проєкті (`tag_not_protected`) | Maintainer додає шаблон тегу в Settings > Repository > Protected tags і пушить тег знову |
 | merge через UI повільний або `could not check permissions` під піковим навантаженням | web-операції тримають Puma-worker, а hook звертається назад до Rails | `api_calls`, `duration_ms` в audit; `timeouts.http` |
 
 Якщо в конфігурації задано `help.contact`, у відмовах, де користувач нічого не може виправити сам, замість `your GitLab administrators` друкується цей контакт ([configuration.md](configuration.md#help)).

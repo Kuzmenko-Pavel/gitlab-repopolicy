@@ -35,7 +35,7 @@ A pull request is merged with squash: the PR title becomes the header of the com
 
 ## Documentation
 
-Documentation is in Ukrainian (`<name>.md`) with an English translation next to it (`<name>.en.md`). A change of a document updates both files in the same pull request; `make code-lint` checks that the pairs are in place. Policy examples in documents are quoted from `examples/` word for word.
+Documentation is in Ukrainian (`<name>.md`) with an English translation next to it (`<name>.en.md`). A change of a document updates both files in the same pull request; `make test-integration` checks that the pairs are in place, that relative links lead to existing files and that policy examples in documents match `examples/` word for word.
 
 ## Review
 

@@ -43,9 +43,11 @@ The hook is called only when a branch or a tag changes. Changes in Settings are 
 | --- | --- | --- | --- |
 | "CI/CD configuration file" to an unprotected path, another project or a URL | **bypass** | **bypass** | `settings-check` |
 | push a changed CI to an ordinary branch, then protect the branch | closed | **bypass** | `refs: all` by default |
-| make a branch without policy files or with old versions the default | **bypass** | **bypass** | `settings-check`: the expected default branch |
+| make a branch without policy files or with old versions the default | closed if `default_branch` is set | closed if `default_branch` is set | the hook denies every push to a project whose default branch is not in `default_branch`; effects without a push (a manual pipeline run, `CI_DEFAULT_BRANCH`) are detected by `settings-check` |
 | turn on push with `CI_JOB_TOKEN` | **bypass**: the job pushes as the user who started the pipeline | **bypass** | `settings-check` |
 | pipeline variables to change the behaviour of a job | out of scope | out of scope | a minimal role for pipeline variables |
+
+If `default_branch` has several names, for example `[main, master]` during a migration, switching the default between them is an accepted risk: the installation named both branches allowed itself.
 
 `settings-check` is detection on a schedule (once a day by default), not prevention: it does not see a change that was reverted between two runs. Only an organizational measure closes this group of bypasses fully: the Maintainer role only for the owners of protected paths. Where this is not possible, `settings-check` is required.
 
@@ -72,7 +74,7 @@ The hook is called only when a branch or a tag changes. Changes in Settings are 
 - The behaviour of the code that the protected CI builds and deploys: gitlab-repopolicy protects the pipeline, not the application
 - A rename or deletion of a user frees the username. If another person takes it, they get the rights from the policy until the policy is fixed. `settings-check` reports principals that no longer exist
 - A new branch or tag on an old commit that is already in a protected branch is not checked by PATHPOLICY and COMMITPOLICY. TAGPOLICY checks the signature of such a tag
-- A merge into an unprotected branch is not checked: it brings no new commits
+- A merge into an unprotected branch brings no new commits: PATHPOLICY does not check it, COMMITPOLICY checks only the merge commit, not the merged commits that are already in the repository
 - A compromised private signing key: until the merge of the TAGPOLICY change that removes the key, it can sign a release. An SSH key also has no expiry: its lifetime and a separate key for signing are the responsibility of whoever adds the key to TAGPOLICY
 - The service account token reads the code, metadata and values of CI/CD variables of every group. On one Linux package node this is no more than the `git` user, which runs Rails and Gitaly, already has. With separate Gitaly nodes it is an accepted risk: protect the token file and the nodes
 - The hook does not protect the GitHub repository of the project itself: here repository rules and artifact signatures keep releases intact ([release.en.md](release.en.md))

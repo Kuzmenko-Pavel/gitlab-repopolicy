@@ -31,7 +31,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `internal/{changes,gitx,refs,identity,gitlab,hookenv,config,strictyaml,report,audit}` | core infrastructure |
 | `internal/{install,settings,coverage,token,breakglass}` | operational commands, called only from `cli` |
 | `internal/{spec,schema,buildinfo}` | format of policy files and its validator, JSON Schema generation, build metadata |
-| `internal/testmodule` | policy module of the tests of the core, imported only by tests |
+| `internal/testmodule` | policy module of the tests of the core, imported only by tests and by the test hook `tests/integration/internal/testhook` |
 
 Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 
@@ -41,7 +41,8 @@ Rules, enforced by `depguard` and `forbidigo` in `make code-lint`:
 - `cli` calls `modules/path` and `modules/commit` directly for `explain`, `admins`, `lint-commit` and `selftest`; everything else gets modules from `modules.Default`
 - `regexp2` only in `modules/commit`; `go-crypto` and `x/crypto/ssh` only in `modules/tag`; `yaml` only in `strictyaml`; `doublestar` only in `modules/path`
 - `os.Exit`, `os.Args`, `os.Getenv`, `os.LookupEnv`, `os.Environ` only in `cmd` and `cli`
-- `time.Now` only through the injected clock
+- `time.Now` only through the injected clock, except in `cmd` and `cli`
+- these `forbidigo` rules do not apply to tests, `tests/integration/internal/testhook` and `tools/release-notes`
 
 ## Invariants
 

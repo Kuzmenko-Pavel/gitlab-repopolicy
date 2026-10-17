@@ -224,21 +224,22 @@ type Item struct {
 
 // Violation codes; they are a public contract.
 const (
-	CodeProtectedPath        = "protected_path_violation"
-	CodePolicyAdmin          = "policy_admin_violation"
-	CodeLockoutPrevented     = "lockout_prevented"
-	CodeInvalidPolicy        = "invalid_policy"
-	CodeInvalidPolicyUpdate  = "invalid_policy_update"
-	CodeAuthorizationBackend = "authorization_backend_failure"
-	CodeUnknownPrincipal     = "unknown_principal"
-	CodeCommitFormat         = "commit_format_violation"
-	CodeCommitCheckTimeout   = "commit_check_timeout"
-	CodeTagNotSigned         = "tag_not_signed"
-	CodeTagObjectInvalid     = "tag_object_invalid"
-	CodeTagSignerNotAllowed  = "tag_signer_not_allowed"
-	CodeTagSignatureInvalid  = "tag_signature_invalid"
-	CodeLimitExceeded        = "limit_exceeded"
-	CodeInternalError        = "internal_error"
+	CodeProtectedPath           = "protected_path_violation"
+	CodePolicyAdmin             = "policy_admin_violation"
+	CodeLockoutPrevented        = "lockout_prevented"
+	CodeInvalidPolicy           = "invalid_policy"
+	CodeInvalidPolicyUpdate     = "invalid_policy_update"
+	CodeAuthorizationBackend    = "authorization_backend_failure"
+	CodeUnknownPrincipal        = "unknown_principal"
+	CodeCommitFormat            = "commit_format_violation"
+	CodeCommitCheckTimeout      = "commit_check_timeout"
+	CodeTagNotSigned            = "tag_not_signed"
+	CodeTagObjectInvalid        = "tag_object_invalid"
+	CodeTagSignerNotAllowed     = "tag_signer_not_allowed"
+	CodeTagSignatureInvalid     = "tag_signature_invalid"
+	CodeDefaultBranchNotAllowed = "default_branch_not_allowed"
+	CodeLimitExceeded           = "limit_exceeded"
+	CodeInternalError           = "internal_error"
 )
 
 // Errors that ChangeSet, ObjectReader and RefClassifier return.

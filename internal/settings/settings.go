@@ -76,6 +76,8 @@ func (r Report) Drifted() []Project {
 // Options of a run.
 type Options struct {
 	Expected config.SettingsCheck
+	// DefaultBranches are the allowed names of the default branch; empty is not checked.
+	DefaultBranches []string
 	// Guard is the PATHPOLICY module; Modules are all enabled modules, for principals.
 	Guard   module.Root
 	Modules []module.Module
@@ -126,8 +128,8 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 		return nil
 	}
 	exp := o.Expected
-	if len(exp.DefaultBranch) > 0 && !slices.Contains(exp.DefaultBranch, p.DefaultBranch) {
-		drift(CheckDefaultBranch, "the default branch is %q, expected one of %s", p.DefaultBranch, strings.Join(exp.DefaultBranch, ", "))
+	if len(o.DefaultBranches) > 0 && !slices.Contains(o.DefaultBranches, p.DefaultBranch) {
+		drift(CheckDefaultBranch, "the default branch is %q, expected one of %s", p.DefaultBranch, strings.Join(o.DefaultBranches, ", "))
 	}
 	if level := p.Access(); level < module.AccessMaintainer {
 		drift(CheckAccess, "the service account has access level %d, Maintainer (40) is required to see the settings", level)
@@ -188,7 +190,7 @@ func check(ctx context.Context, api API, o Options, p gitlab.Project) *Project {
 // The policy is nil when the file cannot be parsed.
 func guardPolicy(ctx context.Context, api API, o Options, p gitlab.Project) (module.Policy, string, bool, error) {
 	branches := []string{p.DefaultBranch}
-	for _, e := range o.Expected.DefaultBranch {
+	for _, e := range o.DefaultBranches {
 		if e != p.DefaultBranch {
 			branches = append(branches, e)
 		}

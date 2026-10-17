@@ -93,7 +93,7 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		ctx2, cancel := context.WithTimeout(ctx, queryTimeout)
 		defer cancel()
 		ctx = ctx2
-		if v, err = onlineValidator(ctx, *configPath, *project); err != nil {
+		if v, err = a.onlineValidator(ctx, *configPath, *project); err != nil {
 			out.w = stdio.Err
 			out.printf("gitlab-repopolicy validate: %v\n", err)
 			return withOutput(out.err, ExitError)
@@ -189,8 +189,8 @@ func validateFile(ctx context.Context, path string, m module.Module, v module.Va
 
 // onlineValidator answers the online checks of validate --online. Without a
 // project the access of admins cannot be checked and is reported as such.
-func onlineValidator(ctx context.Context, configPath, project string) (module.Validator, error) {
-	cfg, err := loadConfig(configPath)
+func (a App) onlineValidator(ctx context.Context, configPath, project string) (module.Validator, error) {
+	cfg, err := a.loadConfig(configPath)
 	if err != nil {
 		return nil, err
 	}

@@ -46,8 +46,11 @@ type Config struct {
 	Timeouts      Timeouts          `yaml:"timeouts"`
 	MaxAPICalls   int               `yaml:"max_api_calls"`
 	Modules       map[string]string `yaml:"modules"`
-	SettingsCheck SettingsCheck     `yaml:"settings_check"`
-	Help          Help              `yaml:"help"`
+	// DefaultBranch lists the allowed names of the default branch, for example
+	// [main, master]; the hook and settings-check use it, empty turns the check off.
+	DefaultBranch []string      `yaml:"default_branch"`
+	SettingsCheck SettingsCheck `yaml:"settings_check"`
+	Help          Help          `yaml:"help"`
 	// CommitPolicyPresets is kept undecoded; the COMMITPOLICY module parses it.
 	CommitPolicyPresets map[string]any `yaml:"commitpolicy_presets"`
 }
@@ -80,8 +83,6 @@ type Timeouts struct {
 
 // SettingsCheck holds the project settings expected by settings-check.
 type SettingsCheck struct {
-	// DefaultBranch lists the allowed names of the default branch, for example [main, master].
-	DefaultBranch     []string `yaml:"default_branch"`
 	ProtectedBranches []string `yaml:"protected_branches"`
 	ProtectedTags     []string `yaml:"protected_tags"`
 	JobTokenPush      *bool    `yaml:"job_token_push"`
@@ -184,6 +185,27 @@ func Parse(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// validateDefaultBranch accepts short branch names: the hook compares them
+// with the name HEAD points to, without refs/heads/.
+func validateDefaultBranch(names []string) error {
+	var errs []error
+	seen := map[string]bool{}
+	for _, name := range names {
+		switch {
+		case strings.TrimSpace(name) == "":
+			errs = append(errs, errors.New("default_branch: an empty name"))
+		case strings.Contains(name, "*"):
+			errs = append(errs, fmt.Errorf("default_branch: %q: a name, not a pattern", name))
+		case strings.HasPrefix(name, "refs/"):
+			errs = append(errs, fmt.Errorf("default_branch: %q: a short name without refs/heads/", name))
+		case seen[name]:
+			errs = append(errs, fmt.Errorf("default_branch: %q is listed twice", name))
+		}
+		seen[name] = true
+	}
+	return errors.Join(errs...)
+}
+
 // ModuleEnabled reports whether the module is enabled; modules are enabled unless disabled explicitly.
 func (c *Config) ModuleEnabled(name string) bool {
 	return c.Modules[name] != ModuleDisabled
@@ -228,6 +250,7 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Errorf("modules.%s: %q is not one of enabled, disabled", name, state))
 		}
 	}
+	errs = append(errs, validateDefaultBranch(c.DefaultBranch))
 	for _, h := range []struct{ name, v string }{{"help.contact", c.Help.Contact}, {"help.docs_url", c.Help.DocsURL}} {
 		name, v := h.name, h.v
 		switch {

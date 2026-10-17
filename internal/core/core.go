@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,6 +60,8 @@ type Settings struct {
 	Total time.Duration
 	// Help is printed in denials: who to ask and where the rules are explained.
 	Help config.Help
+	// DefaultBranch lists the allowed names of the default branch; empty is not checked.
+	DefaultBranch []string
 }
 
 // Request is the receive as Gitaly passed it.
@@ -148,6 +151,23 @@ func (r *receive) run(ctx context.Context) {
 			return
 		}
 	}
+	// Policies are read from the default branch, so a project that names
+	// another branch default would read them from there.
+	if name := strings.TrimPrefix(r.defaultRef, "refs/heads/"); len(r.settings.DefaultBranch) > 0 && !slices.Contains(r.settings.DefaultBranch, name) {
+		r.fail(module.CodeDefaultBranchNotAllowed, nil, "default branch "+name)
+		return
+	}
+	if len(r.settings.DefaultBranch) > 0 && r.anchor == "" {
+		first, err := r.firstBranchElsewhere(ctx)
+		if err != nil {
+			r.failErr(ctx, err)
+			return
+		}
+		if first {
+			r.fail(module.CodeDefaultBranchNotAllowed, errFirstBranch, "first push without "+r.defaultRef)
+			return
+		}
+	}
 	if err := r.loadPolicies(ctx); err != nil {
 		r.failErr(ctx, err)
 		return
@@ -207,6 +227,28 @@ func (r *receive) addWarning(name string, vs ...module.Violation) {
 	r.warnings = append(r.warnings, report.Section{Name: name, Violations: vs})
 }
 
+// errFirstBranch marks the first push into an empty repository that does not
+// create the branch HEAD names: GitLab then makes the first pushed branch the
+// default one, whatever its name.
+var errFirstBranch = errors.New("first branch is not the default branch")
+
+// firstBranchElsewhere reports a push into a repository without branches and
+// tags that creates branches, but not the one HEAD names.
+func (r *receive) firstBranchElsewhere(ctx context.Context) (bool, error) {
+	branches, head := false, false
+	for _, u := range r.updates {
+		if u.IsBranch() && u.Kind() == module.Create {
+			branches = true
+			head = head || u.Ref == r.defaultRef
+		}
+	}
+	if !branches || head {
+		return false, nil
+	}
+	existing, err := r.deps.Git.Refs(ctx)
+	return len(existing) == 0, err
+}
+
 // coreViolation is a denial of the core: a limit of the push or an internal
 // error. Neither is the fault of the pusher; reason goes only to audit.
 func (r *receive) coreViolation(code string, err error, reason string) module.Violation {
@@ -222,6 +264,20 @@ func (r *receive) coreViolation(code string, err error, reason string) module.Vi
 		v.Facts = []string{"limit reached: " + limit}
 		v.Hint = hint
 		v.Summary = "the check did not finish within the server limits (" + limit + "); the push is rejected"
+	case module.CodeDefaultBranchNotAllowed:
+		name := strings.TrimPrefix(r.defaultRef, "refs/heads/")
+		allowed := strings.Join(r.settings.DefaultBranch, ", ")
+		if errors.Is(err, errFirstBranch) {
+			v.Title = "the first branch of this repository must be " + name
+			v.Facts = []string{"the repository is empty, and GitLab makes the first pushed branch the default one"}
+			v.Hint = "push " + name + " first, for example git push origin HEAD:" + name + ", then the other branches"
+			v.Summary = "the repository is empty: push " + name + " first, GitLab makes the first pushed branch the default one"
+			break
+		}
+		v.Facts = []string{"the default branch of this project is " + name + ", allowed: " + allowed,
+			"this is a setting of the project, not a problem of your change"}
+		v.Hint = "a Maintainer sets one of " + allowed + " as the default branch in Settings > Repository > Branch defaults"
+		v.Summary = "the default branch " + name + " is not one of " + allowed + "; a Maintainer fixes it in Settings > Repository > Branch defaults"
 	default:
 		v.Facts = []string{"this is a problem of the server, not of your change"}
 		v.Hint = "retry once; if it repeats, report this id: " + r.id

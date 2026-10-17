@@ -23,11 +23,17 @@ func (r *receive) newInput() *module.Input {
 			present = append(present, l.mod.File())
 		}
 	}
+	// HEAD of an empty repository names a branch that does not exist yet:
+	// git cannot exclude it, and there is nothing to exclude.
+	existingDefault := r.defaultRef
+	if r.anchor == "" {
+		existingDefault = ""
+	}
 	return &module.Input{
 		Anchor:         r.anchor,
 		Updates:        r.updates,
 		Refs:           refs.New(r.defaultRef, r.req.Env.ProjectID, r.deps.API, r.guard),
-		Changes:        changes.New(r.deps.Git, r.defaultRef),
+		Changes:        changes.New(r.deps.Git, existingDefault),
 		Principal:      r.req.Env.Principal,
 		Protocol:       r.req.Env.Protocol,
 		Principals:     resolver,

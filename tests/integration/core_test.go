@@ -86,6 +86,14 @@ func TestTrust_NoAnchor(t *testing.T) {
 	assertDenied(t, empty.Push(alice, "HEAD:refs/heads/main"), "is invalid")
 }
 
+// TestTrust_EmptyRepositoryOtherBranch: the first push into an empty
+// repository may create a branch other than the one HEAD names.
+func TestTrust_EmptyRepositoryOtherBranch(t *testing.T) {
+	s := NewStand(t)
+	s.Commit("feat: first", map[string]string{"a": "1"})
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/dev"))
+}
+
 func TestEntry_NonProjectRepositoryAllowedSilently(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	s.Repo, s.Project = "wiki-1", "acme/platform/app.wiki"
@@ -151,4 +159,23 @@ func TestGitUnavailable(t *testing.T) {
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertDenied(t, r, "git is not available to the hook")
 	assert.Equal(t, "", s.RemoteRev("refs/heads/main^{/change}"))
+}
+
+// TestDefaultBranch_NotAllowed: the default branch of the project, the branch
+// HEAD names, must be one of default_branch; every push is rejected otherwise.
+func TestDefaultBranch_NotAllowed(t *testing.T) {
+	s, _ := mainWith(t, map[string]string{"a": "1"})
+	s.AddConfig("default_branch: [main]\nhelp: {contact: \"#gitlab-support\", docs_url: https://wiki.example/repopolicy}\n")
+	s.Commit("feat: x", map[string]string{"a": "2"})
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+
+	s.Seed("main:refs/heads/legacy")
+	s.git(s.Bare, "symbolic-ref", "HEAD", "refs/heads/legacy")
+	s.Commit("feat: y", map[string]string{"a": "3"})
+	r := s.Push(alice, "HEAD:refs/heads/feature")
+	assertDenied(t, r, "the default branch of this project is not allowed", "the default branch legacy is not one of main",
+		"who can help: #gitlab-support", "docs: https://wiki.example/repopolicy")
+	e := Events(s.Audit(), "decision")
+	require.NotEmpty(t, e)
+	assert.Equal(t, "default_branch_not_allowed", e[len(e)-1]["code"])
 }

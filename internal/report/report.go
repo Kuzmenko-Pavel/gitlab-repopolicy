@@ -22,21 +22,22 @@ const (
 )
 
 var titles = map[string]string{
-	module.CodeProtectedPath:        "you may not change these files",
-	module.CodePolicyAdmin:          "only PATHPOLICY admins may change PATHPOLICY",
-	module.CodeLockoutPrevented:     "the changed PATHPOLICY would have no working admin",
-	module.CodeInvalidPolicy:        "the policy in the default branch is broken",
-	module.CodeInvalidPolicyUpdate:  "the changed policy file is invalid",
-	module.CodeAuthorizationBackend: "could not check permissions: the GitLab API did not answer",
-	module.CodeUnknownPrincipal:     "only a person may change these files",
-	module.CodeCommitFormat:         "commit messages do not follow the format",
-	module.CodeCommitCheckTimeout:   "a rule could not check a commit message in time",
-	module.CodeTagNotSigned:         "the tag must be signed",
-	module.CodeTagObjectInvalid:     "the tag does not match its ref",
-	module.CodeTagSignerNotAllowed:  "this key may not sign these tags",
-	module.CodeTagSignatureInvalid:  "the signature cannot be accepted",
-	module.CodeLimitExceeded:        "the check did not finish within the server limits",
-	module.CodeInternalError:        "internal error: the push was not checked and is rejected",
+	module.CodeProtectedPath:           "you may not change these files",
+	module.CodePolicyAdmin:             "only PATHPOLICY admins may change PATHPOLICY",
+	module.CodeLockoutPrevented:        "the changed PATHPOLICY would have no working admin",
+	module.CodeInvalidPolicy:           "the policy in the default branch is broken",
+	module.CodeInvalidPolicyUpdate:     "the changed policy file is invalid",
+	module.CodeAuthorizationBackend:    "could not check permissions: the GitLab API did not answer",
+	module.CodeUnknownPrincipal:        "only a person may change these files",
+	module.CodeCommitFormat:            "commit messages do not follow the format",
+	module.CodeCommitCheckTimeout:      "a rule could not check a commit message in time",
+	module.CodeTagNotSigned:            "the tag must be signed",
+	module.CodeTagObjectInvalid:        "the tag does not match its ref",
+	module.CodeTagSignerNotAllowed:     "this key may not sign these tags",
+	module.CodeTagSignatureInvalid:     "the signature cannot be accepted",
+	module.CodeDefaultBranchNotAllowed: "the default branch of this project is not allowed",
+	module.CodeLimitExceeded:           "the check did not finish within the server limits",
+	module.CodeInternalError:           "internal error: the push was not checked and is rejected",
 }
 
 // Title returns the user-facing title of a violation code.
@@ -50,10 +51,11 @@ func Title(code string) string {
 // serverSide are the codes where the pusher is not at fault: the output
 // names who to ask.
 var serverSide = map[string]bool{
-	module.CodeAuthorizationBackend: true,
-	module.CodeLimitExceeded:        true,
-	module.CodeInternalError:        true,
-	module.CodeInvalidPolicy:        true,
+	module.CodeAuthorizationBackend:    true,
+	module.CodeLimitExceeded:           true,
+	module.CodeDefaultBranchNotAllowed: true,
+	module.CodeInternalError:           true,
+	module.CodeInvalidPolicy:           true,
 }
 
 // CoreSection is the section name of violations that belong to no module.

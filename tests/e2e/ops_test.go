@@ -505,3 +505,43 @@ func uploadDesign(t *testing.T, u *standUser, p *project, iid int) {
 	require.Empty(t, r.Upload.Errors)
 	require.Len(t, r.Upload.Designs, 1)
 }
+
+// TestOps_DefaultBranchSwitched: a Maintainer switches the default branch to
+// a branch outside default_branch in the settings; the next push is rejected,
+// because policies would be read from that branch.
+func TestOps_DefaultBranchSwitched(t *testing.T) {
+	t.Parallel()
+	p := newProject(t, "default-switch")
+	alice := user("alice")
+	mustCommit(t, alice, p, "main", "", "feat: before the switch", create("a.txt", "1"))
+	createBranch(t, alice, p, "legacy", "main")
+	require.NoError(t, gl.root(t.Context(), http.MethodPut, p.api(""), map[string]any{"default_branch": "legacy"}, nil))
+	_, err := commit(t, alice, p, "main", "", "feat: after the switch", update("a.txt", "2"))
+	requireHookDenied(t, err, "the default branch legacy is not one of main")
+	e := requireEvent(t, p, "deny of the switched default", func(e auditEvent) bool { return e.Event == "decision" && e.Decision == "deny" })
+	assert.Equal(t, "default_branch_not_allowed", e.Code)
+}
+
+// TestOps_EmptyProjectFirstBranch: GitLab makes the first branch pushed into
+// an empty project the default one, so with default_branch the first push
+// must bring that branch; after it, other branches are pushed as usual.
+func TestOps_EmptyProjectFirstBranch(t *testing.T) {
+	t.Parallel()
+	p := newEmptyProject(t, "empty-first")
+	alice := user("alice")
+	g := clone(t, alice.Token, p.Path)
+	g.must("checkout", "-q", "-b", "dev")
+	g.commitFile("a.txt", "1", "feat: first")
+	out, err := g.push(httpsURL(alice.Token, p.Path), "", "HEAD:refs/heads/dev")
+	requirePushDenied(t, out, err, "gitlab-repopolicy: the repository is empty: push main first")
+
+	out, err = g.push(httpsURL(alice.Token, p.Path), "", "HEAD:refs/heads/main")
+	require.NoError(t, err, out)
+	out, err = g.push(httpsURL(alice.Token, p.Path), "", "HEAD:refs/heads/dev")
+	require.NoError(t, err, out)
+	var got struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	require.NoError(t, gl.root(t.Context(), http.MethodGet, p.api(""), nil, &got))
+	assert.Equal(t, "main", got.DefaultBranch)
+}

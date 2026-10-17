@@ -55,7 +55,7 @@ Gitaly запускає hook лише після штатної перевірк
 - допоміжні команди: встановлення hook, самоперевірка, ротація токена, звірка налаштувань проєктів, аварійний обхід
 
 Не входить:
-- налаштування проєктів (шлях CI-конфігурації, protected branches, default branch): hook їх не бачить, `settings-check` лише виявляє зміни
+- налаштування проєктів (шлях CI-конфігурації, protected branches): hook їх не бачить, `settings-check` лише виявляє зміни. Ім'я default branch hook звіряє з `default_branch` на кожному push
 - якість змін: проєкт перевіряє, хто і в якому форматі, а не що
 - історія, яка була до появи policy
 - проєкти в особистому namespace
@@ -66,19 +66,26 @@ Gitaly запускає hook лише після штатної перевірк
 ```text
 cmd/gitlab-repopolicy     main: сигнали, код виходу
 internal/cli              підкоманди, складання конфігурації, клієнтів і модулів
+internal/config           конфігурація сервера
 internal/core             якір, читання policy, приймання, порядок модулів, бюджети, агрегація
 internal/module           контракт модуля: Module, Policy, Input, Result
+internal/modules          список модулів hook
 internal/modules/path     PATHPOLICY
 internal/modules/commit   COMMITPOLICY
 internal/modules/tag      TAGPOLICY
 internal/changes          які шляхи й коміти змінює push
 internal/gitx             дочірні процеси git в ізольованому оточенні
+internal/hookenv          оточення й stdin, які Gitaly передає hook
 internal/refs             default, protected чи інша гілка
 internal/identity         хто вносить зміну, тип SSH-ключа, тип namespace
 internal/gitlab           клієнт REST і GraphQL, бюджет викликів
 internal/report           повідомлення користувачу, GL-HOOK-ERR
 internal/audit            JSON-події
+internal/strictyaml       строгий розбір YAML: без anchors, невідомих ключів і дублікатів
+internal/spec, schema     опис формату policy-файлів, валідатор і JSON Schema з нього
+internal/buildinfo        версія і коміт збірки
 internal/install, settings, coverage, token, breakglass   допоміжні команди
+internal/testmodule       тестовий модуль для перевірок ядра, лише в тестах
 ```
 
 Ядро не знає, що перевіряє модуль, модуль не знає, як отримано зміни й ідентичність. Модуль оголошує свій файл, режим при невалідній policy (закритися чи пропустити) і потрібні дані; ядро обчислює лише їх. Правила залежностей між пакетами перевіряє лінтер (`depguard`, `forbidigo`) у `make code-lint`.
@@ -104,10 +111,10 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 1. **Вхід.** Сховище не проєкт (wiki, design, snippet) - дозволено без логу. `mode: off` - дозволено
 2. **Якір.** Default branch до push. Усі policy-файли читаються лише звідси: push не може послабити правила для самого себе, а гілка зі слабшою policy не авторизує себе
 3. **Break-glass.** Чинний дозвіл для проєкту - дозволено з подією `breakglass`
-4. **Без policy.** Якщо в якорі немає policy-файлів, дозволено; push, який додає першу PATHPOLICY в default branch, проходить bootstrap-перевірку (Maintainer+)
-5. **Зміни.** Лише для гілок і тегів, які зачіпають правила: шляхи, нові й вхідні коміти. У default і protected гілках - різниця вмісту до і після push, в інших - нові коміти (докладно - [pathpolicy.md](pathpolicy.md#де-діє-правило-refs))
-6. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY і TAGPOLICY. API - лише якщо рішення від нього залежить
-7. **Приймання.** Кожен змінений policy-файл у будь-якій гілці перевіряється як нова версія
+4. **Default branch.** Якщо в конфігурації задано `default_branch`, а default branch проєкту називається інакше, push відхиляється з `default_branch_not_allowed`. Модулі не запускаються: policy з такої гілки не читаються. Перевірка діє на всі проєкти інстансу, зокрема без policy
+5. **Приймання.** Кожен змінений policy-файл у будь-якій гілці перевіряється як нова версія, навіть якщо в якорі policy ще немає: невалідний новий файл відхиляється з `invalid_policy_update`
+6. **Без policy.** Якщо в якорі немає policy-файлів, модулі не запускаються. Push, який додає першу PATHPOLICY в default branch, проходить bootstrap-перевірку (Maintainer+)
+7. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY і TAGPOLICY. Лише для гілок і тегів, які зачіпають правила: шляхи, нові й вхідні коміти. У default і protected гілках - різниця вмісту до і після push, в інших - нові коміти, яких ще немає в жодній гілці чи тегу (докладно - [pathpolicy.md](pathpolicy.md#де-діє-правило-refs)). API - лише якщо рішення від нього залежить
 8. **Рішення.** AND за модулями; одне повідомлення на push у stderr, одна проблема - один блок; audit-подія на кожне рішення з `receive_id` запуску. Події зміни policy (`policy_change`, `policy_bootstrap`, `policy_recovery`) пишуться, лише якщо push прийнято
 
 Типовий час - близько 10 ms для проєкту без policy і 15-50 ms, коли policy є, але правила не зачеплено: здебільшого це запуск процесів git. Звернення до API додає 50-300 ms і буває рідко.
@@ -138,7 +145,7 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 
 - **Модель довіри.** Policy читається лише з default branch до push. PATHPOLICY захищає сама себе (`admins`) і через path-правила - інші policy-файли
 - **Ідентичність.** Лише з `GL_ID` і `GL_USERNAME`, які задає GitLab. Author, committer і підписи комітів для авторизації не використовуються. Deploy key - не людина. Push options клієнта на рішення не впливають
-- **Відмова за невизначеності.** PATHPOLICY і TAGPOLICY закриваються (fail closed): збій API, невалідна policy, внутрішня помилка - відмова на захищеній зміні. COMMITPOLICY за збою пропускає перевірку з попередженням: це гігієна, а не доступ. Збій API ніколи не вмикає recovery
+- **Відмова за невизначеності.** PATHPOLICY і TAGPOLICY закриваються (fail closed): збій API, невалідна policy, внутрішня помилка - відмова на захищеній зміні. COMMITPOLICY за збою пропускає перевірку з попередженням: це гігієна, а не доступ. Виняток - приймання нової версії COMMITPOLICY з `except.users`: якщо API не відповів, push відхиляється з `authorization_backend_failure`, бо невідомо, чи існують ці користувачі. Збій API ніколи не вмикає recovery
 - **Ізоляція git.** Дочірні git запускаються без replace refs і без системної та глобальної конфігурації: `refs/replace/*` не може сховати зміну від перевірки
 - **Недовірений вхід.** Policy-файли, stdin, повідомлення комітів і об'єкти тегів розбираються строго і з лімітами; парсери покрито fuzz-тестами
 - **Конфіденційність повідомлень.** Користувач бачить правила з policy-файлу (вони й так у репозиторії), але не результати API: ролі, стан облікового запису, деталі помилок. Ці дані - лише в audit
@@ -148,8 +155,8 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 
 ## Відомі обмеження
 
-- Hook бачить лише зміни гілок і тегів. Зміни налаштувань проєкту (шлях CI-конфігурації, default branch, protected branches, push через `CI_JOB_TOKEN`) Maintainer робить в обхід; `settings-check` лише виявляє їх за хвилини
-- Merge у незахищену гілку не приносить нових комітів і не перевіряється. Перевіряється merge у default і protected гілки
+- Hook бачить лише зміни гілок і тегів. Зміни налаштувань проєкту (шлях CI-конфігурації, default branch, protected branches, push через `CI_JOB_TOKEN`) Maintainer робить в обхід; `settings-check` лише виявляє їх за розкладом. Виняток - default branch: якщо задано `default_branch`, push у проєкт з іншою default branch відхиляється одразу
+- Merge у незахищену гілку не приносить нових комітів. PATHPOLICY його не перевіряє, COMMITPOLICY перевіряє лише сам merge-коміт (якщо не ввімкнено `except.merge_commits`), але не влиті коміти, які вже є в репозиторії. Merge у default branch перевіряють обидва модулі повністю, у protected гілки - PATHPOLICY за вмістом, COMMITPOLICY - за `refs` ruleset ([commitpolicy.md](commitpolicy.md#які-коміти-перевіряються))
 - Нова гілка або тег на старому коміті, який уже лежить у захищеній гілці, PATHPOLICY і COMMITPOLICY не перевіряються: вміст пройшов перевірку раніше
 - Username може звільнитися після rename або видалення користувача і бути зайнятий іншою людиною. `settings-check` повідомляє про principals, яких більше немає
 - Токен service account не бачить заблокованого чи забаненого користувача. Особистий проєкт такого користувача обробляється як груповий (fail closed)

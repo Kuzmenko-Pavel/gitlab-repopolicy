@@ -46,6 +46,17 @@ type project struct {
 // newProject creates a private project with a README on main in acme/platform.
 func newProject(t *testing.T, name string) *project {
 	t.Helper()
+	return createProject(t, name, true)
+}
+
+// newEmptyProject creates a project without commits.
+func newEmptyProject(t *testing.T, name string) *project {
+	t.Helper()
+	return createProject(t, name, false)
+}
+
+func createProject(t *testing.T, name string, readme bool) *project {
+	t.Helper()
 	path := uniq(name)
 	var p struct {
 		ID   int    `json:"id"`
@@ -56,7 +67,7 @@ func newProject(t *testing.T, name string) *project {
 		"path":                   path,
 		"namespace_id":           gl.state.Groups[subGroup],
 		"visibility":             "private",
-		"initialize_with_readme": true,
+		"initialize_with_readme": readme,
 		"wiki_access_level":      "enabled",
 	}, &p))
 	// GitLab refreshes inherited access in Sidekiq; until then members and

@@ -18,7 +18,7 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	if !parse(fs, args, stdio.Err) {
 		return ExitUsage
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}
@@ -35,7 +35,7 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	start := time.Now()
-	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, Guard: mods.Root, Modules: mods.All()})
+	rep, err := settings.Run(ctx, api, settings.Options{Expected: cfg.SettingsCheck, DefaultBranches: cfg.DefaultBranch, Guard: mods.Root, Modules: mods.All()})
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}

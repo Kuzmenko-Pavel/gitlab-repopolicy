@@ -8,7 +8,7 @@
 The hook writes every decision that touched a rule to `audit.file` (default `/var/log/gitlab-repopolicy/audit.log`): one JSON object per line, up to 4 KiB per event. A push that touched no rule is not logged, otherwise there would be a line for every push of the instance.
 
 ```json
-{"ts":"2026-10-14T09:14:02.418Z","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","event":"decision","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
+{"ts":"2026-10-14T09:14:02.418Z","event":"decision","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
 ```
 
 | Field | Meaning |
@@ -105,7 +105,7 @@ sudo gitlab-repopolicy breakglass list
 sudo gitlab-repopolicy breakglass revoke --project acme/app
 ```
 
-- the project is given by its path `--project` or its ID `--project-id`, exactly one of them. The path is turned into the ID through the API. If the API is not available, `--project-id` is needed: the ID is shown on the project's main page under its name. The output and the event show both the ID and the path
+- the project is given by its path `--project` or its ID `--project-id`, exactly one of them. The `breakglass` command turns the path into the ID through the API. If the API is not available, `--project-id` is needed: the ID is shown on the project's main page under its name. With `--project` the output and the event show both the ID and the path, with `--project-id` only the ID
 
 - `--ttl` is required, at most 24 hours. After it the grant is ignored
 - while the grant is valid, every module lets pushes to the project through, the push output carries a warning, and every such push is a `breakglass` event
@@ -131,12 +131,12 @@ The `gitlab-repopolicy-token-rotate.timer` timer runs the rotation daily ([insta
 
 The hook sees only changes of branches and tags. Project settings change in Settings, and a Maintainer can bypass PATHPOLICY through them: move the CI configuration path to an unprotected file, make a branch without the policy the default, turn on push with `CI_JOB_TOKEN`. `settings-check` finds such changes.
 
-For every project with PATHPOLICY that the service account sees:
+For every project with PATHPOLICY that the service account sees. Archived projects and projects in personal namespaces are skipped:
 
 | Check (`violations[].rule`) | What counts as a difference |
 | --- | --- |
-| `default_branch` | the default branch is not in the list `settings_check.default_branch` or is not protected |
-| `protected_branches` | branches of the list other than the default branch are not protected |
+| `default_branch` | the default branch is not in the list `default_branch` |
+| `protected_branches` | the default branch is not protected (reported as `<branch> (the default branch)`) or branches of the list `settings_check.protected_branches` are not protected |
 | `protected_tags` | the tag patterns are not protected. Checked only in projects with TAGPOLICY on the default branch and with the module enabled |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` is not the expected one |
 | `ci_config_path` | the CI configuration is in another project, at a URL or not covered by a PATHPOLICY path rule |
@@ -199,8 +199,8 @@ settings-check:
       token_file: $CI_PROJECT_DIR/token
       breakglass_dir: /nonexistent
       audit: { file: "", stdout: true }
+      default_branch: [main]
       settings_check:
-        default_branch: [main]
         protected_branches: []
         protected_tags: ["v*"]
         job_token_push: false
@@ -235,10 +235,11 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| in every push: `internal error: the hook configuration on the server is invalid` | an invalid `config.yaml`, an empty `audit.file` (the hook writes only to the file, `audit.stdout` does not apply to it), or the hook cannot read the config or the token (permissions, a 0750 root directory) | `sudo -u git gitlab-repopolicy selftest` |
+| in every push: `internal error: the hook configuration on the server is invalid` | an invalid `config.yaml`, an empty `audit.file` (the hook writes only to the file, `audit.stdout` does not apply to it), or the hook cannot read the config (permissions, a 0750 root directory) | `sudo -u git gitlab-repopolicy selftest` |
+| `the default branch of this project is not allowed` in every push to the project | the default branch of the project is not in the list `default_branch` (code `default_branch_not_allowed`) | a Maintainer sets the default branch back in Settings > Repository > Branch defaults; if the new name is right, add it to `default_branch` |
 | `internal error: git is not available to the hook` | the git that Gitaly passes to the hook does not run | the versions of GitLab and Gitaly, `gitlab-ctl status gitaly` |
 | `could not check permissions: the GitLab API did not answer` on protected changes | the API is unavailable or the token expired | `selftest`; `reason` in audit |
-| `this project is not connected to gitlab-repopolicy correctly` | the token is refused, the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
+| `this project is not connected to gitlab-repopolicy correctly` | the token is refused or the hook cannot read it (the token is read only at the first API call, so pushes without the API pass), the service account is not a group member or its role is below Maintainer | `selftest`; `reason` in audit (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | the same in a personal project | the project owner is blocked or banned: the service account token does not see such users, and the project is treated as a group project | expected behaviour, fail closed |
 | `the check did not finish within the server limits` | the push is larger than the limits (`limits`, `max_api_calls`, `timeouts`) | split the push; if the push is small, the limit is too low |
 | `internal error: the push was not checked and is rejected` with an id | an internal error of the binary | find the `internal_error` event with this `receive_id` in audit |
@@ -258,9 +259,11 @@ If `help.contact` is set in the config, denials the user cannot fix alone print 
 
 ```sh
 git clone --mirror https://gitlab.example.com/acme/app.git app.git
-gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice
+gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice --project acme/app --project-id 812
 ```
 
-Exit code 0 means the push would be accepted, and `test` prints the result: `allowed: no rule was touched, 3 new commits` or `allowed: the rules allow the change, 3 new commits`. 1 is a denial with the same text the user would see.
+`--project` and `--project-id` are the path and the ID of the real project: with them `test` asks the API about roles and protected branches of this very project. Without them `local/test/repository` with ID 1 is used, and the API answers are about project 1.
+
+Exit code 0 means the push would be accepted, and `test` prints the result: `allowed: no rule was touched, 3 new commits` or `allowed: the rules allow the change, 3 new commits`. 1 is a denial with the same text the user would see, or an error. 2 is a usage error, for example a missing required flag.
 
 Run `test` in a mirror copy that has only the branches and tags of the server. For a new branch the hook checks only the commits that are not yet in the repository. In a working clone these commits are usually already on another local branch; then `test` sees 0 new commits and prints a hint about `git clone --mirror`.

@@ -1,6 +1,6 @@
 # Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
 # The package installs this file as a conffile; values below are the defaults
-# unless marked otherwise. Unknown keys are an error.
+# unless marked as an example. Unknown keys are an error.
 
 # off | audit | enforce: the global switch. audit writes every decision to the
 # audit log with "enforced": false and lets the push through.
@@ -10,7 +10,7 @@ mode: enforce
 # on a separate node. Required.
 gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket
 
-# Extra CA bundle for https://; not used with http+unix://.
+# Extra CA bundle for https://; an error with http+unix://.
 ca_file: ""
 
 # Token of the instance service account: Maintainer in every top-level group,
@@ -46,13 +46,19 @@ modules:
   commitpolicy: enabled
   tagpolicy: enabled
 
-# What settings-check expects of every project with PATHPOLICY. An empty
-# value is not checked; ci_config_path, principals and the protection of the
-# default branch are always checked. default_branch lists the allowed names,
-# protected_branches are branches to protect besides the default one and
-# protected_tags are checked in projects with TAGPOLICY.
+# Allowed names of the default branch, used by the hook and by settings-check.
+# The hook rejects every push to a project whose default branch has another
+# name; it applies to every project of the instance, so turn it on with
+# mode: audit first. Empty turns the check off. [main] is an example; the
+# default is empty.
+default_branch: [main]
+
+# What settings-check expects of every project with PATHPOLICY. Empty values
+# are not checked and are the default; the values below are examples.
+# ci_config_path, principals and the protection of the default branch are
+# always checked. protected_branches are branches to protect besides the
+# default one, protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  default_branch: [main]
   protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false

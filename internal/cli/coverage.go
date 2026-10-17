@@ -26,7 +26,7 @@ func (a App) runCoverage(ctx context.Context, args []string, _ []string, stdio S
 	if *adminToken == "" {
 		return fail(stdio.Err, "coverage", errors.New("--token-file is required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "coverage", err, ExitError)
 	}

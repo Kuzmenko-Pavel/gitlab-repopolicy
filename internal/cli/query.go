@@ -80,7 +80,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	if *project == "" || *user == "" || *path == "" {
 		return fail(stdio.Err, "explain", errors.New("--project, --user and --path are required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "explain", err, ExitError)
 	}
@@ -154,7 +154,7 @@ func (a App) runAdmins(ctx context.Context, args []string, _ []string, stdio Std
 	if *project == "" {
 		return fail(stdio.Err, "admins", errors.New("--project is required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "admins", err, ExitError)
 	}
@@ -232,7 +232,7 @@ func (a App) runTest(ctx context.Context, args []string, env []string, stdio Std
 	if *repo == "" || *oldRev == "" || *newRev == "" || *ref == "" || *user == "" || *projectID <= 0 {
 		return fail(stdio.Err, "test", errors.New("--repo, --old, --new, --ref and --user are required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "test", err, ExitError)
 	}
@@ -297,7 +297,7 @@ func (a App) decide(ctx context.Context, cfg *config.Config, git *gitx.Repo, r t
 	hookEnv := hookenv.Env{Principal: module.Principal{GLID: r.glID, Username: r.user}, Protocol: r.protocol,
 		Repository: "project-" + strconv.FormatInt(r.projectID, 10), ProjectPath: r.project, ProjectID: r.projectID,
 		Git: hookenv.GitEnv{Dir: r.dir, Path: r.path}}
-	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std(), Help: cfg.Help}, core.Deps{
+	out := core.Run(ctx, core.Settings{Mode: cfg.Mode, Total: cfg.Timeouts.Total.Std(), Help: cfg.Help, DefaultBranch: cfg.DefaultBranch}, core.Deps{
 		Root: mods.Root, Modules: mods.Modules, Git: git, API: api, Audit: &gitAudit{w: w, git: git, ctx: ctx}, Clock: time.Now,
 		Breakglass: breakglass.Store{Dir: cfg.BreakglassDir, TrustedUID: a.system().TrustedUID()},
 	}, core.Request{Env: hookEnv, Updates: []module.RefUpdate{{Old: oldOID, New: newOID, Ref: r.ref}}})

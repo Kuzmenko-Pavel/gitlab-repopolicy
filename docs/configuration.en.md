@@ -7,16 +7,16 @@ The server configuration is `/etc/gitlab-repopolicy/config.yaml`, YAML. The pack
 
 The configuration describes the installation: the API address, the token, the log, limits, presets. Project rules are not set here: they live in the policy files of the repositories.
 
-Unknown keys, YAML anchors and aliases are an error. With an invalid configuration the hook denies every push to projects with "the hook configuration on the server is invalid", so run `selftest` after an edit.
+Unknown keys, including an unknown module name under `modules`, YAML anchors and aliases are an error. With an invalid configuration the hook denies every push to projects with "the hook configuration on the server is invalid", so run `selftest` after an edit.
 
 ## The whole file
 
-This is [config/config.yaml](../config/config.yaml) from the package. The values are the defaults, except the example in `settings_check`.
+This is [config/config.yaml](../config/config.yaml) from the package. The values are the defaults, except those marked as an example: `default_branch` and `settings_check` are empty by default.
 
 ```yaml
 # Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
 # The package installs this file as a conffile; values below are the defaults
-# unless marked otherwise. Unknown keys are an error.
+# unless marked as an example. Unknown keys are an error.
 
 # off | audit | enforce: the global switch. audit writes every decision to the
 # audit log with "enforced": false and lets the push through.
@@ -26,7 +26,7 @@ mode: enforce
 # on a separate node. Required.
 gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket
 
-# Extra CA bundle for https://; not used with http+unix://.
+# Extra CA bundle for https://; an error with http+unix://.
 ca_file: ""
 
 # Token of the instance service account: Maintainer in every top-level group,
@@ -62,13 +62,19 @@ modules:
   commitpolicy: enabled
   tagpolicy: enabled
 
-# What settings-check expects of every project with PATHPOLICY. An empty
-# value is not checked; ci_config_path, principals and the protection of the
-# default branch are always checked. default_branch lists the allowed names,
-# protected_branches are branches to protect besides the default one and
-# protected_tags are checked in projects with TAGPOLICY.
+# Allowed names of the default branch, used by the hook and by settings-check.
+# The hook rejects every push to a project whose default branch has another
+# name; it applies to every project of the instance, so turn it on with
+# mode: audit first. Empty turns the check off. [main] is an example; the
+# default is empty.
+default_branch: [main]
+
+# What settings-check expects of every project with PATHPOLICY. Empty values
+# are not checked and are the default; the values below are examples.
+# ci_config_path, principals and the protection of the default branch are
+# always checked. protected_branches are branches to protect besides the
+# default one, protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  default_branch: [main]
   protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
@@ -90,7 +96,7 @@ commitpolicy_presets: {}
 | --- | --- | --- |
 | `mode` | `enforce` | `off`, `audit` or `enforce`. The global switch, see below |
 | `gitlab_url` | required | the GitLab API: `http+unix://` (the Workhorse socket of the same node) or `https://host` |
-| `ca_file` | empty | an extra CA bundle for `https://`. Not used with `http+unix://` |
+| `ca_file` | empty | an extra CA bundle for `https://`. Together with `http+unix://` it is a config error |
 | `token_file` | `/etc/gitlab-repopolicy/token` | the service account token ([install.en.md](install.en.md#3-service-account-and-token)) |
 | `token_lifetime` | `364d` | the new expiry on `token rotate`: today plus this value. At least `1d` |
 | `audit.file` | `/var/log/gitlab-repopolicy/audit.log` | the audit log. The hook writes only here, so the hook requires it |
@@ -102,6 +108,7 @@ commitpolicy_presets: {}
 | `timeouts.pattern_budget` | `2s` | the same per push. Not less than `timeouts.pattern` |
 | `max_api_calls` | `30` | API calls per push. Exceeding it is `limit_exceeded` |
 | `modules.<name>` | `enabled` | `enabled` or `disabled` for `pathpolicy`, `commitpolicy`, `tagpolicy` |
+| `default_branch` | empty | allowed names of the default branch for the hook and `settings-check`, see below |
 | `settings_check.*` | empty | what `settings-check` expects, see below |
 | `help.contact` | empty | who to ask, for example `#gitlab-support`. See below |
 | `help.docs_url` | empty | a link to the documentation of the rules for developers, `http://` or `https://` |
@@ -131,18 +138,29 @@ Before switching from `audit` to `enforce`, make sure audit has no `invalid_poli
 
 The hook does not load a disabled module: its policy file becomes an ordinary file of the repository. New versions of the file do not go through acceptance, and it can be changed by whoever the PATHPOLICY path rules allow (if there is a rule for this file). Disable a module only on the whole instance and for a long time: after it is enabled again, projects may hold invalid files, and an invalid TAGPOLICY blocks tags.
 
+## `default_branch`
+
+The list of allowed names of the default branch, for example `[main]`, or `[main, master]` during a migration. An empty list (the default) turns the check off. Names are short, without `refs/heads/` and without `*`.
+
+The hook reads every policy file from the default branch. In Settings > Repository > Branch defaults a Maintainer can make a branch without policies the default one, and the next push would pass without rules. So the hook denies every push to a project whose default branch has a name outside the list, with the code `default_branch_not_allowed`. The modules do not run then.
+
+In an empty repository GitLab makes the first pushed branch the default one, whatever its name. So the first push into a repository without branches and tags must bring the branch HEAD names (usually `main`). A push of only another branch is denied with a hint to push `main` first; a push of only tags passes.
+
+The check applies to every project of the instance, including those without policy files: otherwise the bypass is not closed. Personal namespaces are not checked. Turn it on with the global `mode: audit`: look for `default_branch_not_allowed` events in audit, fix the default branch in those projects, and only then switch to `enforce`.
+
+`settings-check` uses the same list ([operations.en.md](operations.en.md#settings-check)).
+
 ## `settings_check`
 
 What `settings-check` expects of every project with PATHPOLICY. An empty value is not checked.
 
 | Key | What is compared |
 | --- | --- |
-| `default_branch` | the list of allowed names of the default branch, for example `[main, master]` |
 | `protected_branches` | branches that must be protected besides the default branch. Other protected branches of the project do not matter |
 | `protected_tags` | these tag patterns are protected. Only in projects with TAGPOLICY on the default branch |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` (`false` means it must be off) |
 
-Regardless of these keys, `settings-check` always checks that the default branch is protected, the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
+Regardless of these keys, `settings-check` always checks the name of the default branch against `default_branch`, that the default branch is protected, the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
 
 The expectations are the same for the whole instance; there are no settings per group or project. So put into the lists only what holds for every project with PATHPOLICY. `protected_tags` gives no drift in projects without release tags, because it is checked only where there is TAGPOLICY. Keep the CI configuration check also for projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance.
 

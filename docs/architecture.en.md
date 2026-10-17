@@ -55,7 +55,7 @@ In scope:
 - helper commands: installing the hook, self-test, token rotation, comparison of project settings, emergency bypass
 
 Out of scope:
-- project settings (the CI configuration path, protected branches, the default branch): the hook does not see them, `settings-check` only detects changes
+- project settings (the CI configuration path, protected branches): the hook does not see them, `settings-check` only detects changes. The hook compares the name of the default branch with `default_branch` on every push
 - the quality of changes: the project checks who and in which format, not what
 - history from before a policy appeared
 - projects in personal namespaces
@@ -66,19 +66,26 @@ Out of scope:
 ```text
 cmd/gitlab-repopolicy     main: signals, exit code
 internal/cli              subcommands, assembly of config, clients and modules
+internal/config           server config
 internal/core             anchor, policy reading, acceptance, module order, budgets, aggregation
 internal/module           module contract: Module, Policy, Input, Result
+internal/modules          the module list of the hook
 internal/modules/path     PATHPOLICY
 internal/modules/commit   COMMITPOLICY
 internal/modules/tag      TAGPOLICY
 internal/changes          which paths and commits a push changes
 internal/gitx             child git processes in an isolated environment
+internal/hookenv          the environment and stdin that Gitaly passes to the hook
 internal/refs             default, protected or another branch
 internal/identity         who makes the change, SSH key type, namespace type
 internal/gitlab           REST and GraphQL client, call budget
 internal/report           messages to the user, GL-HOOK-ERR
 internal/audit            JSON events
+internal/strictyaml       strict YAML parsing: no anchors, unknown keys or duplicates
+internal/spec, schema     the format of policy files, its validator and JSON Schema
+internal/buildinfo        version and commit of the build
 internal/install, settings, coverage, token, breakglass   helper commands
+internal/testmodule       a test module for checks of the core, only in tests
 ```
 
 The core does not know what a module checks, a module does not know how changes and identity are obtained. A module declares its file, its behaviour on an invalid policy (fail closed or skip) and the data it needs; the core computes only that. The linter (`depguard`, `forbidigo`) in `make code-lint` checks the dependency rules between packages.
@@ -104,10 +111,10 @@ One push:
 1. **Entry.** The repository is not a project (wiki, design, snippet) - allowed without a log. `mode: off` - allowed
 2. **Anchor.** The default branch before the push. Every policy file is read only from here: a push cannot weaken the rules for itself, and a branch with a weaker policy does not authorize itself
 3. **Break-glass.** A valid grant for the project - allowed with a `breakglass` event
-4. **No policy.** If the anchor has no policy files, allowed; a push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
-5. **Changes.** Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs))
-6. **Modules.** PATHPOLICY first, then COMMITPOLICY and TAGPOLICY. The API only if the decision depends on it
-7. **Acceptance.** Every changed policy file in any branch is checked as a new version
+4. **Default branch.** If `default_branch` is set in the config and the default branch of the project has another name, the push is denied with `default_branch_not_allowed`. The modules do not run: policies are not read from such a branch. The check applies to every project of the instance, including those without policies
+5. **Acceptance.** Every changed policy file in any branch is checked as a new version, even if the anchor has no policy yet: an invalid new file is denied with `invalid_policy_update`
+6. **No policy.** If the anchor has no policy files, the modules do not run. A push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
+7. **Modules.** PATHPOLICY first, then COMMITPOLICY and TAGPOLICY. Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits that no branch or tag has yet (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)). The API only if the decision depends on it
 8. **Decision.** AND over modules; one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
 
 A typical run takes about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched: most of it is starting git processes. A call to the API adds 50-300 ms and is rare.
@@ -138,7 +145,7 @@ Step by step - [install.en.md](install.en.md), operations - [operations.en.md](o
 
 - **Trust model.** A policy is read only from the default branch before the push. PATHPOLICY protects itself (`admins`) and, through path rules, the other policy files
 - **Identity.** Only from `GL_ID` and `GL_USERNAME`, which GitLab sets. Author, committer and commit signatures are not used for authorization. A deploy key is not a person. Client push options do not affect the decision
-- **Deny under uncertainty.** PATHPOLICY and TAGPOLICY fail closed: an API failure, an invalid policy, an internal error deny a protected change. COMMITPOLICY skips the check with a warning on a failure: it is hygiene, not access. An API failure never turns recovery on
+- **Deny under uncertainty.** PATHPOLICY and TAGPOLICY fail closed: an API failure, an invalid policy, an internal error deny a protected change. COMMITPOLICY skips the check with a warning on a failure: it is hygiene, not access. The exception is the acceptance of a new COMMITPOLICY version with `except.users`: if the API did not answer, the push is denied with `authorization_backend_failure`, because it is unknown whether these users exist. An API failure never turns recovery on
 - **Git isolation.** Child git processes run without replace refs and without system and global config: `refs/replace/*` cannot hide a change from the check
 - **Untrusted input.** Policy files, stdin, commit messages and tag objects are parsed strictly and with limits; the parsers are covered by fuzz tests
 - **Confidential messages.** The user sees rules from the policy file (they are in the repository anyway), but not API results: roles, account state, error details. These go only to audit
@@ -148,8 +155,8 @@ Actors, bypasses and what is out of scope are described in [threat-model.en.md](
 
 ## Known limitations
 
-- The hook sees only changes of branches and tags. A Maintainer changes project settings (the CI configuration path, the default branch, protected branches, push with `CI_JOB_TOKEN`) around it; `settings-check` only detects them within minutes
-- A merge into an unprotected branch brings no new commits and is not checked. A merge into default and protected branches is checked
+- The hook sees only changes of branches and tags. A Maintainer changes project settings (the CI configuration path, the default branch, protected branches, push with `CI_JOB_TOKEN`) around it; `settings-check` only detects them on its schedule. The exception is the default branch: if `default_branch` is set, a push to a project with another default branch is denied at once
+- A merge into an unprotected branch brings no new commits. PATHPOLICY does not check it, COMMITPOLICY checks only the merge commit itself (unless `except.merge_commits` is on), not the merged commits that are already in the repository. A merge into the default branch is checked fully by both modules, into protected branches - by PATHPOLICY by content and by COMMITPOLICY by the `refs` of the ruleset ([commitpolicy.en.md](commitpolicy.en.md#which-commits-are-checked))
 - A new branch or tag on an old commit that is already in a protected branch is not checked by PATHPOLICY and COMMITPOLICY: the content was checked before
 - A username can become free after a rename or deletion of a user and be taken by another person. `settings-check` reports principals that no longer exist
 - The service account token does not see blocked or banned users. A personal project of such a user is treated as a group project (fail closed)

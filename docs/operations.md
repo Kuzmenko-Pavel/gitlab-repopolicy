@@ -8,7 +8,7 @@
 Hook пише кожне рішення, яке зачепило правило, у `audit.file` (за замовчуванням `/var/log/gitlab-repopolicy/audit.log`): один JSON-об'єкт на рядок, до 4 KiB на подію. Push, який не зачепив жодного правила, не логується, інакше був би рядок на кожен push інстансу.
 
 ```json
-{"ts":"2026-10-14T09:14:02.418Z","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","event":"decision","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
+{"ts":"2026-10-14T09:14:02.418Z","event":"decision","receive_id":"Q4ZJ7OXKMV3HB2LDSY6TNRWAEC","module":"pathpolicy","decision":"deny","enforced":true,"code":"protected_path_violation","project_id":812,"project_path":"example/payments/deployment","user_id":314,"username":"alice","gl_id":"user-314","protocol":"web","ref":"refs/heads/main","oldrev":"9f1c...","newrev":"b77a...","anchor_rev":"9f1c...","policy_blob":"3e5d...","violations":[{"rule":"ci-config","code":"protected_path_violation","paths":[".gitlab-ci.yml"],"reason":"not in allow: alice"}],"api_calls":2,"duration_ms":143,"version":"1.0.0","git":"2.55.0","node":"gitaly-01"}
 ```
 
 | Поле | Значення |
@@ -105,7 +105,7 @@ sudo gitlab-repopolicy breakglass list
 sudo gitlab-repopolicy breakglass revoke --project acme/app
 ```
 
-- проєкт задається шляхом `--project` або ID `--project-id`, рівно одним із них. Шлях hook переводить в ID через API. Якщо API недоступний, потрібен `--project-id`: ID показано на головній сторінці проєкту під назвою. У виводі й події видно і ID, і шлях
+- проєкт задається шляхом `--project` або ID `--project-id`, рівно одним із них. Шлях команда `breakglass` переводить в ID через API. Якщо API недоступний, потрібен `--project-id`: ID показано на головній сторінці проєкту під назвою. З `--project` у виводі й події видно і ID, і шлях, з `--project-id` - лише ID
 
 - `--ttl` обов'язковий, не більше 24 годин. Після строку дозвіл ігнорується
 - поки дозвіл діє, усі модули пропускають push у проєкт, у виводі push є попередження, кожен такий push - подія `breakglass`
@@ -131,12 +131,12 @@ sudo gitlab-repopolicy token rotate --before 30d
 
 Hook бачить лише зміни гілок і тегів. Налаштування проєкту змінюються в Settings, і Maintainer може обійти PATHPOLICY через них: перенести шлях CI-конфігурації в незахищений файл, зробити default гілку без policy, увімкнути push через `CI_JOB_TOKEN`. `settings-check` знаходить такі зміни.
 
-Для кожного проєкту з PATHPOLICY, який бачить service account:
+Для кожного проєкту з PATHPOLICY, який бачить service account. Архівні проєкти й проєкти в особистих namespace пропускаються:
 
 | Перевірка (`violations[].rule`) | Що вважається розбіжністю |
 | --- | --- |
-| `default_branch` | default branch не входить у список `settings_check.default_branch` або не захищена |
-| `protected_branches` | гілки зі списку, крім default branch, не захищені |
+| `default_branch` | default branch не входить у список `default_branch` |
+| `protected_branches` | default branch не захищена (у звіті як `<branch> (the default branch)`) або не захищені гілки зі списку `settings_check.protected_branches` |
 | `protected_tags` | шаблони тегів не захищені. Перевіряється лише в проєктах з TAGPOLICY у default branch і з увімкненим модулем |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` не такий, як очікується |
 | `ci_config_path` | CI-конфігурація в іншому проєкті, за URL або не покрита path-правилом PATHPOLICY |
@@ -199,8 +199,8 @@ settings-check:
       token_file: $CI_PROJECT_DIR/token
       breakglass_dir: /nonexistent
       audit: { file: "", stdout: true }
+      default_branch: [main]
       settings_check:
-        default_branch: [main]
         protected_branches: []
         protected_tags: ["v*"]
         job_token_push: false
@@ -235,10 +235,11 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 
 | Симптом | Причина | Що робити |
 | --- | --- | --- |
-| у кожному push: `internal error: the hook configuration on the server is invalid` | невалідний `config.yaml`, порожній `audit.file` (hook пише лише у файл, `audit.stdout` для нього не діє) або hook не може прочитати конфігурацію чи токен (права, каталог 0750 root) | `sudo -u git gitlab-repopolicy selftest` |
+| у кожному push: `internal error: the hook configuration on the server is invalid` | невалідний `config.yaml`, порожній `audit.file` (hook пише лише у файл, `audit.stdout` для нього не діє) або hook не може прочитати конфігурацію (права, каталог 0750 root) | `sudo -u git gitlab-repopolicy selftest` |
+| `the default branch of this project is not allowed` у кожному push у проєкт | default branch проєкту не зі списку `default_branch` (код `default_branch_not_allowed`) | Maintainer повертає default branch у Settings > Repository > Branch defaults; якщо нове ім'я правильне, додайте його в `default_branch` |
 | `internal error: git is not available to the hook` | git, який Gitaly передає hook, не запускається | версія GitLab і Gitaly, `gitlab-ctl status gitaly` |
 | `could not check permissions: the GitLab API did not answer` на захищених змінах | API недоступний або токен прострочений | `selftest`; у audit `reason` |
-| `this project is not connected to gitlab-repopolicy correctly` | токен відхилено, service account не учасник групи або роль нижча за Maintainer | `selftest`; у audit `reason` (`project_not_visible`, `role_below_maintainer`); `coverage` |
+| `this project is not connected to gitlab-repopolicy correctly` | токен відхилено або hook не може його прочитати (токен читається лише при першому зверненні до API, тому push без API проходять), service account не учасник групи або роль нижча за Maintainer | `selftest`; у audit `reason` (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | те саме в особистому проєкті | власник проєкту заблокований або забанений: токен service account таких користувачів не бачить, і проєкт вважається груповим | очікувана поведінка, fail closed |
 | `the check did not finish within the server limits` | push більший за ліміти (`limits`, `max_api_calls`, `timeouts`) | розбити push на частини; якщо push малий, ліміт занизький |
 | `internal error: the push was not checked and is rejected` з id | внутрішня помилка бінарника | знайти подію `internal_error` з цим `receive_id` в audit |
@@ -258,9 +259,11 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 
 ```sh
 git clone --mirror https://gitlab.example.com/acme/app.git app.git
-gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice
+gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice --project acme/app --project-id 812
 ```
 
-Код виходу 0 - push було б прийнято, і `test` друкує підсумок: `allowed: no rule was touched, 3 new commits` або `allowed: the rules allow the change, 3 new commits`. 1 - відмова з тим самим текстом, що побачив би користувач.
+`--project` і `--project-id` - шлях і ID справжнього проєкту: з ними `test` питає API про ролі й protected branches саме цього проєкту. Без них береться `local/test/repository` з ID 1, і відповіді API стосуються проєкту 1.
+
+Код виходу 0 - push було б прийнято, і `test` друкує підсумок: `allowed: no rule was touched, 3 new commits` або `allowed: the rules allow the change, 3 new commits`. 1 - відмова з тим самим текстом, що побачив би користувач, або помилка виконання. 2 - помилка у використанні, наприклад не задано обов'язковий прапорець.
 
 Запускайте `test` на mirror-копії, де є лише гілки й теги сервера. Для нової гілки hook перевіряє тільки коміти, яких ще немає в репозиторії. У робочому клоні ці коміти зазвичай уже є в іншій локальній гілці, тоді `test` бачить 0 нових комітів і друкує підказку про `git clone --mirror`.

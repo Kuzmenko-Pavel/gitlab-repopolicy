@@ -91,7 +91,7 @@ rulesets:
 
 Застосовуються всі rulesets, що збіглися з гілкою (AND). У списку `refs` символ `*` збігається в межах одного сегмента: `refs/heads/*` збігається з `main`, але не з `feature/x`.
 
-Невідомі ключі, YAML anchors і aliases - помилка. Розмір файлу - до 64 KiB.
+Невідомі ключі, YAML anchors і aliases - помилка. Розмір файлу - до 64 KiB, до 50 rulesets і до 50 username в `except.users` одного ruleset.
 
 ## Формати
 
@@ -100,7 +100,7 @@ rulesets:
 **`free`** - header цілком є subject. Правила про type і scope для такого ruleset недоступні.
 
 Граматику формату перевіряють завжди, окремого правила для цього немає:
-- для `conventional` - header за схемою вище, порожній рядок між header і body, коректний trailer-блок
+- для `conventional` - header за схемою вище і порожній рядок між header і body
 - для `free` - непорожній header і порожній рядок перед body
 - повідомлення з NUL-байтом або об'єкт коміту більший за 1 MiB - порушення
 
@@ -129,7 +129,7 @@ rulesets:
 | `body-max-line-length` | число | будь-який | довжина кожного рядка body. Рядки з URL і код (огороджений блок або рядки з відступом) не враховуються |
 | `reference` | `location`, `pattern`, `keys` | будь-який | посилання на issue знайдено в указаному місці |
 | `trailer-required` | список ключів | будь-який | є trailers з цими ключами |
-| `pattern` | regex | будь-який | усе повідомлення відповідає regex |
+| `pattern` | regex | будь-який | повідомлення з початку відповідає regex |
 
 `reference`:
 - `location: any` - посилання будь-де в повідомленні, наприклад `(group/project#665)` усередині абзацу body
@@ -163,10 +163,11 @@ rulesets:
 ## Які коміти перевіряються
 
 - Лише в гілках із `refs` ruleset. За `refs: protected` feature-гілки вільні, WIP-коміти не блокуються
-- Перевіряються всі коміти, які цей push додає в гілку. Під час створення protected гілки - коміти, яких немає в default branch і інших protected гілках. Під час створення іншої гілки - нові коміти
-- Merge request без squash приносить усі коміти гілки і merge-коміт. Squash merge приносить один коміт, його повідомлення задає squash commit template проєкту
+- У default branch, а для ruleset з `refs: protected` або списком - і в цих гілках, перевіряються всі коміти, які push додає в гілку. Під час створення protected гілки - коміти, яких немає в default branch і інших protected гілках
+- В інших гілках перевіряються лише нові коміти, яких ще немає в жодній гілці чи тегу репозиторію. Merge `main` у feature-гілку або rebase на свіжий `main` уже наявні коміти не перевіряє, лише сам merge-коміт (якщо не ввімкнено `except.merge_commits`) і власні нові коміти. Ruleset з `refs: all` перевіряє кожен коміт, коли той уперше з'являється в будь-якій гілці
+- Merge request без squash у default branch приносить усі коміти гілки і merge-коміт. Squash merge приносить один коміт, його повідомлення задає squash commit template проєкту
 - Повідомлення тегів не перевіряються. Підпис тегів перевіряє TAGPOLICY ([tagpolicy.md](tagpolicy.md))
-- Історія до появи COMMITPOLICY не перевіряється
+- Історія до появи COMMITPOLICY не перевіряється. Виняток - merge у default branch гілки зі старими комітами: вони входять у default branch разом із merge і перевіряються
 
 ## Пресети (`extends`)
 
@@ -211,7 +212,7 @@ COMMITPOLICY - про гігієну, а не про доступ, тому за
 | Команда | Що перевіряє |
 | --- | --- |
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | одне повідомлення за `COMMITPOLICY` поточного каталогу |
-| `gitlab-repopolicy lint-commit --range origin/main..HEAD` | коміти діапазону; одна ревізія - уся її історія |
+| `gitlab-repopolicy lint-commit --range origin/main..HEAD` | коміти діапазону; одна ревізія - уся її історія. Не більше 100 000 комітів |
 | `-f FILE` | інший файл COMMITPOLICY |
 | `--skip-author EMAIL` | разом з `--range`: пропустити коміти цього автора; можна повторити. Пропущений коміт друкується рядком `skipped, author EMAIL` |
 | `--ruleset NAME` | лише цей ruleset; можна повторити для кількох. Невідоме ім'я - помилка зі списком rulesets файлу |

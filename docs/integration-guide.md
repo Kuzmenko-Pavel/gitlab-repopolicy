@@ -34,10 +34,11 @@
 - `authorization_backend_failure` - групи без service account, проблеми з токеном
 - `duration_ms` і `api_calls` - вартість hook на вашому навантаженні
 - `invalid_policy` і `decision` з `code: invalid_policy_update` - policy, які в `enforce` заблокують проєкт
+- `decision` з `code: default_branch_not_allowed`, якщо задано `default_branch` ([configuration.md](configuration.md#default_branch)) - проєкти, де default branch названа інакше; у `enforce` push у них відхилятимуться
 
 ## 4. COMMITPOLICY у кількох проєктах
 
-COMMITPOLICY - найбезпечніший старт: він не загрожує блокуванням доступу, а збій API лише пропускає перевірку.
+COMMITPOLICY - найбезпечніший старт: він не загрожує блокуванням доступу, а збій API лише пропускає перевірку. Виняток - нова версія COMMITPOLICY з `except.users`: якщо API не відповів, її приймання відхиляється з `authorization_backend_failure`.
 
 1. Опишіть стандарт команди як пресет у `commitpolicy_presets` ([commitpolicy.md](commitpolicy.md#пресети-extends)). Виводьте його з реальних комітів команди, а не з колишніх клієнтських схем
 2. У 2-3 проєктах додайте COMMITPOLICY з `extends:` і `mode: warn`

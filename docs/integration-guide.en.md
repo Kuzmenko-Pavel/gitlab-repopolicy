@@ -34,10 +34,11 @@ What to look at in audit:
 - `authorization_backend_failure` - groups without the service account, token problems
 - `duration_ms` and `api_calls` - the cost of the hook under your load
 - `invalid_policy` and `decision` with `code: invalid_policy_update` - policies that block a project in `enforce`
+- `decision` with `code: default_branch_not_allowed`, if `default_branch` is set ([configuration.en.md](configuration.en.md#default_branch)) - projects whose default branch has another name; in `enforce` pushes to them will be denied
 
 ## 4. COMMITPOLICY in a few projects
 
-COMMITPOLICY is the safest start: it cannot lock anyone out, and an API failure only skips the check.
+COMMITPOLICY is the safest start: it cannot lock anyone out, and an API failure only skips the check. The exception is a new COMMITPOLICY version with `except.users`: if the API did not answer, its acceptance is denied with `authorization_backend_failure`.
 
 1. Describe the team standard as a preset in `commitpolicy_presets` ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)). Derive it from the real commits of the team, not from earlier client-side schemas
 2. In 2-3 projects add a COMMITPOLICY with `extends:` and `mode: warn`

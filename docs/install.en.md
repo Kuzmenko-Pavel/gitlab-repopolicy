@@ -206,7 +206,7 @@ sudo -u git gitlab-repopolicy selftest
 
 `selftest` checks the config, the modules, the audit log, the break-glass directory, the token file, the service account (`bot`, `external`, not an administrator), the scopes and expiry of the token, API access and the number of groups where the service account is a Maintainer. Any `FAIL` means exit code 1. If the service account is a member of no group, the `groups` line is `FAIL`: the hook cannot check any group project. Which groups are missing, `coverage` shows.
 
-Run `selftest` both as root and as the git user: the hook runs as git, and only this shows that it can read the config and the token. For example, a `/etc/gitlab-repopolicy` directory with mode 0750 root goes unnoticed by every check run as root, while the hook denies every push with "internal error: the hook configuration on the server is invalid".
+Run `selftest` both as root and as the git user: the hook runs as git, and only this shows that it can read the config and the token. For example, a `/etc/gitlab-repopolicy` directory with mode 0750 root goes unnoticed by every check run as root, while the hook denies every push with "internal error: the hook configuration on the server is invalid". An unreadable token shows only at the first API call: pushes that need no API pass, protected changes get "this project is not connected to gitlab-repopolicy correctly".
 
 ```text
 $ sudo -u git gitlab-repopolicy selftest
@@ -217,6 +217,7 @@ ok   audit       /var/log/gitlab-repopolicy/audit.log does not exist yet; the di
 ok   breakglass  /etc/gitlab-repopolicy/breakglass, no active grants
 ok   api         http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket reachable as gitlab-repopolicy (id 2)
 ok   account     gitlab-repopolicy is a service account
+ok   groups      Maintainer of 3 groups; gitlab-repopolicy coverage checks every top-level group
 ok   token       scopes read_api, self_rotate, expires on 2027-10-13
 info git         git version 2.55.0-rc1.g02bb39c in PATH of selftest; the hook uses the git of Gitaly
 ```

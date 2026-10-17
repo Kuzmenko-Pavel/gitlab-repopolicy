@@ -148,6 +148,7 @@ Commit author, committer і підписи комітів для авториз�
 | Owner проєкту (не admin) | є хоча б один | відмова `policy_admin_violation` |
 | Owner проєкту (не admin) | жодного, і API це підтвердив | дозволено: **recovery** |
 | Owner проєкту (не admin) | API не відповів | відмова `authorization_backend_failure` |
+| deploy key або нерозбірний `GL_ID` | будь-які | відмова `unknown_principal`: змінити PATHPOLICY може лише людина |
 | усі інші | будь-які | відмова `policy_admin_violation` |
 
 **Перша PATHPOLICY (bootstrap).** Якщо в default branch PATHPOLICY немає, додати її туди може користувач з роллю Maintainer або вище. Зловмисний bootstrap - незручність, а не ескалація: PATHPOLICY лише звужує права, і Owner може зняти членство того, хто захопив policy, після чого спрацює recovery.
@@ -173,7 +174,7 @@ Recovery-push змінює тільки PATHPOLICY. Захищені шляхи 
 | ключі підпису | ні | ні | так |
 | є хоча б один effective admin | `lockout_prevented` | ні | ні |
 | API недоступний під час перевірок | `authorization_backend_failure` | `authorization_backend_failure` | ні |
-| делегований файл не покритий правилом PATHPOLICY | попередження | попередження | попередження |
+| делегований файл не покритий правилом PATHPOLICY | ні | попередження | попередження |
 
 Username, які вже були у версії на якорі, повторно не перевіряються. Зниклих principals знаходить `settings-check` ([operations.md](operations.md)).
 
@@ -196,7 +197,8 @@ Username, які вже були у версії на якорі, повторн
 | `invalid_policy` | PATHPOLICY in main is broken, so no changes are accepted | PATHPOLICY у default branch невалідна |
 | `invalid_policy_update` | the changed PATHPOLICY is invalid | нова версія policy-файлу не пройшла приймання |
 | `authorization_backend_failure` | could not check permissions: the GitLab API did not answer; this project is not connected to gitlab-repopolicy correctly | API GitLab не відповів або токен прострочений; service account не бачить проєкт або має роль нижчу за Maintainer |
-| `unknown_principal` | only a person may change these files | deploy key або нерозбірний `GL_ID` на захищеному шляху |
+| `unknown_principal` | only a person may change these files | deploy key або нерозбірний `GL_ID` на захищеному шляху або в PATHPOLICY |
+| `tag_object_invalid` | the tag does not point to a commit, so its files cannot be checked | тег під правилом PATHPOLICY вказує не на коміт, а на дерево чи blob |
 | `limit_exceeded` | the check did not finish within the server limits | ліміт часу, викликів API або комітів |
 | `internal_error` | internal error: the push was not checked and is rejected | внутрішня помилка, у виводі id для пошуку в audit |
 
@@ -229,7 +231,7 @@ remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHP
 | --- | --- |
 | `gitlab-repopolicy validate -f PATHPOLICY` | ті самі перевірки, що й під час приймання, без GitLab |
 | `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | ще існування username і роль admins у проєкті через API. Про кожного admin, який не є активним користувачем з роллю Maintainer або вище, - попередження і підсумок `N of M admins work`. Файл при цьому валідний, код виходу 0 |
-| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | які правила збіглися зі шляхом і чи виконує їх користувач. Код виходу 0 - дозволено або жодне правило не збіглося, 1 - заборонено або помилка (текст помилки в stderr) |
+| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | які правила збіглися зі шляхом і чи виконує їх користувач. Код виходу 0 - дозволено або жодне правило не збіглося, 1 - заборонено або помилка (текст помилки в stderr), 2 - не задано `--project`, `--user` чи `--path` |
 | `gitlab-repopolicy admins --project P` | admins із файлу, effective admins і чи ввімкнено recovery |
 
 `explain` і `admins` читають PATHPOLICY з default branch проєкту через API, тобто ту версію, за якою буде оцінено наступний push.

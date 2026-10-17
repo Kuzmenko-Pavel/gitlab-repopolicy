@@ -148,6 +148,7 @@ An **admin** is a user from `admins` who is active and has at least the Maintain
 | a project Owner (not an admin) | at least one | denied, `policy_admin_violation` |
 | a project Owner (not an admin) | none, confirmed by the API | allowed: **recovery** |
 | a project Owner (not an admin) | the API did not answer | denied, `authorization_backend_failure` |
+| a deploy key or an unparsable `GL_ID` | any | denied, `unknown_principal`: only a person may change PATHPOLICY |
 | anyone else | any | denied, `policy_admin_violation` |
 
 **The first PATHPOLICY (bootstrap).** If the default branch has no PATHPOLICY, a user with the Maintainer role or higher may add it there. A malicious bootstrap is an inconvenience, not an escalation: PATHPOLICY only narrows permissions, and an Owner can remove the membership of whoever took over the policy, after which recovery applies.
@@ -173,7 +174,7 @@ A new version of any policy file is checked in any branch. An error denies the p
 | signing keys | no | no | yes |
 | at least one effective admin | `lockout_prevented` | no | no |
 | the API is unavailable during the checks | `authorization_backend_failure` | `authorization_backend_failure` | no |
-| a delegated file is not covered by a PATHPOLICY rule | warning | warning | warning |
+| a delegated file is not covered by a PATHPOLICY rule | no | warning | warning |
 
 Usernames that were already in the anchor version are not checked again. `settings-check` finds principals that are gone ([operations.en.md](operations.en.md)).
 
@@ -196,7 +197,8 @@ If PATHPOLICY is deleted while COMMITPOLICY or TAGPOLICY stay, anyone with push 
 | `invalid_policy` | PATHPOLICY in main is broken, so no changes are accepted | PATHPOLICY in the default branch is invalid |
 | `invalid_policy_update` | the changed PATHPOLICY is invalid | a new version of a policy file failed acceptance |
 | `authorization_backend_failure` | could not check permissions: the GitLab API did not answer; this project is not connected to gitlab-repopolicy correctly | the GitLab API did not answer or the token expired; the service account does not see the project or its role is below Maintainer |
-| `unknown_principal` | only a person may change these files | a deploy key or an unparsable `GL_ID` on a protected path |
+| `unknown_principal` | only a person may change these files | a deploy key or an unparsable `GL_ID` on a protected path or in PATHPOLICY |
+| `tag_object_invalid` | the tag does not point to a commit, so its files cannot be checked | a tag under a PATHPOLICY rule points to a tree or a blob, not a commit |
 | `limit_exceeded` | the check did not finish within the server limits | a limit of time, API calls or commits |
 | `internal_error` | internal error: the push was not checked and is rejected | an internal error; the output has an id to look up in audit |
 
@@ -229,7 +231,7 @@ In a merge request, the Web IDE and API responses GitLab shows only the `GL-HOOK
 | --- | --- |
 | `gitlab-repopolicy validate -f PATHPOLICY` | the same checks as on acceptance, without GitLab |
 | `gitlab-repopolicy validate -f PATHPOLICY --online --config FILE --project P` | also checks through the API that usernames exist and the role of admins in the project. Every admin who is not an active user with Maintainer or higher gets a warning, plus the summary `N of M admins work`. The file stays valid, exit code 0 |
-| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | which rules match the path and whether the user satisfies them. Exit code 0 means allowed or no rule matched, 1 means denied or an error (the error text is on stderr) |
+| `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | which rules match the path and whether the user satisfies them. Exit code 0 means allowed or no rule matched, 1 means denied or an error (the error text is on stderr), 2 means `--project`, `--user` or `--path` is missing |
 | `gitlab-repopolicy admins --project P` | admins from the file, effective admins and whether recovery is on |
 
 `explain` and `admins` read PATHPOLICY from the default branch of the project through the API, that is the version the next push will be evaluated by.

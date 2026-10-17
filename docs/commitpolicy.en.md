@@ -91,7 +91,7 @@ rulesets:
 
 Every ruleset that matches the branch applies (AND). In a `refs` list, `*` matches within one segment: `refs/heads/*` matches `main` but not `feature/x`.
 
-Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 KiB.
+Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 KiB, up to 50 rulesets and up to 50 usernames in `except.users` of one ruleset.
 
 ## Formats
 
@@ -100,7 +100,7 @@ Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 K
 **`free`** - the whole header is the subject. Rules about type and scope are not available for such a ruleset.
 
 The grammar of the format is always checked, there is no separate rule for it:
-- for `conventional` - the header as above, an empty line between the header and the body, a correct trailer block
+- for `conventional` - the header as above and an empty line between the header and the body
 - for `free` - a non-empty header and an empty line before the body
 - a message with a NUL byte or a commit object larger than 1 MiB is a violation
 
@@ -129,7 +129,7 @@ Every rule is `{ level, value, types }`:
 | `body-max-line-length` | number | any | length of every body line. Lines with a URL and code (a fenced block or indented lines) are not counted |
 | `reference` | `location`, `pattern`, `keys` | any | an issue reference is found in the given place |
 | `trailer-required` | list of keys | any | trailers with these keys are present |
-| `pattern` | regex | any | the whole message matches the regex |
+| `pattern` | regex | any | the message matches the regex from its start |
 
 `reference`:
 - `location: any` - a reference anywhere in the message, for example `(group/project#665)` inside a body paragraph
@@ -163,10 +163,11 @@ A difference from Python `re`: in Python `$` also matches before a final `\n`. T
 ## Which commits are checked
 
 - Only in branches from the `refs` of the ruleset. With `refs: protected` feature branches are free, WIP commits are not blocked
-- Every commit that this push adds to the branch is checked. When a protected branch is created - the commits that are not in the default branch and other protected branches. When another branch is created - the new commits
-- A merge request without squash brings every commit of the branch and the merge commit. A squash merge brings one commit, its message comes from the squash commit template of the project
+- In the default branch, and for a ruleset with `refs: protected` or a list also in those branches, every commit that this push adds to the branch is checked. When a protected branch is created - the commits that are not in the default branch and other protected branches
+- In other branches only the new commits are checked, the ones that no branch or tag of the repository has yet. Merging `main` into a feature branch or rebasing onto a fresh `main` does not check the commits that already exist, only the merge commit itself (unless `except.merge_commits` is on) and the own new commits. A ruleset with `refs: all` checks every commit when it first appears in any branch
+- A merge request without squash into the default branch brings every commit of the branch and the merge commit. A squash merge brings one commit, its message comes from the squash commit template of the project
 - Tag messages are not checked. TAGPOLICY checks tag signatures ([tagpolicy.en.md](tagpolicy.en.md))
-- History from before COMMITPOLICY appeared is not checked
+- History from before COMMITPOLICY appeared is not checked. The exception is a merge into the default branch of a branch with old commits: they enter the default branch with the merge and are checked
 
 ## Presets (`extends`)
 
@@ -211,7 +212,7 @@ Warnings of a successful push show in the terminal as `remote:` lines. For a mer
 | Command | What it checks |
 | --- | --- |
 | `gitlab-repopolicy lint-commit -m "feat: add x"` | one message against `COMMITPOLICY` of the current directory |
-| `gitlab-repopolicy lint-commit --range origin/main..HEAD` | the commits of a range; one revision means its whole history |
+| `gitlab-repopolicy lint-commit --range origin/main..HEAD` | the commits of a range; one revision means its whole history. At most 100 000 commits |
 | `-f FILE` | another COMMITPOLICY file |
 | `--skip-author EMAIL` | with `--range`: skip the commits of this author; repeat it for several. A skipped commit prints the line `skipped, author EMAIL` |
 | `--ruleset NAME` | only this ruleset; repeat it for several. An unknown name is an error that lists the rulesets of the file |

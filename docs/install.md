@@ -191,7 +191,7 @@ sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_ho
 
 `install-hook`:
 - створює `custom_hooks_dir/pre-receive.d/50-gitlab-repopolicy` - wrapper, який запускає `/usr/bin/gitlab-repopolicy hook pre-receive --config /etc/gitlab-repopolicy/config.yaml`. Власник - `--user`, режим 0755
-- встановлює групу `config.yaml` і токена та власника каталогу audit-логу для `--user`. Якщо права каталогу логу ширші за 0750, а файлу audit ширші за 0640, звужує їх
+- встановлює групу `config.yaml` і токена та власника каталогу audit-логу для `--user`. Якщо права каталогу логу ширші за 0750 або файлу audit ширші за 0640, звужує їх
 - записує шлях `custom_hooks_dir` у `/var/lib/gitlab-repopolicy/hooks`, щоб видалення пакета прибрало wrapper
 - повторний запуск нічого не змінює і так і пише: `unchanged`, `owner unchanged (0:998)`, `mode unchanged (0750)`. Інші файли в `pre-receive.d/` не чіпає
 
@@ -206,7 +206,7 @@ sudo -u git gitlab-repopolicy selftest
 
 `selftest` перевіряє конфігурацію, модулі, audit-лог, каталог break-glass, файл токена, service account (`bot`, `external`, не адміністратор), scopes і строк токена, доступ до API і кількість груп, де service account має роль Maintainer. Будь-який `FAIL` - код виходу 1. Якщо service account не входить у жодну групу, рядок `groups` - `FAIL`: hook не зможе перевірити жоден груповий проєкт. Які саме групи пропущено, покаже `coverage`.
 
-Запускайте `selftest` і від root, і від користувача git: hook працює від git, і лише так видно, що він може прочитати конфігурацію і токен. Наприклад, каталог `/etc/gitlab-repopolicy` з правами 0750 root не помітить жодна перевірка від root, а hook відмовлятиме кожному push з текстом "internal error: the hook configuration on the server is invalid".
+Запускайте `selftest` і від root, і від користувача git: hook працює від git, і лише так видно, що він може прочитати конфігурацію і токен. Наприклад, каталог `/etc/gitlab-repopolicy` з правами 0750 root не помітить жодна перевірка від root, а hook відмовлятиме кожному push з текстом "internal error: the hook configuration on the server is invalid". Нечитаємий токен hook помітить лише під час першого звернення до API: push, яким API не потрібен, пройдуть, а захищені зміни отримають "this project is not connected to gitlab-repopolicy correctly".
 
 ```text
 $ sudo -u git gitlab-repopolicy selftest
@@ -217,6 +217,7 @@ ok   audit       /var/log/gitlab-repopolicy/audit.log does not exist yet; the di
 ok   breakglass  /etc/gitlab-repopolicy/breakglass, no active grants
 ok   api         http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket reachable as gitlab-repopolicy (id 2)
 ok   account     gitlab-repopolicy is a service account
+ok   groups      Maintainer of 3 groups; gitlab-repopolicy coverage checks every top-level group
 ok   token       scopes read_api, self_rotate, expires on 2027-10-13
 info git         git version 2.55.0-rc1.g02bb39c in PATH of selftest; the hook uses the git of Gitaly
 ```

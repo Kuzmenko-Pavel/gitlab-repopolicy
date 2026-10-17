@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 )
 
 func runHook(t *testing.T, args []string, env []string, stdin string) (int, string, string) {
@@ -40,6 +42,7 @@ func TestHook_RejectsWhenItCannotWork(t *testing.T) {
 		{"missing config", []string{"hook", "pre-receive", "--config", "/nonexistent/config.yaml"}, env, "configuration on the server is invalid"},
 		{"invalid config", []string{"hook", "pre-receive", "--config", writeConfig(t, "mode: maybe\n")}, env, "configuration on the server is invalid"},
 		{"audit only to stdout", []string{"hook", "pre-receive", "--config", writeConfig(t, "gitlab_url: http+unix://%2Frun%2Fsocket\naudit: {file: \"\", stdout: true}\n")}, env, "configuration on the server is invalid"},
+		{"unknown module", []string{"hook", "pre-receive", "--config", writeConfig(t, validConfig+"modules: {tagpolcy: disabled}\n")}, env, "configuration on the server is invalid"},
 		{"unknown flag", []string{"hook", "pre-receive", "--frobnicate"}, env, "installed with invalid arguments"},
 		{"no Gitaly environment", []string{"hook", "pre-receive", "--config", writeConfig(t, validConfig)}, nil, "outside of Gitaly"},
 		{"no git", []string{"hook", "pre-receive", "--config", writeConfig(t, validConfig)}, env, "git is not available"},
@@ -71,4 +74,14 @@ func TestHook_Usage(t *testing.T) {
 	code, _, errOut := runHook(t, []string{"hook"}, nil, "")
 	assert.Equal(t, ExitUsage, code)
 	assert.Contains(t, errOut, `expected "pre-receive"`)
+}
+
+func TestLoadConfig_ModuleNames(t *testing.T) {
+	a := App{Modules: modules.Default}
+	_, err := a.loadConfig(writeConfig(t, validConfig+"modules: {tagpolcy: disabled, pathpolicy: enabled}\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "modules.tagpolcy: unknown module, known: pathpolicy, commitpolicy, tagpolicy")
+	cfg, err := a.loadConfig(writeConfig(t, validConfig+"modules: {tagpolicy: disabled}\n"))
+	require.NoError(t, err)
+	assert.False(t, cfg.ModuleEnabled("tagpolicy"))
 }

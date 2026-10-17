@@ -31,7 +31,7 @@ func (a App) runToken(ctx context.Context, args []string, _ []string, stdio Stdi
 	if !a.system().IsRoot() {
 		return fail(stdio.Err, "token rotate", errNotRoot, ExitError)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "token rotate", err, ExitError)
 	}

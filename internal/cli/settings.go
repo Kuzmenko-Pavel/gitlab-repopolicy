@@ -18,7 +18,7 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	if !parse(fs, args, stdio.Err) {
 		return ExitUsage
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "settings-check", err, ExitError)
 	}

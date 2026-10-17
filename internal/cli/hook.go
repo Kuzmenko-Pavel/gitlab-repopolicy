@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -16,6 +20,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitx"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/hookenv"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/report"
 )
 
@@ -36,7 +41,7 @@ func (a App) runHook(ctx context.Context, args []string, env []string, stdio Std
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() > 0 {
 		return reject(stdio, "the hook is installed with invalid arguments")
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil || cfg.Audit.File == "" {
 		// The hook's stdout reaches the pusher, so audit.stdout does not apply
 		// here and the hook needs audit.file.
@@ -106,13 +111,31 @@ func write(w io.Writer, s string) {
 	}
 }
 
-// loadConfig reads and parses the server config.
-func loadConfig(path string) (*config.Config, error) {
+// loadConfig reads and parses the server config. The names under modules:
+// are checked here, against the modules of this binary: config cannot know them.
+func (a App) loadConfig(path string) (*config.Config, error) {
 	data, err := readConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	return config.Parse(data)
+	cfg, err := config.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	var known []string
+	for _, m := range a.Modules(modules.Settings{Clock: time.Now}).All() {
+		known = append(known, m.Name())
+	}
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(cfg.Modules)) {
+		if !slices.Contains(known, name) {
+			errs = append(errs, fmt.Errorf("modules.%s: unknown module, known: %s", name, strings.Join(known, ", ")))
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	return cfg, nil
 }
 
 // readConfig reads a config file up to one byte over the size limit, which

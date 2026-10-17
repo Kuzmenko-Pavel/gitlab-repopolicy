@@ -143,7 +143,7 @@ func (a App) recordHooks(hooksDir string, add bool) error {
 // a mode that is already right is not touched. The package does the same at
 // its first installation when the user exists.
 func (a App) ownFiles(configPath string, uid, gid int) ([]string, bool) {
-	cfg, err := loadConfig(configPath)
+	cfg, err := a.loadConfig(configPath)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: not read (%v)", configPath, err)}, false
 	}
@@ -298,7 +298,7 @@ func (a App) runBreakglass(ctx context.Context, args []string, env []string, std
 	if !a.system().IsRoot() {
 		return fail(stdio.Err, cmd, errNotRoot, ExitError)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, cmd, err, ExitError)
 	}

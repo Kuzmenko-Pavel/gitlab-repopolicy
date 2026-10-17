@@ -80,7 +80,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	if *project == "" || *user == "" || *path == "" {
 		return fail(stdio.Err, "explain", errors.New("--project, --user and --path are required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "explain", err, ExitError)
 	}
@@ -154,7 +154,7 @@ func (a App) runAdmins(ctx context.Context, args []string, _ []string, stdio Std
 	if *project == "" {
 		return fail(stdio.Err, "admins", errors.New("--project is required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "admins", err, ExitError)
 	}
@@ -232,7 +232,7 @@ func (a App) runTest(ctx context.Context, args []string, env []string, stdio Std
 	if *repo == "" || *oldRev == "" || *newRev == "" || *ref == "" || *user == "" || *projectID <= 0 {
 		return fail(stdio.Err, "test", errors.New("--repo, --old, --new, --ref and --user are required"), ExitUsage)
 	}
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		return fail(stdio.Err, "test", err, ExitError)
 	}

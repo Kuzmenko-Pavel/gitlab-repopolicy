@@ -62,7 +62,7 @@ func (a App) runSelftest(ctx context.Context, args []string, _ []string, stdio S
 	defer cancel()
 	c := &checks{out: &output{w: stdio.Out}}
 	c.info("version", "gitlab-repopolicy %s", buildinfo.Resolve().Version)
-	cfg, err := loadConfig(*configPath)
+	cfg, err := a.loadConfig(*configPath)
 	if err != nil {
 		c.fail("config", "%s: %v", *configPath, err)
 		return withOutput(c.out.err, ExitError)

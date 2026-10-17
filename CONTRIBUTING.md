@@ -9,7 +9,7 @@
 
 - Більшу зміну (новий модуль, нове правило COMMITPOLICY, зміна поведінки hook) спершу обговоріть в issue
 - Як працювати з кодом, тестами і стендом e2e - [docs/development.md](docs/development.md). Усе робиться через `make`, вхідна точка - `make help`. Потрібен GNU make 4 або новіший
-- Зміна готова, коли проходять `make code-lint test-unit test-integration`. Зміни в ідентичності, клієнті API GitLab чи встановленні ще й `make test-e2e`; такий pull request позначте міткою `e2e`
+- Зміна готова, коли проходять `make code-lint test-unit test-integration`. Зміни в ідентичності, клієнті API GitLab чи встановленні ще й `make test-e2e`; такий pull request позначте міткою `e2e`. Вручну ci та e2e запускаються на будь-якій гілці: Actions > e2e > Run workflow
 
 ## Коміти
 

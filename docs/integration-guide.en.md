@@ -55,7 +55,7 @@ Start with the CI logic of deployment projects ([examples/ci-config/PATHPOLICY](
 - protect not only `.gitlab-ci.yml` but everything that decides what a deploy job runs: includes, `Makefile`, scripts. Protecting only `.gitlab-ci.yml` without `Makefile` is for show if the job calls `make`
 - the CI configuration path of the project, if it is not `.gitlab-ci.yml`, must be in the rule too. `settings-check` compares it
 - pin components from the CI/CD Catalog to tags: their logic lives in the component project and is protected there
-- delegate COMMITPOLICY and TAGPOLICY to their owners with path rules ([examples/delegation/PATHPOLICY](../examples/delegation/PATHPOLICY))
+- delegate COMMITPOLICY, TAGPOLICY and BRANCHPOLICY to their owners with path rules ([examples/delegation/PATHPOLICY](../examples/delegation/PATHPOLICY))
 
 Check a policy before the merge: `gitlab-repopolicy validate --online --config /etc/gitlab-repopolicy/config.yaml --project <project>` and `explain` ([pathpolicy.en.md](pathpolicy.en.md#checking-without-a-push)).
 

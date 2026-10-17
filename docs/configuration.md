@@ -61,6 +61,7 @@ modules:
   pathpolicy: enabled
   commitpolicy: enabled
   tagpolicy: enabled
+  branchpolicy: enabled
 
 # Allowed names of the default branch, used by the hook and by settings-check.
 # The hook rejects every push to a project whose default branch has another
@@ -72,10 +73,9 @@ default_branch: [main]
 # What settings-check expects of every project with PATHPOLICY. Empty values
 # are not checked and are the default; the values below are examples.
 # ci_config_path, principals and the protection of the default branch are
-# always checked. protected_branches are branches to protect besides the
-# default one, protected_tags are checked in projects with TAGPOLICY.
+# always checked, the branches that BRANCHPOLICY requires to be protected too;
+# protected_tags are checked in projects with TAGPOLICY.
 settings_check:
-  protected_branches: []
   protected_tags: ["v*"]
   job_token_push: false
 
@@ -86,8 +86,10 @@ help:
   contact: ""
   docs_url: ""
 
-# Presets for "extends:" in COMMITPOLICY; an example is in docs/configuration.md.
+# Presets for "extends:" in COMMITPOLICY and in BRANCHPOLICY; examples are in
+# docs/configuration.md.
 commitpolicy_presets: {}
+branchpolicy_presets: {}
 ```
 
 ## Параметри
@@ -107,12 +109,13 @@ commitpolicy_presets: {}
 | `timeouts.pattern` | `100ms` | правило `pattern` COMMITPOLICY на одне повідомлення |
 | `timeouts.pattern_budget` | `2s` | те саме на весь push. Не менше `timeouts.pattern` |
 | `max_api_calls` | `30` | викликів API на один push. Перевищення - `limit_exceeded` |
-| `modules.<ім'я>` | `enabled` | `enabled` або `disabled` для `pathpolicy`, `commitpolicy`, `tagpolicy` |
+| `modules.<ім'я>` | `enabled` | `enabled` або `disabled` для `pathpolicy`, `commitpolicy`, `tagpolicy`, `branchpolicy` |
 | `default_branch` | порожньо | допустимі імена default branch для hook і `settings-check`, див. нижче |
 | `settings_check.*` | порожньо | що очікує `settings-check`, див. нижче |
 | `help.contact` | порожньо | до кого звертатися, наприклад `#gitlab-support`. Див. нижче |
 | `help.docs_url` | порожньо | посилання на документацію правил для розробників, `http://` або `https://` |
 | `commitpolicy_presets` | порожньо | пресети для `extends` у COMMITPOLICY ([commitpolicy.md](commitpolicy.md#пресети-extends)) |
+| `branchpolicy_presets` | порожньо | пресети для `extends` у BRANCHPOLICY, див. нижче |
 
 Тривалість пишеться як у Go (`10s`, `100ms`, `1h30m`) або цілими днями з суфіксом `d` (`364d`). Шляхи - абсолютні.
 
@@ -156,11 +159,10 @@ Hook читає всі policy-файли з default branch. Maintainer може 
 
 | Ключ | Що звіряється |
 | --- | --- |
-| `protected_branches` | гілки, які мають бути захищені, крім default branch. Інші захищені гілки проєкту не заважають |
 | `protected_tags` | ці шаблони тегів захищені. Лише в проєктах з TAGPOLICY у default branch |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` (`false` - має бути вимкнений) |
 
-Незалежно від цих ключів `settings-check` завжди перевіряє ім'я default branch за `default_branch`, те, що default branch захищена, шлях CI-конфігурації і те, що всі principals із policy-файлів існують. Докладно - [operations.md](operations.md#settings-check).
+Незалежно від цих ключів `settings-check` завжди перевіряє ім'я default branch за `default_branch`, те, що default branch захищена, а для проєктів з BRANCHPOLICY - що захищені шаблони її правил з `protected: true`, шлях CI-конфігурації і те, що всі principals із policy-файлів існують. Докладно - [operations.md](operations.md#settings-check).
 
 Очікування одні на весь інстанс, налаштувань на групу чи проєкт немає. Тому в списки варто класти лише те, що вірно для всіх проєктів з PATHPOLICY. `protected_tags` не дає drift у проєктах без релізних тегів, бо перевіряється лише там, де є TAGPOLICY. Перевірку CI-конфігурації варто залишити і для проєктів без `.gitlab-ci.yml`: Maintainer може ввімкнути CI пізніше або вказати шлях до конфігурації в іншому проєкті, а path-правило на `.gitlab-ci.yml` закриває цей обхід заздалегідь.
 
@@ -204,7 +206,28 @@ commitpolicy_presets:
 gitlab-repopolicy lint-commit --config presets.yaml -f COMMITPOLICY -m "$(cat .git/COMMIT_EDITMSG)"
 ```
 
-`validate` і `lint-commit` з `--config` читають лише `commitpolicy_presets`, інші ключі не потрібні й не перевіряються. `validate --online` звертається до API і читає конфігурацію повністю. Hook і серверні команди перевіряють конфігурацію завжди повністю.
+`validate` і `lint-commit` з `--config` читають лише `commitpolicy_presets` і `branchpolicy_presets`, інші ключі не потрібні й не перевіряються. `validate --online` звертається до API і читає конфігурацію повністю. Hook і серверні команди перевіряють конфігурацію завжди повністю.
+
+## `branchpolicy_presets`
+
+Пресет - стандарт імен гілок, спільний для багатьох проєктів: BRANCHPOLICY проєкту підключає його через `extends` ([branchpolicy.md](branchpolicy.md#пресети-extends)). У пакеті секція порожня. Приклад:
+
+```yaml
+# /etc/gitlab-repopolicy/config.yaml
+branchpolicy_presets:
+  org-branches:
+    rules:
+      - name: release
+        match: "release/*"
+        pattern: '^release/v[0-9]+\.[0-9]+\.[0-9]+$'
+        protected: true
+        message: Release branches look like release/v1.4.0. Protect release/* in Protected branches.
+      - name: work
+        match: "*"
+        pattern: '^[a-z0-9.]+/[a-z0-9._/-]+$'
+```
+
+`rules` - правила в тому ж форматі, що й у BRANCHPOLICY. Невалідний пресет `selftest` показує як `FAIL`, а проєкти з `extends` на нього пропускають перевірку з попередженням.
 
 ## Інші конфігурації
 

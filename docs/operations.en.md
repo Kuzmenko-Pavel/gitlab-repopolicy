@@ -131,12 +131,12 @@ The `gitlab-repopolicy-token-rotate.timer` timer runs the rotation daily ([insta
 
 The hook sees only changes of branches and tags. Project settings change in Settings, and a Maintainer can bypass PATHPOLICY through them: move the CI configuration path to an unprotected file, make a branch without the policy the default, turn on push with `CI_JOB_TOKEN`. `settings-check` finds such changes.
 
-For every project with PATHPOLICY that the service account sees. Archived projects and projects in personal namespaces are skipped:
+For every project with PATHPOLICY or BRANCHPOLICY that the service account sees. Archived projects and projects in personal namespaces are skipped. A project with only BRANCHPOLICY gets only the checks `default_branch`, `access` and `protected_branches` by its rules: the rest is about PATHPOLICY:
 
 | Check (`violations[].rule`) | What counts as a difference |
 | --- | --- |
 | `default_branch` | the default branch is not in the list `default_branch` |
-| `protected_branches` | the default branch is not protected (reported as `<branch> (the default branch)`) or branches of the list `settings_check.protected_branches` are not protected |
+| `protected_branches` | the default branch is not protected (reported as `<branch> (the default branch)`, only for projects with PATHPOLICY), or the project does not protect a pattern of a BRANCHPOLICY rule with `protected: true` (reported as `release/* (BRANCHPOLICY)`). A pattern is protected when a protected branch of the project covers its text: `release/*` is covered by `release/*` and `*`, not by `release/v*`. The list of branches of the project is not loaded |
 | `protected_tags` | the tag patterns are not protected. Checked only in projects with TAGPOLICY on the default branch and with the module enabled |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` is not the expected one |
 | `ci_config_path` | the CI configuration is in another project, at a URL or not covered by a PATHPOLICY path rule |
@@ -201,7 +201,6 @@ settings-check:
       audit: { file: "", stdout: true }
       default_branch: [main]
       settings_check:
-        protected_branches: []
         protected_tags: ["v*"]
         job_token_push: false
       EOF
@@ -250,6 +249,7 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 | every change of a project is denied: `PATHPOLICY in main is broken, so no changes are accepted` | an invalid PATHPOLICY in the default branch | an Owner fixes PATHPOLICY (recovery) or break-glass |
 | tags are denied: `TAGPOLICY in main is broken, so no tag can be created or moved` | an invalid TAGPOLICY in the default branch | fix TAGPOLICY through a merge |
 | a new tag is denied: `the tag must be protected, but the project does not protect it` | a TAGPOLICY rule with `protected: true`, and the tag is not protected in the project (`tag_not_protected`) | a Maintainer adds the tag pattern in Settings > Repository > Protected tags and pushes the tag again |
+| a new branch is denied: `the name does not follow the branch standard` or `the branch must be protected, but the project does not protect it` | a BRANCHPOLICY rule (`branch_name_violation`, `branch_not_protected`) | rename the branch by the `message` of the rule (`git branch -m`) or, for protection, a Maintainer adds the `match` of the rule in Settings > Repository > Protected branches |
 | a merge in the UI is slow or `could not check permissions` under peak load | web operations hold a Puma worker while the hook calls back into Rails | `api_calls`, `duration_ms` in audit; `timeouts.http` |
 
 If `help.contact` is set in the config, denials the user cannot fix alone print this contact instead of `your GitLab administrators` ([configuration.en.md](configuration.en.md#help)).

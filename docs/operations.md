@@ -131,12 +131,12 @@ sudo gitlab-repopolicy token rotate --before 30d
 
 Hook бачить лише зміни гілок і тегів. Налаштування проєкту змінюються в Settings, і Maintainer може обійти PATHPOLICY через них: перенести шлях CI-конфігурації в незахищений файл, зробити default гілку без policy, увімкнути push через `CI_JOB_TOKEN`. `settings-check` знаходить такі зміни.
 
-Для кожного проєкту з PATHPOLICY, який бачить service account. Архівні проєкти й проєкти в особистих namespace пропускаються:
+Для кожного проєкту з PATHPOLICY або BRANCHPOLICY, який бачить service account. Архівні проєкти й проєкти в особистих namespace пропускаються. Проєкт лише з BRANCHPOLICY отримує тільки перевірки `default_branch`, `access` і `protected_branches` за її правилами: решта стосується PATHPOLICY:
 
 | Перевірка (`violations[].rule`) | Що вважається розбіжністю |
 | --- | --- |
 | `default_branch` | default branch не входить у список `default_branch` |
-| `protected_branches` | default branch не захищена (у звіті як `<branch> (the default branch)`) або не захищені гілки зі списку `settings_check.protected_branches` |
+| `protected_branches` | default branch не захищена (у звіті як `<branch> (the default branch)`, лише для проєктів з PATHPOLICY) або проєкт не захищає шаблон правила BRANCHPOLICY з `protected: true` (у звіті як `release/* (BRANCHPOLICY)`). Шаблон захищений, якщо його текст покриває protected branch проєкту: `release/*` покривають `release/*` і `*`, але не `release/v*`. Список гілок проєкту не вивантажується |
 | `protected_tags` | шаблони тегів не захищені. Перевіряється лише в проєктах з TAGPOLICY у default branch і з увімкненим модулем |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` не такий, як очікується |
 | `ci_config_path` | CI-конфігурація в іншому проєкті, за URL або не покрита path-правилом PATHPOLICY |
@@ -201,7 +201,6 @@ settings-check:
       audit: { file: "", stdout: true }
       default_branch: [main]
       settings_check:
-        protected_branches: []
         protected_tags: ["v*"]
         job_token_push: false
       EOF
@@ -250,6 +249,7 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 | усі зміни проєкту відхиляються: `PATHPOLICY in main is broken, so no changes are accepted` | невалідна PATHPOLICY у default branch | Owner виправляє PATHPOLICY (recovery) або break-glass |
 | теги відхиляються: `TAGPOLICY in main is broken, so no tag can be created or moved` | невалідна TAGPOLICY у default branch | виправити TAGPOLICY через merge |
 | новий тег відхиляється: `the tag must be protected, but the project does not protect it` | правило TAGPOLICY з `protected: true`, а тег не захищено в проєкті (`tag_not_protected`) | Maintainer додає шаблон тегу в Settings > Repository > Protected tags і пушить тег знову |
+| нова гілка відхиляється: `the name does not follow the branch standard` або `the branch must be protected, but the project does not protect it` | правило BRANCHPOLICY (`branch_name_violation`, `branch_not_protected`) | перейменувати гілку за `message` правила (`git branch -m`) або, для захисту, Maintainer додає `match` правила в Settings > Repository > Protected branches |
 | merge через UI повільний або `could not check permissions` під піковим навантаженням | web-операції тримають Puma-worker, а hook звертається назад до Rails | `api_calls`, `duration_ms` в audit; `timeouts.http` |
 
 Якщо в конфігурації задано `help.contact`, у відмовах, де користувач нічого не може виправити сам, замість `your GitLab administrators` друкується цей контакт ([configuration.md](configuration.md#help)).

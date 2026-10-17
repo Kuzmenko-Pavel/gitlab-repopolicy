@@ -30,6 +30,8 @@ A Maintainer is partly inside: their git changes are limited, project settings a
 | compromised account without the right | protects | protects | protects | limited by its role |
 | compromised account with the right | no | no | protects | has the right by definition; a release tag also needs the private signing key. 2FA, SSO and audit help |
 | CI (`CI_JOB_TOKEN`) | protects | protects | protects | a job pushes as the user who started the pipeline and is checked as that user |
+
+BRANCHPOLICY is not in the table because it does not tell actors apart: the rules are the same for everyone who can create a branch. It limits which branches can be created: `deny` forbids a class, and a name that falls into no class is denied. It is hygiene, not protection against an attacker: on an API failure the `user_prefix` and `protected` checks are skipped with a warning, and existing branches are not checked.
 | deploy key | protects | protects | protects | a deploy key is not a person, even if an admin created it; for TAGPOLICY the signature decides |
 | project or group access token, service account | protects | protects | protects | the right only by an explicit username in the policy |
 | GitLab administrator | no | no | no | impersonation, membership |

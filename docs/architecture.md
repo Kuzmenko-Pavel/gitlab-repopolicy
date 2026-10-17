@@ -12,6 +12,7 @@ gitlab-repopolicy - Go-бінарник для глобального server hoo
 | `PATHPOLICY` | хто може змінювати певні файли: CI-конфігурацію, deploy- та infra-конфігурацію, інші чутливі шляхи |
 | `COMMITPOLICY` | формат commit messages у гілках |
 | `TAGPOLICY` | хто може випускати релізи: тег під правилом приймається лише з підписом дозволеного ключа OpenPGP або SSH |
+| `BRANCHPOLICY` | як називаються нові гілки і які класи гілок мають бути захищені в GitLab |
 
 У GitLab Self-Managed немає механізму, який обмежує зміну конкретних файлів конкретними людьми на будь-якому шляху зміни (push, merge, Web IDE, API), і немає структурної серверної перевірки формату комітів. Protected branches працюють на рівні гілки, Code Owners - лише в merge request і обходиться прямим push, push rules є лише в Premium і не знають, хто вносить зміну. Клієнтські інструменти (commitlint, pre-commit) обходяться `--no-verify` і не бачать merge і Web IDE.
 
@@ -73,6 +74,7 @@ internal/modules          список модулів hook
 internal/modules/path     PATHPOLICY
 internal/modules/commit   COMMITPOLICY
 internal/modules/tag      TAGPOLICY
+internal/modules/branch   BRANCHPOLICY
 internal/changes          які шляхи й коміти змінює push
 internal/gitx             дочірні процеси git в ізольованому оточенні
 internal/hookenv          оточення й stdin, які Gitaly передає hook
@@ -114,7 +116,7 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 4. **Default branch.** Якщо в конфігурації задано `default_branch`, а default branch проєкту називається інакше, push відхиляється з `default_branch_not_allowed`. Модулі не запускаються: policy з такої гілки не читаються. Перевірка діє на всі проєкти інстансу, зокрема без policy
 5. **Приймання.** Кожен змінений policy-файл у будь-якій гілці перевіряється як нова версія, навіть якщо в якорі policy ще немає: невалідний новий файл відхиляється з `invalid_policy_update`
 6. **Без policy.** Якщо в якорі немає policy-файлів, модулі не запускаються. Push, який додає першу PATHPOLICY в default branch, проходить bootstrap-перевірку (Maintainer+)
-7. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY і TAGPOLICY. Лише для гілок і тегів, які зачіпають правила: шляхи, нові й вхідні коміти. У default і protected гілках - різниця вмісту до і після push, в інших - нові коміти, яких ще немає в жодній гілці чи тегу (докладно - [pathpolicy.md](pathpolicy.md#де-діє-правило-refs)). API - лише якщо рішення від нього залежить
+7. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY, TAGPOLICY і BRANCHPOLICY. Лише для гілок і тегів, які зачіпають правила: шляхи, нові й вхідні коміти. У default і protected гілках - різниця вмісту до і після push, в інших - нові коміти, яких ще немає в жодній гілці чи тегу (докладно - [pathpolicy.md](pathpolicy.md#де-діє-правило-refs)). API - лише якщо рішення від нього залежить
 8. **Рішення.** AND за модулями; одне повідомлення на push у stderr, одна проблема - один блок; audit-подія на кожне рішення з `receive_id` запуску. Події зміни policy (`policy_change`, `policy_bootstrap`, `policy_recovery`) пишуться, лише якщо push прийнято
 
 Типовий час - близько 10 ms для проєкту без policy і 15-50 ms, коли policy є, але правила не зачеплено: здебільшого це запуск процесів git. Звернення до API додає 50-300 ms і буває рідко.

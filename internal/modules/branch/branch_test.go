@@ -332,3 +332,34 @@ func TestModule(t *testing.T) {
 	p := parse(t, settings(t), "version: 1\nextends: org-branches\n")
 	assert.Equal(t, []string{"release/*", "hotfix/*", "epic/*", "demo/*"}, p.ProtectedBranches())
 }
+
+// TestDenyByDefault is the example of the documentation: without a catch-all
+// a name of no class is denied.
+func TestDenyByDefault(t *testing.T) {
+	p := parse(t, NewSettings(nil), `version: 1
+rules:
+  - name: no-master
+    match: "master"
+    deny: true
+  - name: release
+    match: "release/*"
+    pattern: '^release/v[0-9]+\.[0-9]+\.[0-9]+(-[a-z][a-z0-9]*)?$'
+    protected: true
+  - name: hotfix
+    match: "hotfix/*"
+    pattern: '^hotfix/v[0-9]+\.[0-9]+\.[0-9]+(-[a-z][a-z0-9]*)?$'
+    protected: true
+  - name: user
+    match: "*/*"
+    user_prefix: true
+`)
+	e := protectedEnv()
+	e.user = "jdoe"
+	for name, want := range map[string]module.Decision{
+		"master": module.Deny, "release/v1.4.0": module.Allow, "release/foo": module.Deny,
+		"jdoe/disable_auth": module.Allow, "fix-login": module.Deny, "tmp": module.Deny,
+	} {
+		assert.Equal(t, want, e.create(t, p, name).Decision, name)
+	}
+	assert.Equal(t, "release", e.create(t, p, "release/foo").Violations[0].Rule, "release/foo does not fall through to user")
+}

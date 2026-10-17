@@ -31,6 +31,8 @@ var ruleSpec = &spec.Spec{Type: spec.Object, Fields: []spec.Field{
 	{Name: "signers", Required: true, Spec: &spec.Spec{Type: spec.Array, MinItems: 1, MaxItems: maxKeys, Noun: "labels of keys", Unique: true,
 		Desc:  "Labels of keys that may sign the matching tags.",
 		Items: &spec.Spec{Type: spec.String, Pattern: labelPattern, Check: "signer"}}},
+	{Name: "protected", Spec: &spec.Spec{Type: spec.Boolean,
+		Desc: "true: a tag created under this rule must be a protected tag of the GitLab project, so that its pipeline gets protected variables and runners."}},
 	{Name: "message", Spec: &spec.Spec{Type: spec.String, MaxLength: maxMessage, Desc: "Text shown when a tag is denied, up to 1000 characters."}},
 }}
 

@@ -28,10 +28,11 @@ type fileYAML struct {
 }
 
 type ruleYAML struct {
-	Name    string   `yaml:"name"`
-	Tags    string   `yaml:"tags"`
-	Signers []string `yaml:"signers"`
-	Message string   `yaml:"message"`
+	Name      string   `yaml:"name"`
+	Tags      string   `yaml:"tags"`
+	Signers   []string `yaml:"signers"`
+	Protected bool     `yaml:"protected"`
+	Message   string   `yaml:"message"`
 }
 
 type policy struct {
@@ -45,7 +46,9 @@ type rule struct {
 	name    string
 	tags    *regexp.Regexp
 	signers []string
-	message string
+	// protected requires the tag to be protected in GitLab when it is created.
+	protected bool
+	message   string
 }
 
 func parsePolicy(data []byte) (*policy, error) {
@@ -79,7 +82,7 @@ func parsePolicy(data []byte) (*policy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: tags: %w", y.Name, err)
 		}
-		p.rules = append(p.rules, &rule{name: y.Name, tags: re, signers: y.Signers, message: strings.TrimSpace(y.Message)})
+		p.rules = append(p.rules, &rule{name: y.Name, tags: re, signers: y.Signers, protected: y.Protected, message: strings.TrimSpace(y.Message)})
 	}
 	return p, nil
 }

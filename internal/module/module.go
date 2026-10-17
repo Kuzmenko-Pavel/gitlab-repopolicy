@@ -237,6 +237,7 @@ const (
 	CodeTagObjectInvalid        = "tag_object_invalid"
 	CodeTagSignerNotAllowed     = "tag_signer_not_allowed"
 	CodeTagSignatureInvalid     = "tag_signature_invalid"
+	CodeTagNotProtected         = "tag_not_protected"
 	CodeDefaultBranchNotAllowed = "default_branch_not_allowed"
 	CodeLimitExceeded           = "limit_exceeded"
 	CodeInternalError           = "internal_error"

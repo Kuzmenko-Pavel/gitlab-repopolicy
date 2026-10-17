@@ -18,6 +18,7 @@ const maxTagObject = 1 << 20
 func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	res := &module.Result{}
 	push := in.Clock()
+	denied := false
 	for _, u := range in.Updates {
 		if !u.IsTag() || u.Kind() == module.Delete {
 			continue
@@ -27,14 +28,56 @@ func (p *policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 			continue
 		}
 		res.Touched = true
+		before := len(res.Violations)
 		if err := p.check(ctx, in, u, rules, push, res); err != nil {
 			return nil, err
 		}
+		denied = denied || len(res.Violations) > before
+		if u.Kind() == module.Create {
+			if v, deny := checkProtected(ctx, in, u, rules); v != nil {
+				res.Violations = append(res.Violations, *v)
+				denied = denied || deny
+				res.Decision = max(res.Decision, module.Warn)
+			}
+		}
 	}
-	if len(res.Violations) > 0 {
+	if denied {
 		res.Decision = module.Deny
 	}
 	return res, nil
+}
+
+// checkProtected asks GitLab whether a new tag under a rule with protected is
+// a protected tag: its pipeline gets protected variables and runners only
+// then. It is hygiene, not access: without an answer it only warns.
+func checkProtected(ctx context.Context, in *module.Input, u module.RefUpdate, rules []*rule) (*module.Violation, bool) {
+	var with []*rule
+	for _, r := range rules {
+		if r.protected {
+			with = append(with, r)
+		}
+	}
+	if len(with) == 0 {
+		return nil, false
+	}
+	name := tagName(u.Ref)
+	class, st := in.Refs.Class(ctx, u.Ref)
+	switch {
+	case !st.IsConfirmed():
+		v := module.Violation{Code: module.CodeAuthorizationBackend, Rule: ruleNames(with), Ref: u.Ref, Reason: st.Reason(),
+			Title:   "could not check that the tag is protected: the GitLab API did not answer; the tag is accepted",
+			Summary: "tag " + name + " is accepted, but it could not be checked that the project protects it"}
+		if st.IsLimit() {
+			v.Code, v.Title = module.CodeLimitExceeded, "could not check that the tag is protected within the server limits; the tag is accepted"
+		}
+		return &v, false
+	case class != module.ClassProtected:
+		return &module.Violation{Code: module.CodeTagNotProtected, Rule: ruleNames(with), Ref: u.Ref, Reason: "not a protected tag",
+			Message: messages(with),
+			Hint:    "how to fix: a Maintainer protects tags like " + name + " in Settings > Repository > Protected tags, then push the tag again",
+			Summary: "tag " + name + " must be protected (TAGPOLICY rule " + ruleNames(with) + "): a Maintainer protects it in Settings > Repository > Protected tags, then push again"}, true
+	}
+	return nil, false
 }
 
 // check verifies one tag: the tag object, its signature and its signer.

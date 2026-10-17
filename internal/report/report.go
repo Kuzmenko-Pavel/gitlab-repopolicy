@@ -34,6 +34,7 @@ var titles = map[string]string{
 	module.CodeTagNotSigned:            "the tag must be signed",
 	module.CodeTagObjectInvalid:        "the tag does not match its ref",
 	module.CodeTagSignerNotAllowed:     "this key may not sign these tags",
+	module.CodeTagNotProtected:         "the tag must be protected, but the project does not protect it",
 	module.CodeTagSignatureInvalid:     "the signature cannot be accepted",
 	module.CodeDefaultBranchNotAllowed: "the default branch of this project is not allowed",
 	module.CodeLimitExceeded:           "the check did not finish within the server limits",

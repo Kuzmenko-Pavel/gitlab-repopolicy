@@ -31,6 +31,10 @@
             "pattern": "^[a-z0-9-]{1,63}$",
             "type": "string"
           },
+          "protected": {
+            "description": "true: a tag created under this rule must be a protected tag of the GitLab project, so that its pipeline gets protected variables and runners.",
+            "type": "boolean"
+          },
           "signers": {
             "description": "Labels of keys that may sign the matching tags.",
             "items": {

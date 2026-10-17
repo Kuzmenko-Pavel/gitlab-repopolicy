@@ -6,6 +6,7 @@ rules:
   - name: prod
     tags: 'v\d+\.\d+\.\d+-prod'
     signers: [release-lead]
+    protected: true
     message: Prod releases are signed by release-lead.
 keys:
   release-lead: |

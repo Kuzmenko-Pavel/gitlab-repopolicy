@@ -1,0 +1,8 @@
+version: 1
+rules:
+  - name: release
+    tags: 'v.+'
+    signers: [lead]
+    protected: "yes"
+keys:
+  lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE ed25519

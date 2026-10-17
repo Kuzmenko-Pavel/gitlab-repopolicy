@@ -249,6 +249,7 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 | the hook is not called | `custom_hooks_dir` is not set or is wrong, the wrapper is not executable, its name ends with `~`, the file sits at `custom_hooks_dir/pre-receive` | `grep -A2 '^\[hooks\]' /var/opt/gitlab/gitaly/config.toml`, `ls -l <custom_hooks_dir>/pre-receive.d/` |
 | every change of a project is denied: `PATHPOLICY in main is broken, so no changes are accepted` | an invalid PATHPOLICY in the default branch | an Owner fixes PATHPOLICY (recovery) or break-glass |
 | tags are denied: `TAGPOLICY in main is broken, so no tag can be created or moved` | an invalid TAGPOLICY in the default branch | fix TAGPOLICY through a merge |
+| a new tag is denied: `the tag must be protected, but the project does not protect it` | a TAGPOLICY rule with `protected: true`, and the tag is not protected in the project (`tag_not_protected`) | a Maintainer adds the tag pattern in Settings > Repository > Protected tags and pushes the tag again |
 | a merge in the UI is slow or `could not check permissions` under peak load | web operations hold a Puma worker while the hook calls back into Rails | `api_calls`, `duration_ms` in audit; `timeouts.http` |
 
 If `help.contact` is set in the config, denials the user cannot fix alone print this contact instead of `your GitLab administrators` ([configuration.en.md](configuration.en.md#help)).

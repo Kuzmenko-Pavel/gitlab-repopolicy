@@ -86,6 +86,14 @@ func TestTrust_NoAnchor(t *testing.T) {
 	assertDenied(t, empty.Push(alice, "HEAD:refs/heads/main"), "is invalid")
 }
 
+// TestTrust_EmptyRepositoryOtherBranch: the first push into an empty
+// repository may create a branch other than the one HEAD names.
+func TestTrust_EmptyRepositoryOtherBranch(t *testing.T) {
+	s := NewStand(t)
+	s.Commit("feat: first", map[string]string{"a": "1"})
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/dev"))
+}
+
 func TestEntry_NonProjectRepositoryAllowedSilently(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	s.Repo, s.Project = "wiki-1", "acme/platform/app.wiki"

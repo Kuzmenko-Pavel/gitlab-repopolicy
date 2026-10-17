@@ -82,6 +82,12 @@ func (e *evaluation) warn(v module.Violation) {
 func (e *evaluation) ruleset(ctx context.Context, rs *ruleset, u module.RefUpdate) error {
 	scope := module.Scope{Class: module.ClassOther, FirstParent: rs.except.MergedCommits}
 	switch rs.refs.Kind {
+	case module.RefsAll:
+		// A merge into the default branch brings every commit of the merged
+		// branch; on other branches only commits that no ref has yet are new.
+		if u.Ref == e.in.Refs.Default() {
+			scope.Class = module.ClassDefault
+		}
 	case module.RefsDefault:
 		if u.Ref != e.in.Refs.Default() {
 			return nil

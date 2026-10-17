@@ -261,3 +261,28 @@ func (s *Stand) fastImport(base, ref string, n int) {
 	}
 	s.gitStdin(b.String(), s.Work, "fast-import", "--quiet")
 }
+
+// TestCommitPolicy_UpdateOtherBranch_ExistingCommitsNotChecked: merging or
+// rebasing a feature branch onto main brings commits that are already in the
+// repository, including ones from before COMMITPOLICY; only new ones are checked.
+func TestCommitPolicy_UpdateOtherBranch_ExistingCommitsNotChecked(t *testing.T) {
+	s := NewStand(t)
+	s.Team()
+	s.Commit("init", map[string]string{"a": "1"})
+	s.Seed("HEAD:refs/heads/main", "HEAD:refs/heads/feature")
+	s.Commit("WIP old pre-policy commit", map[string]string{"b": "1"})
+	s.Commit("chore: add policy", map[string]string{"COMMITPOLICY": commitPolicy})
+	s.Seed("HEAD:refs/heads/main")
+
+	s.git(s.Work, "checkout", "-q", "-b", "feature", "HEAD~2")
+	s.Commit("feat: my work", map[string]string{"c": "1"})
+	s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'main' into feature", "main")
+	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+
+	s.git(s.Work, "reset", "-q", "--hard", "HEAD^1")
+	s.git(s.Work, "rebase", "-q", "main")
+	assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+
+	s.Commit("WIP mine", map[string]string{"d": "1"})
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), `"WIP mine"`)
+}

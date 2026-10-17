@@ -203,9 +203,12 @@ func (s *Set) CandidateCommits(ctx context.Context, u module.RefUpdate, max int)
 	})
 }
 
-// EnteringCommits are the commits that enter the ref: old..new on update; on
-// create all commits for the default branch, commits not in the default branch
-// and the protected set for a protected ref, new commits for other refs.
+// EnteringCommits are the commits that enter the ref. For the default branch
+// and a protected ref: old..new on update; on create all commits for the
+// default branch, commits not in the default branch and the protected set for
+// a protected ref. For other refs only commits that no branch or tag has yet:
+// merging or rebasing onto the default branch brings commits that are already
+// in the repository, and their history is not the pusher's.
 func (s *Set) EnteringCommits(ctx context.Context, u module.RefUpdate, scope module.Scope, max int) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
@@ -223,6 +226,7 @@ func (s *Set) EnteringCommits(ctx context.Context, u module.RefUpdate, scope mod
 		switch {
 		case u.Kind() == module.Update:
 			o.Exclude = []string{oldC}
+			o.NotBranchesTags = scope.Class == module.ClassOther
 		case scope.Class == module.ClassDefault:
 		default:
 			if o.Exclude, err = s.protectedSet(ctx, scope); err != nil {

@@ -15,7 +15,7 @@ import (
 )
 
 // policyModules maps a policy file name to its module.
-var policyModules = map[string]string{"PATHPOLICY": "pathpolicy", "COMMITPOLICY": "commitpolicy", "TAGPOLICY": "tagpolicy"}
+var policyModules = map[string]string{"PATHPOLICY": "pathpolicy", "COMMITPOLICY": "commitpolicy", "TAGPOLICY": "tagpolicy", "BRANCHPOLICY": "branchpolicy"}
 
 // TestExamples covers the examples/ part of the compatibility corpus: every
 // example is a valid policy file of its module.
@@ -27,7 +27,7 @@ func TestExamples(t *testing.T) {
 			return err
 		}
 		module, ok := policyModules[d.Name()]
-		if !assert.True(t, ok, "%s: examples hold only PATHPOLICY, COMMITPOLICY and TAGPOLICY files", path) {
+		if !assert.True(t, ok, "%s: examples hold only PATHPOLICY, COMMITPOLICY, TAGPOLICY and BRANCHPOLICY files", path) {
 			return nil
 		}
 		abs, err := filepath.Abs(path)

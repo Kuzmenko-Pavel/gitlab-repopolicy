@@ -24,7 +24,7 @@ import (
 const maxRangeCommits = 100_000
 
 // moduleSettings are the module settings of validate and lint-commit: the
-// defaults with commitpolicy_presets of an optional server config.
+// defaults with the presets of an optional server config.
 func moduleSettings(configPath string) (modules.Settings, error) {
 	cfg := config.Defaults()
 	if configPath != "" {
@@ -32,7 +32,7 @@ func moduleSettings(configPath string) (modules.Settings, error) {
 		if err != nil {
 			return modules.Settings{}, err
 		}
-		if cfg.CommitPolicyPresets, err = config.Presets(data); err != nil {
+		if cfg.CommitPolicyPresets, cfg.BranchPolicyPresets, err = config.Presets(data); err != nil {
 			return modules.Settings{}, err
 		}
 	}

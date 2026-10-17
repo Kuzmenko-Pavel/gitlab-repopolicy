@@ -51,8 +51,9 @@ type Config struct {
 	DefaultBranch []string      `yaml:"default_branch"`
 	SettingsCheck SettingsCheck `yaml:"settings_check"`
 	Help          Help          `yaml:"help"`
-	// CommitPolicyPresets is kept undecoded; the COMMITPOLICY module parses it.
+	// CommitPolicyPresets and BranchPolicyPresets are kept undecoded; their modules parse them.
 	CommitPolicyPresets map[string]any `yaml:"commitpolicy_presets"`
+	BranchPolicyPresets map[string]any `yaml:"branchpolicy_presets"`
 }
 
 // Help is where a pusher gets help; both are optional and printed in denials.
@@ -83,9 +84,8 @@ type Timeouts struct {
 
 // SettingsCheck holds the project settings expected by settings-check.
 type SettingsCheck struct {
-	ProtectedBranches []string `yaml:"protected_branches"`
-	ProtectedTags     []string `yaml:"protected_tags"`
-	JobTokenPush      *bool    `yaml:"job_token_push"`
+	ProtectedTags []string `yaml:"protected_tags"`
+	JobTokenPush  *bool    `yaml:"job_token_push"`
 }
 
 // Duration is a time.Duration that also accepts whole days, for example "364d".
@@ -151,26 +151,34 @@ func Defaults() Config {
 	}
 }
 
-// Presets reads only commitpolicy_presets of a server config, for validate
-// and lint-commit on a developer machine: the other keys, such as the URL and
-// the token of the server, are neither needed nor checked.
-func Presets(data []byte) (map[string]any, error) {
+// Presets reads only commitpolicy_presets and branchpolicy_presets of a
+// server config, for validate and lint-commit on a developer machine: the
+// other keys, such as the URL and the token of the server, are neither needed
+// nor checked.
+func Presets(data []byte) (commit, branch map[string]any, err error) {
 	tree, err := strictyaml.DecodeTree(data, MaxSize)
 	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
+		return nil, nil, fmt.Errorf("config: %w", err)
 	}
 	if tree.Kind != strictyaml.Map {
-		return nil, fmt.Errorf("config: line %d: expected a mapping", tree.Line)
+		return nil, nil, fmt.Errorf("config: line %d: expected a mapping", tree.Line)
 	}
-	v, ok := tree.Fields["commitpolicy_presets"]
-	if !ok || v.Kind == strictyaml.Null {
-		return nil, nil
+	read := func(key string) (map[string]any, error) {
+		v, ok := tree.Fields[key]
+		if !ok || v.Kind == strictyaml.Null {
+			return nil, nil
+		}
+		presets, ok := v.Interface().(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("config: line %d: %s: expected a mapping", v.Line, key)
+		}
+		return presets, nil
 	}
-	presets, ok := v.Interface().(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("config: line %d: commitpolicy_presets: expected a mapping", v.Line)
+	if commit, err = read("commitpolicy_presets"); err != nil {
+		return nil, nil, err
 	}
-	return presets, nil
+	branch, err = read("branchpolicy_presets")
+	return commit, branch, err
 }
 
 // Parse decodes data over Defaults and validates the result.

@@ -100,14 +100,16 @@ func project(id int64, path string) gitlab.Project {
 	return p
 }
 
+const branchPolicyYAML = "version: 1\nrules:\n  - name: release\n    match: \"release/*\"\n    protected: true\n  - name: work\n    match: \"*\"\n"
+
 func expected() config.SettingsCheck {
-	return config.SettingsCheck{ProtectedBranches: []string{"release/*"}, ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
+	return config.SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
 }
 
 func healthy() *fakeAPI {
 	return &fakeAPI{
 		projects: []gitlab.Project{project(1, "acme/app")},
-		files:    map[string]string{"1:main:PATHPOLICY": pathPolicy, "1:main:COMMITPOLICY": commitPolicy},
+		files:    map[string]string{"1:main:PATHPOLICY": pathPolicy, "1:main:COMMITPOLICY": commitPolicy, "1:main:BRANCHPOLICY": branchPolicyYAML},
 		branches: map[int64][]string{1: {"main", "release/*"}},
 		tags:     map[int64][]string{1: {"v*"}},
 		users:    map[string]string{"platform-lead": "active", "alice": "active", "release-bot": "active"},
@@ -155,7 +157,8 @@ func TestRun_Drifts(t *testing.T) {
 		}, CheckDefaultBranch, `"old", expected one of main`},
 		"default branch without PATHPOLICY": {func(f *fakeAPI) { f.projects[0].DefaultBranch = "empty" }, CheckDefaultBranch, `"empty"`},
 		"main not protected":                {func(f *fakeAPI) { f.branches[1] = []string{"release/*"} }, CheckProtected, "not protected: main (the default branch)"},
-		"release not protected":             {func(f *fakeAPI) { f.branches[1] = []string{"main"} }, CheckProtected, "not protected: release/*"},
+		"release not protected":             {func(f *fakeAPI) { f.branches[1] = []string{"main", "release/v*"} }, CheckProtected, "not protected: release/* (BRANCHPOLICY)"},
+		"invalid BRANCHPOLICY":              {func(f *fakeAPI) { f.files["1:main:BRANCHPOLICY"] = "version: 2\n" }, CheckPolicy, "BRANCHPOLICY on main cannot be parsed"},
 		"tags not protected": {func(f *fakeAPI) {
 			f.files["1:main:TAGPOLICY"] = "version: 1\n"
 			f.tags[1] = nil
@@ -197,6 +200,7 @@ func TestRun_ProtectionScope(t *testing.T) {
 
 	api = healthy()
 	api.branches[1] = nil
+	delete(api.files, "1:main:BRANCHPOLICY")
 	rep := run(t, api, config.SettingsCheck{})
 	require.Len(t, rep.Drifted(), 1, "the default branch is protected even when nothing is configured")
 	assert.Equal(t, "not protected: main (the default branch)", rep.Drifted()[0].Drifts[0].Reason)
@@ -226,6 +230,27 @@ func TestRun_ListFailure(t *testing.T) {
 	root, mods := set.Root, set.All()
 	_, err := Run(context.Background(), api, Options{Guard: root, Modules: mods})
 	assert.ErrorContains(t, err, "HTTP 401")
-	_, err = Run(context.Background(), api, Options{Modules: mods})
-	assert.ErrorContains(t, err, "PATHPOLICY module is disabled")
+	_, err = Run(context.Background(), api, Options{})
+	assert.ErrorContains(t, err, "PATHPOLICY and BRANCHPOLICY modules are disabled")
+}
+
+// TestRun_BranchPolicyOnly: a project with BRANCHPOLICY and without PATHPOLICY
+// gets only the default branch name and the protection BRANCHPOLICY requires.
+func TestRun_BranchPolicyOnly(t *testing.T) {
+	api := healthy()
+	api.files = map[string]string{"1:main:BRANCHPOLICY": branchPolicyYAML}
+	api.projects[0].CIConfigPath = field("build/ci.yml")
+	api.projects[0].JobTokenPush = field(true)
+	api.branches[1] = []string{"*"}
+	rep := run(t, api, expected())
+	require.Len(t, rep.Checked, 1)
+	assert.Empty(t, rep.Checked[0].Drifts, "* covers release/*; no checks of PATHPOLICY")
+
+	api.branches[1] = nil
+	api.projects[0].DefaultBranch = "trunk"
+	api.files["1:trunk:BRANCHPOLICY"] = branchPolicyYAML
+	rep = run(t, api, expected())
+	require.Len(t, rep.Drifted(), 1)
+	assert.Equal(t, []string{CheckDefaultBranch, CheckProtected}, checks(rep.Drifted()[0]))
+	assert.Equal(t, "not protected: release/* (BRANCHPOLICY)", rep.Drifted()[0].Drifts[1].Reason, "the default branch itself is not required")
 }

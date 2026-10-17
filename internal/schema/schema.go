@@ -6,6 +6,7 @@ package schema
 import (
 	"encoding/json"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/branch"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
@@ -25,6 +26,7 @@ func Files() (map[string][]byte, error) {
 		{"pathpolicy", path.File, path.Spec},
 		{"commitpolicy", commit.File, commit.Spec},
 		{"tagpolicy", tag.File, tag.Spec},
+		{"branchpolicy", branch.File, branch.Spec},
 	} {
 		doc, err := Document(f.title, f.spec)
 		if err != nil {

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "extends": {
+      "description": "A preset from branchpolicy_presets of the server config; a rule of the file with the name of a preset rule replaces it.",
+      "type": "string"
+    },
+    "mode": {
+      "description": "warn turns every denial into a warning; the default is enforce.",
+      "enum": [
+        "warn",
+        "enforce"
+      ],
+      "type": "string"
+    },
+    "rules": {
+      "description": "Classes of branch names; a new branch takes the first rule whose match it fits, a name that fits none is denied.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "deny": {
+            "description": "true: branches of this class may not be created.",
+            "type": "boolean"
+          },
+          "examples": {
+            "additionalProperties": false,
+            "description": "Names that pattern must accept and reject; checked when the file is accepted, not shown to users.",
+            "properties": {
+              "invalid": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "valid": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "match": {
+            "description": "Pattern of the class as in GitLab protected branches: * matches any characters, including /.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "message": {
+            "description": "Text shown when a branch is denied, up to 1000 characters: the format with an example and, for protected, what to protect.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "RE2 regular expression that the whole branch name must match.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+            "x-repopolicy-check": "re2"
+          },
+          "protected": {
+            "description": "true: a new branch of this class must be a protected branch of the GitLab project.",
+            "type": "boolean"
+          },
+          "user_prefix": {
+            "description": "true: the part of the name before the first / is the username of an active GitLab user.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "match"
+        ],
+        "type": "object",
+        "x-repopolicy-check": "rule"
+      },
+      "maxItems": 50,
+      "type": "array",
+      "x-repopolicy-check": "unique-names"
+    },
+    "version": {
+      "const": 1,
+      "description": "Schema version of the file.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "title": "BRANCHPOLICY",
+  "type": "object"
+}

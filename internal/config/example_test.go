@@ -19,12 +19,13 @@ func TestExampleConfig(t *testing.T) {
 
 	want := Defaults()
 	want.GitLabURL = socketURL
-	want.Modules = map[string]string{"pathpolicy": ModuleEnabled, "commitpolicy": ModuleEnabled, "tagpolicy": ModuleEnabled}
+	want.Modules = map[string]string{"pathpolicy": ModuleEnabled, "commitpolicy": ModuleEnabled, "tagpolicy": ModuleEnabled, "branchpolicy": ModuleEnabled}
 	no := false
 	want.DefaultBranch = []string{"main"}
-	want.SettingsCheck = SettingsCheck{ProtectedBranches: []string{}, ProtectedTags: []string{"v*"}, JobTokenPush: &no}
+	want.SettingsCheck = SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: &no}
 	assert.Empty(t, cfg.CommitPolicyPresets, "presets are values of an installation, the example has none")
-	want.CommitPolicyPresets = cfg.CommitPolicyPresets
+	assert.Empty(t, cfg.BranchPolicyPresets)
+	want.CommitPolicyPresets, want.BranchPolicyPresets = cfg.CommitPolicyPresets, cfg.BranchPolicyPresets
 	assert.Equal(t, &want, cfg, "the example shows the defaults")
 }
 

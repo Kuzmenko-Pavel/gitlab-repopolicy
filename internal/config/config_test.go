@@ -103,17 +103,21 @@ func FuzzParse(f *testing.F) {
 }
 
 func TestPresets(t *testing.T) {
-	presets, err := Presets([]byte("mode: strict\ncommitpolicy_presets:\n  org:\n    rules: {}\n"))
+	commit, branch, err := Presets([]byte("mode: strict\ncommitpolicy_presets:\n  org:\n    rules: {}\nbranchpolicy_presets:\n  std:\n    rules: []\n"))
 	require.NoError(t, err, "other keys are not checked")
-	assert.Equal(t, map[string]any{"org": map[string]any{"rules": map[string]any{}}}, presets)
-	presets, err = Presets([]byte("gitlab_url: x\n"))
+	assert.Equal(t, map[string]any{"org": map[string]any{"rules": map[string]any{}}}, commit)
+	assert.Equal(t, map[string]any{"std": map[string]any{"rules": []any{}}}, branch)
+	commit, branch, err = Presets([]byte("gitlab_url: x\n"))
 	require.NoError(t, err)
-	assert.Nil(t, presets)
-	_, err = Presets([]byte("commitpolicy_presets: [a]\n"))
+	assert.Nil(t, commit)
+	assert.Nil(t, branch)
+	_, _, err = Presets([]byte("commitpolicy_presets: [a]\n"))
 	assert.ErrorContains(t, err, "commitpolicy_presets: expected a mapping")
-	_, err = Presets([]byte("- a\n"))
+	_, _, err = Presets([]byte("branchpolicy_presets: [a]\n"))
+	assert.ErrorContains(t, err, "branchpolicy_presets: expected a mapping")
+	_, _, err = Presets([]byte("- a\n"))
 	assert.ErrorContains(t, err, "expected a mapping")
-	_, err = Presets([]byte("commitpolicy_presets: &a {}\n"))
+	_, _, err = Presets([]byte("commitpolicy_presets: &a {}\n"))
 	assert.ErrorContains(t, err, "anchors are not allowed")
 }
 

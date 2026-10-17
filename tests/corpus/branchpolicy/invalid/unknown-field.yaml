@@ -1,0 +1,5 @@
+version: 1
+rules:
+  - name: r
+    match: x
+    branches: [x]

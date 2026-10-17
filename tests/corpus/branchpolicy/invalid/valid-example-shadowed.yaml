@@ -1,0 +1,8 @@
+version: 1
+rules:
+  - name: any
+    match: "*/*"
+  - name: r
+    match: "r/*"
+    pattern: 'r/[0-9]+'
+    examples: {valid: [r/1]}

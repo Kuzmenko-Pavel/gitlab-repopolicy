@@ -50,7 +50,7 @@ func TestValidate(t *testing.T) {
 
 	code, _, errOut := run(t, "validate", "-f", "bad.yaml")
 	assert.Equal(t, ExitUsage, code)
-	assert.Contains(t, errOut, "is not a policy file; use --module with one of commitpolicy")
+	assert.Contains(t, errOut, "is not a policy file; use --module with one of branchpolicy, commitpolicy")
 	code, _, _ = run(t, "validate", "extra")
 	assert.Equal(t, ExitUsage, code)
 	code, _, errOut = run(t, "validate", "--config", "missing.yaml")

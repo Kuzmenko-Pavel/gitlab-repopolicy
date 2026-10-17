@@ -238,6 +238,8 @@ const (
 	CodeTagSignerNotAllowed     = "tag_signer_not_allowed"
 	CodeTagSignatureInvalid     = "tag_signature_invalid"
 	CodeTagNotProtected         = "tag_not_protected"
+	CodeBranchName              = "branch_name_violation"
+	CodeBranchNotProtected      = "branch_not_protected"
 	CodeDefaultBranchNotAllowed = "default_branch_not_allowed"
 	CodeLimitExceeded           = "limit_exceeded"
 	CodeInternalError           = "internal_error"
@@ -293,6 +295,19 @@ type VersionValidator interface {
 // core checks only usernames that the anchor version does not have.
 type UsernameLister interface {
 	Usernames() []string
+}
+
+// ProtectedBranchLister is implemented by policies that require new branches
+// of some classes to be protected; settings-check checks that the project
+// protects these patterns.
+type ProtectedBranchLister interface {
+	ProtectedBranches() []string
+}
+
+// PresetReporter is implemented by modules with presets in the server config;
+// selftest reports the presets that cannot be used.
+type PresetReporter interface {
+	PresetErrors() []string
 }
 
 // PolicyChange is a policy file that an update changes, as the core accepted it.

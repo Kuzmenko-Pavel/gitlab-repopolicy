@@ -327,7 +327,7 @@ func TestModule(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, module.Warn, res.Decision)
 	require.Len(t, res.Events, 1)
-	assert.Equal(t, "invalid_policy", res.Events[0].Event)
+	assert.Equal(t, "invalid_branch_policy", res.Events[0].Event)
 
 	p := parse(t, settings(t), "version: 1\nextends: org-branches\n")
 	assert.Equal(t, []string{"release/*", "hotfix/*", "epic/*", "demo/*"}, p.ProtectedBranches())

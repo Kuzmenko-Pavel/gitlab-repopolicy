@@ -20,6 +20,7 @@ const (
 	EventPolicyRecovery              = "policy_recovery"
 	EventInvalidPolicy               = "invalid_policy"
 	EventInvalidCommitPolicy         = "invalid_commit_policy"
+	EventInvalidBranchPolicy         = "invalid_branch_policy"
 	EventAuthorizationBackendFailure = "authorization_backend_failure"
 	EventUnknownPrincipal            = "unknown_principal"
 	EventBreakglass                  = "breakglass"

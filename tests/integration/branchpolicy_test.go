@@ -74,3 +74,13 @@ func TestBranchPolicy_ExistingBranches(t *testing.T) {
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/Legacy_Branch"))
 	assertAllowed(t, s.Push(alice, ":refs/heads/Legacy_Branch"))
 }
+
+func TestBranchPolicy_InvalidAnchorSkipped(t *testing.T) {
+	s, _ := mainWith(t, map[string]string{"BRANCHPOLICY": "version: 1\nunknown: 1\n"})
+	s.Commit("feat: x", map[string]string{"a": "1"})
+	r := s.Push(alice, "HEAD:refs/heads/Any_Name")
+	assertAllowed(t, r)
+	assert.Contains(t, r.Output, "BRANCHPOLICY in main cannot be used, so names of new branches are not checked until it is fixed")
+	assert.Len(t, Events(s.Audit(), "invalid_branch_policy"), 1)
+	assert.Empty(t, Events(s.Audit(), "invalid_policy"))
+}

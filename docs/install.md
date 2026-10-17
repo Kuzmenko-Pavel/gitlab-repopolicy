@@ -9,7 +9,7 @@ gitlab-repopolicy ставиться на кожну ноду, де працює
 
 - GitLab Self-Managed, CE або EE, будь-який tier. Підтримувані версії - у таблиці [README](../README.md). GitLab.com і GitLab Dedicated не підтримуються: server hooks там недоступні
 - Linux `amd64` або `arm64`, права root на нодах Gitaly
-- instance service account (у Free доступний з GitLab 18.11)
+- instance service account. У Free він доступний з GitLab 18.11 (за документацією GitLab), e2e перевіряє його на CE 19.2-19.4
 
 | Тип інсталяції | Підтримка |
 | --- | --- |
@@ -212,7 +212,7 @@ sudo -u git gitlab-repopolicy selftest
 $ sudo -u git gitlab-repopolicy selftest
 info version     gitlab-repopolicy 1.0.0
 ok   config      /etc/gitlab-repopolicy/config.yaml, mode enforce
-ok   modules     enabled: pathpolicy, commitpolicy, tagpolicy
+ok   modules     enabled: pathpolicy, commitpolicy, tagpolicy, branchpolicy
 ok   audit       /var/log/gitlab-repopolicy/audit.log does not exist yet; the directory belongs to 998:998
 ok   breakglass  /etc/gitlab-repopolicy/breakglass, no active grants
 ok   api         http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket reachable as gitlab-repopolicy (id 2)
@@ -245,7 +245,7 @@ sudo systemctl enable --now gitlab-repopolicy-token-rotate.timer gitlab-repopoli
 
 ## Docker
 
-**Пакет у контейнер GitLab не ставте.** Пакет живе в шарі контейнера, а wrapper hook лежить у `custom_hooks_dir`, тобто в persistent volume. Після `docker compose up --force-recreate`, а так виглядає будь-яке оновлення GitLab у Docker, бінарника вже немає, а wrapper залишився. Тоді GitLab відхиляє кожен push інстансу з `exec: /usr/bin/gitlab-repopolicy: not found`. Таймери systemd у контейнері теж не працюють: в образі GitLab немає systemd.
+**Пакет у контейнер GitLab не ставте.** Пакет живе в шарі контейнера, а wrapper hook лежить у `custom_hooks_dir`, тобто в persistent volume. Після `docker compose up --force-recreate` (так виглядає будь-яке оновлення GitLab у Docker) бінарника вже немає, а wrapper залишився. Тоді GitLab відхиляє кожен push інстансу з `exec: /usr/bin/gitlab-repopolicy: not found`. Таймери systemd у контейнері теж не працюють: в образі GitLab немає systemd.
 
 Тому все, що має пережити перестворення контейнера, лежить на хості:
 
@@ -291,6 +291,8 @@ docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy install-hook \
 docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
 docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
 ```
+
+`--binary` тут обов'язковий. Без нього wrapper запускає `/usr/bin/gitlab-repopolicy`, якого в контейнері немає, і GitLab одразу відхиляє кожен push з `exec: /usr/bin/gitlab-repopolicy: not found`. Коли бінарник лежить у змонтованому з хоста каталозі, перестворення контейнера його не прибирає, і ця помилка не з'являється.
 
 `docker exec` працює від root контейнера, `docker exec -u git` - від користувача, яким Gitaly запускає hooks. `sudo` в образі GitLab немає, тому команди з цієї документації виду `sudo -u git gitlab-repopolicy ...` у Docker виглядають як `docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy ...`.
 

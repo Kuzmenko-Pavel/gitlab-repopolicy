@@ -9,7 +9,7 @@ gitlab-repopolicy is installed on every node that runs Gitaly and connects to Gi
 
 - GitLab Self-Managed, CE or EE, any tier. Supported versions are in the [README](../README.en.md) table. GitLab.com and GitLab Dedicated are not supported: server hooks are not available there
 - Linux `amd64` or `arm64`, root on the Gitaly nodes
-- an instance service account (available in Free since GitLab 18.11)
+- an instance service account. It is available in Free since GitLab 18.11 (according to the GitLab documentation), e2e checks it on CE 19.2-19.4
 
 | Installation type | Support |
 | --- | --- |
@@ -212,7 +212,7 @@ Run `selftest` both as root and as the git user: the hook runs as git, and only 
 $ sudo -u git gitlab-repopolicy selftest
 info version     gitlab-repopolicy 1.0.0
 ok   config      /etc/gitlab-repopolicy/config.yaml, mode enforce
-ok   modules     enabled: pathpolicy, commitpolicy, tagpolicy
+ok   modules     enabled: pathpolicy, commitpolicy, tagpolicy, branchpolicy
 ok   audit       /var/log/gitlab-repopolicy/audit.log does not exist yet; the directory belongs to 998:998
 ok   breakglass  /etc/gitlab-repopolicy/breakglass, no active grants
 ok   api         http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsocket reachable as gitlab-repopolicy (id 2)
@@ -291,6 +291,8 @@ docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy install-hook \
 docker exec gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
 docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy selftest
 ```
+
+`--binary` is required here. Without it the wrapper runs `/usr/bin/gitlab-repopolicy`, which the container does not have, and GitLab rejects every push at once with `exec: /usr/bin/gitlab-repopolicy: not found`. When the binary lies in a directory mounted from the host, recreating the container does not remove it, and this error does not appear.
 
 `docker exec` runs as root of the container, `docker exec -u git` as the user Gitaly runs hooks as. The GitLab image has no `sudo`, so commands of this documentation like `sudo -u git gitlab-repopolicy ...` become `docker exec -u git gitlab /opt/gitlab-repopolicy/bin/gitlab-repopolicy ...` in Docker.
 

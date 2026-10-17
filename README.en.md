@@ -10,7 +10,19 @@
 
 # gitlab-repopolicy
 
-Server-side checks of repository rules for GitLab Self-Managed. A global `pre-receive` hook of Gitaly checks every push against policy files that live in the repository itself:
+Server-side checks of repository rules for GitLab Self-Managed. A global `pre-receive` hook of Gitaly checks pushes to project repositories against policy files that live in the repository itself. If a push breaks the rules, GitLab rejects it and shows what is wrong and how to fix it.
+
+## Where to start
+
+| Who you are | What you need | Where to look |
+| --- | --- | --- |
+| a developer whose push GitLab rejected | understand the denial and fix the commit, tag or branch | the policy document named in the denial: [COMMITPOLICY](docs/commitpolicy.en.md), [TAGPOLICY](docs/tagpolicy.en.md), [BRANCHPOLICY](docs/branchpolicy.en.md), [PATHPOLICY](docs/pathpolicy.en.md) |
+| a project Maintainer | write a policy file, check it locally and turn it on without stopping the team | the same policy documents, then [integration-guide.en.md](docs/integration-guide.en.md) |
+| a GitLab administrator | install the hook, configure the server, watch the audit | [install.en.md](docs/install.en.md), [configuration.en.md](docs/configuration.en.md), [operations.en.md](docs/operations.en.md), [integration-guide.en.md](docs/integration-guide.en.md) |
+
+## Policies
+
+Each policy is a separate YAML file in the root of the repository.
 
 | File | What it decides |
 | --- | --- |
@@ -23,7 +35,14 @@ Server-side checks of repository rules for GitLab Self-Managed. A global `pre-re
 
 GitLab has no way to let only specific people change specific files on every way a change can arrive. Protected branches protect a whole branch, Code Owners work only in a merge request and are bypassed by a direct push, push rules exist only in Premium and do not know who makes the change. Client-side checks (commitlint, pre-commit) are bypassed with `--no-verify` and do not see the merge button and the Web IDE.
 
-gitlab-repopolicy checks a change on the server, however it was made: a push over HTTPS or SSH, a merge, auto-merge, the Web IDE, the API, a push from CI. The rules are versioned and reviewed together with the code. The hook can only deny: it does not extend GitLab permissions.
+gitlab-repopolicy checks a change on the server, so it does not matter how it was made: a push over HTTPS or SSH, the merge button, auto-merge, the Web IDE, the API, a push from CI. The rules are versioned and reviewed together with the code. The hook can only deny, it does not extend GitLab permissions.
+
+When the hook checks nothing:
+- a push to a project in a user's personal namespace (`alice/my-project`). Only group projects are checked
+- a push to wiki, design and snippet repositories
+- `mode: off` in the server configuration
+
+With `mode: audit` the hook checks everything, but only writes the decision to the audit log and denies nobody ([configuration.en.md](docs/configuration.en.md#mode)).
 
 ```yaml
 # examples/ci-config/PATHPOLICY
@@ -51,17 +70,36 @@ rules:
     allow: [platform-lead, release-manager]
 ```
 
-## Install in five commands
+## Prerequisites
 
-Before that you need an instance service account with a token and `custom_hooks_dir` in the Gitaly configuration. Step by step, including verification of the release signature - [docs/install.en.md](docs/install.en.md).
+Before the installation you need:
+- GitLab Self-Managed, CE or EE, of a version from the table below
+- root on every node where Gitaly runs
+- an instance service account with a token (`read_api`, `self_rotate`), Maintainer in every top-level group ([install.en.md](docs/install.en.md#3-service-account-and-token))
+- `custom_hooks_dir` in the Gitaly configuration, for example `/var/opt/gitlab/gitaly/custom_hooks` in `gitlab.rb` and `gitlab-ctl reconfigure`. Without it Gitaly does not run global hooks
+- a `.deb` or `.rpm` package from [GitHub Releases](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases) with a verified signature ([install.en.md](docs/install.en.md#1-download-and-verify-the-release))
+
+## First run
+
+In short, for the Linux package on one node. Docker, separate Gitaly nodes and all the steps in detail - [docs/install.en.md](docs/install.en.md).
 
 ```sh
 sudo apt install ./gitlab-repopolicy_1.0.0_linux_amd64.deb
-sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # service account token, Ctrl-D
+sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # service account token, Enter, Ctrl-D
 sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git
 sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
+
+What you should get:
+- the package installs the binary `/usr/bin/gitlab-repopolicy`, the configuration `/etc/gitlab-repopolicy/config.yaml` and disabled timers
+- `cat` prints nothing, the token goes to a file with mode 0440
+- `install-hook` prints `.../pre-receive.d/50-gitlab-repopolicy: created`. From this moment the hook checks pushes
+- `selftest` prints `ok`, `info` or `warn` lines, and any `FAIL` gives exit code 1. The result must be the same as root and as `git`, because the hook runs as `git`
+
+For a production instance set `mode: audit` in the configuration before `install-hook`. Then the hook denies nobody and only writes whom it would have denied ([integration-guide.en.md](docs/integration-guide.en.md)).
+
+To check that the hook really works, use a test project. Add a PATHPOLICY to it and make a push that breaks it ([pathpolicy.en.md](docs/pathpolicy.en.md)). The denial is visible in the output of `git push`, the decision in `/var/log/gitlab-repopolicy/audit.log`.
 
 ## Supported GitLab versions
 
@@ -89,7 +127,7 @@ Policy files have no extension, so the editor has to be told that they are YAML 
 }
 ```
 
-Check a file locally with the same code as the hook: `gitlab-repopolicy validate`, commit messages with `gitlab-repopolicy lint-commit`.
+Check a file locally with the same code as the hook with `gitlab-repopolicy validate`, commit messages with `gitlab-repopolicy lint-commit`.
 
 ## Documentation
 

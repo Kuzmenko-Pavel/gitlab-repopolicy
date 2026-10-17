@@ -3,11 +3,92 @@
 
 # COMMITPOLICY
 
-COMMITPOLICY перевіряє формат кожного commit message, що потрапляє цим push у гілку. Файл лежить у корені репозиторію з ім'ям `COMMITPOLICY`, вміст - YAML.
+COMMITPOLICY перевіряє, як написані повідомлення комітів, які push додає в гілку. Файл лежить у корені репозиторію з ім'ям `COMMITPOLICY`, вміст - YAML. Якщо повідомлення не відповідає правилам, GitLab відхиляє push, і коміт треба переписати.
 
-У команд різні стандарти: Conventional Commits зі scope і без, обов'язковий issue або ні, проза чи списки в body, вільний формат. Тому модуль - не одна схема, а каталог незалежних правил. Кожне правило має рівень, значення і необов'язковий фільтр за типом. Правило, яке не вказане, не перевіряється: вбудованих правил за замовчуванням немає.
+Спочатку розберемося, з чого складається повідомлення коміту і як його написати. Далі - як COMMITPOLICY це перевіряє.
 
-Хто змінює сам COMMITPOLICY, задає path-правило PATHPOLICY ([pathpolicy.md](pathpolicy.md)). Без такого правила файл змінює будь-хто з правом push.
+## З чого складається повідомлення коміту
+
+Ось повне повідомлення в стилі [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```text
+fix(billing): round refunds to cents
+
+Refunds were computed in floating point and lost a cent on some amounts.
+Amounts are now kept in integer cents.
+
+Refs: #665
+Signed-off-by: Olena Ivanenko <olena@example.com>
+```
+
+Воно складається з трьох частин, між ними порожній рядок.
+
+| Частина | У прикладі | Що це |
+| --- | --- | --- |
+| header | `fix(billing): round refunds to cents` | перший рядок. Його показують `git log --oneline`, список комітів у GitLab і заголовок merge request |
+| body | два рядки про refunds | пояснення: що змінилося і чому. Необов'язковий, якщо правила проєкту його не вимагають |
+| trailer-блок | `Refs: #665` і `Signed-off-by: ...` | останній абзац, де кожен рядок має вигляд `Key: value` або `Key #value`. Сюди пишуть службові дані: посилання на issue, автора за DCO |
+
+Header у форматі Conventional Commits теж складається з частин.
+
+| Частина | У прикладі | Що це |
+| --- | --- | --- |
+| type | `fix` | вид зміни: `feat` - нова можливість, `fix` - виправлення, `docs` - документація і так далі. Список дозволених типів задає проєкт |
+| scope | `billing` | необов'язково, у дужках одразу після type. Частина системи, якої стосується зміна |
+| `!` | немає | необов'язково, перед двокрапкою: `feat(api)!: drop the v1 endpoints`. Позначає зміну, що ламає сумісність |
+| `: ` | `: ` | двокрапка і рівно один пробіл |
+| subject | `round refunds to cents` | короткий опис зміни, непорожній |
+
+Так header виглядає в різних варіантах. Помилки - це вивід `gitlab-repopolicy lint-commit`, те саме повідомлення пише hook під час push.
+
+| Header | Результат |
+| --- | --- |
+| `fix: round refunds to cents` | правильно, без scope |
+| `fix(billing): round refunds to cents` | правильно, зі scope |
+| `feat(api)!: drop the v1 endpoints` | правильно, зміна ламає сумісність |
+| `fix round refunds to cents` | `header: expected "type(scope): subject"` - немає двокрапки |
+| `fix:round refunds to cents` | `header: expected "type(scope): subject", a space must follow ":"` |
+| `fix:  round refunds to cents` | `header: expected "type(scope): subject", exactly one space must follow ":"` |
+| `fix(billing: round refunds to cents` | `header: expected "type(scope): subject", the scope parenthesis is not closed` |
+| `fix(): round refunds to cents` | `header: the scope in parentheses is empty` |
+| `fix:` | `header: expected "type(scope): subject", the subject is empty` |
+
+Якщо після header одразу, без порожнього рядка, іде текст, це помилка `the body must be separated from the header by an empty line`.
+
+### Як написати таке повідомлення
+
+Кожен `-m` - окремий абзац, git сам ставить між ними порожній рядок.
+
+```sh
+git commit -s \
+  -m "fix(billing): round refunds to cents" \
+  -m "Refunds were computed in floating point and lost a cent on some amounts. Amounts are now kept in integer cents." \
+  -m "Refs: #665"
+```
+
+Або `git commit -s` без `-m`. Тоді git відкриє редактор, перший рядок - header, далі порожній рядок і body. Подивитися, що вийшло, можна командою `git log -1 --format=%B`.
+
+`-s` (`--signoff`) дописує в trailer-блок рядок `Signed-off-by: Ім'я <email>` з `user.name` і `user.email` вашого git. Це текстова позначка, що автор погоджується з умовами внеску проєкту (DCO). Якщо проєкт вимагає `trailer-required: [Signed-off-by]`, без `-s` push не пройде.
+
+`-S` (`--gpg-sign`, велика літера) - інша річ. Це криптографічний підпис коміту ключем GPG або SSH. COMMITPOLICY перевіряє лише текст повідомлення, підпис коміту вона не перевіряє і не вимагає. Підпис тегів перевіряє TAGPOLICY ([tagpolicy.md](tagpolicy.md)).
+
+### Як виправити коміт після відмови
+
+Hook відхиляє весь push, тому відхилені коміти є лише у вас локально. Виправте повідомлення і зробіть push ще раз:
+- останній коміт: `git commit --amend` (з `-s`, якщо бракує `Signed-off-by`)
+- кілька комітів: `git rebase -i origin/main`, у списку замініть `pick` на `reword` біля потрібних комітів і перепишіть повідомлення
+
+Якщо `rebase -i` переписав і коміти, які вже були на сервері раніше, push потрібен з `--force-with-lease`.
+
+Перевірити повідомлення ще до push можна локально, див. [Локальна перевірка](#локальна-перевірка).
+
+## Як COMMITPOLICY це перевіряє
+
+Файл складається з rulesets. Ruleset - це набір правил і гілки, для яких він діє. Наприклад, суворі правила для `main` і релізних гілок, а feature-гілки без перевірки. Push проходить, лише коли кожен ruleset, що діє для гілки, не знайшов помилок.
+
+У команд різні стандарти: Conventional Commits зі scope і без, обов'язковий issue або ні, проза чи списки в body, вільний формат. Тому правила - це каталог незалежних перевірок, а не одна схема. Кожне правило має рівень, значення і необов'язковий фільтр за type. Правило, якого немає у файлі, не перевіряється, вбудованих правил за замовчуванням немає.
+
+Хто може змінювати сам COMMITPOLICY, задає правило PATHPOLICY ([pathpolicy.md](pathpolicy.md)). Без такого правила файл змінює будь-хто з правом push.
 
 ## Приклади
 
@@ -89,47 +170,62 @@ rulesets:
 | `rulesets[].rules` | ні | правила з каталогу |
 | `rulesets[].message` | ні | текст, який побачить автор коміту з порушенням |
 
-Застосовуються всі rulesets, що збіглися з гілкою (AND). У списку `refs` символ `*` збігається в межах одного сегмента: `refs/heads/*` збігається з `main`, але не з `feature/x`.
+Для гілки діють усі rulesets, чиї `refs` її охоплюють. Порушення будь-якого з них - відмова.
+
+### Для яких гілок діє ruleset (`refs`)
+
+- `all` - усі гілки
+- `default` - лише default branch проєкту, зазвичай `main`
+- `protected` - default branch і гілки, які проєкт захищає в GitLab (Settings > Repository > Protected branches)
+- список - гілки і теги за повним іменем git
+
+Повне ім'я - це те, як git називає гілку чи тег усередині репозиторію: гілка `main` - це `refs/heads/main`, гілка `release/1.2` - `refs/heads/release/1.2`, тег `v1.0.0` - `refs/tags/v1.0.0`. У списку потрібне саме повне ім'я. На коротке `main` команда `validate` відповідає помилкою `refs: main is not a ref pattern such as refs/heads/release/*`.
+
+`*` у списку заміняє будь-які символи, крім `/`. `refs/heads/release/*` охоплює `refs/heads/release/1.2`, але не `refs/heads/release/1.2/hotfix`. `refs/heads/*` охоплює `refs/heads/main`, але не `refs/heads/feature/x`.
 
 Невідомі ключі, YAML anchors і aliases - помилка. Розмір файлу - до 64 KiB, до 50 rulesets і до 50 username в `except.users` одного ruleset.
 
 ## Формати
 
-**`conventional`** - header `type(scope)!: subject`: тип, необов'язковий scope у дужках, необов'язковий `!`, двокрапка, один пробіл і непорожній subject.
+Формат задає, як hook розбирає header.
 
-**`free`** - header цілком є subject. Правила про type і scope для такого ruleset недоступні.
+**`conventional`** (за замовчуванням) - header Conventional Commits, як у розділі [З чого складається повідомлення коміту](#з-чого-складається-повідомлення-коміту). Схема `type(scope)!: subject`, scope і `!` необов'язкові. Type - латинські літери, цифри, `_` і `-`.
 
-Граматику формату перевіряють завжди, окремого правила для цього немає:
-- для `conventional` - header за схемою вище і порожній рядок між header і body
-- для `free` - непорожній header і порожній рядок перед body
-- повідомлення з NUL-байтом або об'єкт коміту більший за 1 MiB - порушення
+**`free`** - вільний header, весь перший рядок вважається subject. Правила про type і scope для такого ruleset недоступні. Формат для команд, що пишуть, наприклад, `PAY-123 Round refunds to cents`.
 
-Як читається повідомлення:
-- `\r\n` замінюється на `\n` (UI GitLab пише `\r\n`), кінцеві порожні рядки відкидаються (git завжди додає `\n`)
-- trailer-блок - останній абзац, усі рядки якого мають вигляд `Key: value` або `Key #value`, як у `git interpret-trailers`. `BREAKING CHANGE:` теж trailer. Порядок trailers не важливий
+Ці перевірки діють завжди, окремого правила для них немає:
+- `conventional`: header за схемою вище і порожній рядок між header і body
+- `free`: непорожній header і порожній рядок перед body
+- повідомлення з NUL-байтом або об'єкт коміту, більший за 1 MiB, - порушення
+
+Як hook читає повідомлення:
+- `\r\n` заміняється на `\n` (UI GitLab пише `\r\n`), кінцеві порожні рядки відкидаються (git завжди додає `\n`)
+- trailer-блок - останній абзац, у якому всі рядки мають вигляд `Key: value` або `Key #value`, як у `git interpret-trailers`. `BREAKING CHANGE:` теж trailer. Порядок trailers не важливий. Якщо хоч один рядок абзацу не trailer, увесь абзац - частина body
 - body за формою не обмежується: списки, абзаци, код, довгі описи допустимі, поки не задано `body-max-line-length`
 
 ## Каталог правил
 
-Кожне правило - `{ level, value, types }`:
-- `level` - `error`, `warn` або `off`
-- `value` - значення правила (у `body-required` його немає)
-- `types` - необов'язковий список типів: правило перевіряється лише для комітів цих типів
+Кожне правило записується як `{ level, value, types }`:
+- `level` - `error` (відмова), `warn` (лише попередження) або `off` (вимкнено)
+- `value` - значення правила. У `body-required` його немає
+- `types` - необов'язковий список type. Правило перевіряється лише для комітів цих type. Наприклад, `body-required` з `types: [feat, fix]` вимагає body лише в `feat` і `fix`
 
-| Правило | `value` | Формат | Що перевіряє |
-| --- | --- | --- | --- |
-| `type-enum` | список | conventional | тип зі списку |
-| `scope` | `optional`, `required`, `forbidden` | conventional | наявність scope |
-| `scope-enum` | список | conventional | scope зі списку. Scope `a, b` або `a/b` ділиться на частини, кожна має бути у списку |
-| `breaking-bang` | `allow`, `forbid` | conventional | `type!:` |
-| `header-max-length` | число | будь-який | довжина першого рядка в символах Unicode |
-| `subject-case` | `lower-first`, `sentence`, `any` | будь-який | регістр першої літери subject |
-| `subject-full-stop` | `forbid`, `require` | будь-який | крапка в кінці subject |
-| `body-required` | немає | будь-який | body є |
-| `body-max-line-length` | число | будь-який | довжина кожного рядка body. Рядки з URL і код (огороджений блок або рядки з відступом) не враховуються |
-| `reference` | `location`, `pattern`, `keys` | будь-який | посилання на issue знайдено в указаному місці |
-| `trailer-required` | список ключів | будь-який | є trailers з цими ключами |
-| `pattern` | regex | будь-який | повідомлення з початку відповідає regex |
+Приклади в останній колонці не пройдуть перевірку з указаним значенням.
+
+| Правило | `value` | Формат | Що перевіряє | Не пройде |
+| --- | --- | --- | --- | --- |
+| `type-enum` | список | conventional | type зі списку | `bugfix: round refunds` при `[feat, fix]` |
+| `scope` | `optional`, `required`, `forbidden` | conventional | чи є scope | `fix: round refunds` при `required` |
+| `scope-enum` | список | conventional | scope зі списку. Scope `a, b` або `a/b` ділиться на частини, кожна має бути у списку | `fix(ui): round refunds` при `[api, billing]` |
+| `breaking-bang` | `allow`, `forbid` | conventional | чи можна `!` | `feat!: drop v1` при `forbid` |
+| `header-max-length` | число | будь-який | довжина header у символах Unicode | header зі 101 символу при `100` |
+| `subject-case` | `lower-first`, `sentence`, `any` | будь-який | перша літера subject: мала, велика або будь-яка | `fix: Round refunds` при `lower-first` |
+| `subject-full-stop` | `forbid`, `require` | будь-який | крапка в кінці subject | `fix: round refunds.` при `forbid` |
+| `body-required` | немає | будь-який | body є | повідомлення з одного header |
+| `body-max-line-length` | число | будь-який | довжина кожного рядка body. Рядки з URL і код (огороджений блок або рядки з відступом) не враховуються | рядок body зі 101 символу при `100` |
+| `reference` | `location`, `pattern`, `keys` | будь-який | посилання на issue в указаному місці | повідомлення без `#665` |
+| `trailer-required` | список ключів | будь-який | у trailer-блоці є рядки з цими ключами | коміт без `-s` при `[Signed-off-by]` |
+| `pattern` | regex | будь-який | повідомлення з початку відповідає regex | див. [`pattern`](#pattern) |
 
 `reference`:
 - `location: any` - посилання будь-де в повідомленні, наприклад `(group/project#665)` усередині абзацу body
@@ -185,7 +281,7 @@ commitpolicy_presets:
 
 ## Режими і відмови
 
-COMMITPOLICY - про гігієну, а не про доступ, тому за збою він не блокує роботу (fail open). Те, що контролює автор push, - порушення, а не пропуск.
+COMMITPOLICY стежить за порядком в історії, а не за доступом. Тому, коли перевірку неможливо виконати (файл у default branch зламаний, API GitLab не відповів), push проходить з попередженням, а не блокується. Це називають fail open. Те, що контролює автор push, наприклад повільне для regex повідомлення, - порушення, а не пропуск.
 
 | Ситуація | Результат |
 | --- | --- |
@@ -249,4 +345,4 @@ repopolicy:
     - gitlab-repopolicy lint-commit --ruleset protected --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME..HEAD"
 ```
 
-Бінарник у job - з перевіреного релізу, наприклад в образі runner'а. Для `origin/<target>` у job потрібна історія цільової гілки: `GIT_DEPTH: 0` або `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. Код виходу `lint-commit` - 0, якщо порушень рівня `error` немає (попередження не заважають), і 1, якщо вони є.
+Бінарник у job - з перевіреного релізу, наприклад в образі runner'а. Для `origin/<target>` у job потрібна історія цільової гілки: `GIT_DEPTH: 0` або `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. Код виходу `lint-commit` - 0, якщо порушень рівня `error` немає (попередження не заважають), 1, якщо вони є, і 2 за неправильних аргументів команди.

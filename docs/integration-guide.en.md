@@ -3,9 +3,23 @@
 
 # Integration guide
 
-How to turn gitlab-repopolicy on in a production instance without breaking anything. The order comes from the first production deployment; each installation decides on its own groups, people, keys and rules.
+How to turn gitlab-repopolicy on in a production instance without breaking anything. Each installation decides on its own groups, people, keys and rules.
 
-The main idea is to go from the least risky to the most: first only observe, then commit hygiene, then access to files, then releases.
+The main idea is to go from the least risky to the most. First only observe, then commit and branch hygiene, then access to files, then releases.
+
+## In short
+
+| Step | What we turn on | When to move on | How to check | How to roll back |
+| --- | --- | --- | --- | --- |
+| [2](#2-service-account-before-the-hook-is-on) | the service account in all top-level groups | `coverage` finds no groups without the service account | `sudo gitlab-repopolicy selftest`, `coverage --token-file <admin-token>` | nothing to turn back, the hook is not installed yet |
+| [3](#3-mode-audit-everywhere) | the hook on all nodes with `mode: audit` | 1-2 weeks in audit, every `deny` is understood, no `invalid_policy` and no `decision` with `code: invalid_policy_update` | `jq` over the audit log ([operations.en.md](operations.en.md#audit)) | `mode: off` or `uninstall-hook` |
+| [4](#4-commitpolicy-in-a-few-projects) | COMMITPOLICY with `mode: warn` in 2-3 projects, then `mode: enforce` | almost no warnings | `gitlab-repopolicy lint-commit --range`, `decision` events of the module `commitpolicy` | `mode: warn` in the project file |
+| [5](#5-branchpolicy) | BRANCHPOLICY with `mode: warn`, then `mode: enforce` | almost no warnings | `gitlab-repopolicy validate`, `decision` events of the module `branchpolicy` | `mode: warn` in the project file |
+| [6](#6-pathpolicy-in-one-or-two-projects) | PATHPOLICY in one or two projects | audit has no unexpected `deny` for these projects | `validate --online`, `explain` | a merge request with the previous version by an admin, or break-glass ([operations.en.md](operations.en.md#break-glass)) |
+| [7](#7-tagpolicy-for-releases) | TAGPOLICY for releases | the first releases went through TAGPOLICY | `gitlab-repopolicy test` on a tag | a merge request with the previous version of TAGPOLICY |
+| [8](#8-mode-enforce-everywhere) | `mode: enforce` everywhere | | the alerts from [operations.en.md](operations.en.md#events-and-alerts) | `mode: audit`, applies from the next push |
+
+In this process `settings-check` only detects changes of project Settings on a schedule (once a day by a timer), it does not forbid them. A change made and reverted between two runs it does not see ([operations.en.md](operations.en.md#settings-check)).
 
 ## 1. Deployment repository
 
@@ -49,7 +63,11 @@ Turn on a required issue reference gradually: in the preset `reference` with `le
 
 On a merge through the UI the author does not see warnings: GitLab does not show the successful hook output for web operations. The `warn` stage gives statistics, not training.
 
-## 5. PATHPOLICY in one or two projects
+## 5. BRANCHPOLICY
+
+BRANCHPOLICY, like COMMITPOLICY, does not threaten to block access: only names of new branches are checked, existing branches are not touched, and an API failure skips the check with a warning. The order - [branchpolicy.en.md](branchpolicy.en.md#how-to-roll-out): a preset in `branchpolicy_presets`, BRANCHPOLICY with `extends` and `mode: warn` in projects, a week or two of warnings in audit, then `mode: enforce`.
+
+## 6. PATHPOLICY in one or two projects
 
 Start with the CI logic of deployment projects ([examples/ci-config/PATHPOLICY](../examples/ci-config/PATHPOLICY)):
 - protect not only `.gitlab-ci.yml` but everything that decides what a deploy job runs: includes, `Makefile`, scripts. Protecting only `.gitlab-ci.yml` without `Makefile` is for show if the job calls `make`
@@ -59,7 +77,7 @@ Start with the CI logic of deployment projects ([examples/ci-config/PATHPOLICY](
 
 Check a policy before the merge: `gitlab-repopolicy validate --online --config /etc/gitlab-repopolicy/config.yaml --project <project>` and `explain` ([pathpolicy.en.md](pathpolicy.en.md#checking-without-a-push)).
 
-## 6. TAGPOLICY for releases
+## 7. TAGPOLICY for releases
 
 1. Move the keys of the people who sign releases into TAGPOLICY, and the regex of the rules from the CI rules that deploy tags ([tagpolicy.en.md](tagpolicy.en.md)). Extend expired keys or do not move them: acceptance rejects a new entry with an expired key
 2. Split signers by environment: a separate rule for staging and for prod
@@ -68,15 +86,15 @@ Check a policy before the merge: `gitlab-repopolicy validate --online --config /
 
 Before adding TAGPOLICY make sure that an import or `git push --mirror` does not bring old unsigned tags under the rules.
 
-## 7. `mode: enforce` everywhere
+## 8. `mode: enforce` everywhere
 
 Before the switch:
-- audit for the `mode: audit` period has no `invalid_policy` and `invalid_policy_update` events: an invalid PATHPOLICY in the default branch blocks the project completely, an invalid TAGPOLICY blocks tags
+- audit for the `mode: audit` period has no `invalid_policy` events and no `decision` with `code: invalid_policy_update`. An invalid PATHPOLICY in the default branch blocks the project completely, an invalid TAGPOLICY blocks tags
 - alerts are set up ([operations.en.md](operations.en.md#events-and-alerts)): `policy_recovery`, `breakglass`, `internal_error`, `invalid_policy`, `settings_drift` are required, `authorization_backend_failure` by a threshold
 - the `token rotate` and `settings-check` timers are on
 - the on-call runbook has break-glass and a quick rollback through `mode: audit`
 
-## 8. The other projects
+## 9. The other projects
 
 Policy files are added by merge requests as needed, one repository at a time. The default `refs: all` does not let a Developer push even a proposal branch with a protected path; for paths where this gets in the way, use `refs: protected` ([pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)).
 

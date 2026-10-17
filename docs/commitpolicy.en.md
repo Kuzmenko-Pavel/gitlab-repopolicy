@@ -3,11 +3,92 @@
 
 # COMMITPOLICY
 
-COMMITPOLICY checks the format of every commit message that this push brings into a branch. The file lives in the repository root as `COMMITPOLICY`, its content is YAML.
+COMMITPOLICY checks how the messages of the commits that a push adds to a branch are written. The file lives in the repository root as `COMMITPOLICY`, its content is YAML. If a message does not follow the rules, GitLab rejects the push, and the commit has to be reworded.
 
-Teams have different standards: Conventional Commits with or without a scope, a required issue or not, prose or lists in the body, a free format. So the module is not one schema but a catalogue of independent rules. Every rule has a level, a value and an optional filter by type. A rule that is not listed is not checked: there are no built-in default rules.
+First, what a commit message consists of and how to write one. Then, how COMMITPOLICY checks it.
 
-Who changes COMMITPOLICY itself is set by a PATHPOLICY path rule ([pathpolicy.en.md](pathpolicy.en.md)). Without such a rule anyone with push access changes the file.
+## What a commit message consists of
+
+Here is a full message in the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) style:
+
+```text
+fix(billing): round refunds to cents
+
+Refunds were computed in floating point and lost a cent on some amounts.
+Amounts are now kept in integer cents.
+
+Refs: #665
+Signed-off-by: Olena Ivanenko <olena@example.com>
+```
+
+It has three parts, separated by an empty line.
+
+| Part | In the example | What it is |
+| --- | --- | --- |
+| header | `fix(billing): round refunds to cents` | the first line. `git log --oneline`, the commit list in GitLab and the merge request title show it |
+| body | two lines about refunds | the explanation: what changed and why. Optional unless the project rules require it |
+| trailer block | `Refs: #665` and `Signed-off-by: ...` | the last paragraph, where every line looks like `Key: value` or `Key #value`. It holds service data: an issue reference, the author under the DCO |
+
+A Conventional Commits header has parts too.
+
+| Part | In the example | What it is |
+| --- | --- | --- |
+| type | `fix` | the kind of change: `feat` - a new feature, `fix` - a fix, `docs` - documentation and so on. The project sets the list of allowed types |
+| scope | `billing` | optional, in parentheses right after the type. The part of the system the change is about |
+| `!` | none | optional, before the colon: `feat(api)!: drop the v1 endpoints`. Marks a change that breaks compatibility |
+| `: ` | `: ` | a colon and exactly one space |
+| subject | `round refunds to cents` | a short description of the change, not empty |
+
+This is how the header looks in different variants. The errors are the output of `gitlab-repopolicy lint-commit`, the hook prints the same text on push.
+
+| Header | Result |
+| --- | --- |
+| `fix: round refunds to cents` | correct, without a scope |
+| `fix(billing): round refunds to cents` | correct, with a scope |
+| `feat(api)!: drop the v1 endpoints` | correct, the change breaks compatibility |
+| `fix round refunds to cents` | `header: expected "type(scope): subject"` - no colon |
+| `fix:round refunds to cents` | `header: expected "type(scope): subject", a space must follow ":"` |
+| `fix:  round refunds to cents` | `header: expected "type(scope): subject", exactly one space must follow ":"` |
+| `fix(billing: round refunds to cents` | `header: expected "type(scope): subject", the scope parenthesis is not closed` |
+| `fix(): round refunds to cents` | `header: the scope in parentheses is empty` |
+| `fix:` | `header: expected "type(scope): subject", the subject is empty` |
+
+If text follows the header right away, without an empty line, it is the error `the body must be separated from the header by an empty line`.
+
+### How to write such a message
+
+Every `-m` is a separate paragraph, git puts an empty line between them itself.
+
+```sh
+git commit -s \
+  -m "fix(billing): round refunds to cents" \
+  -m "Refunds were computed in floating point and lost a cent on some amounts. Amounts are now kept in integer cents." \
+  -m "Refs: #665"
+```
+
+Or `git commit -s` without `-m`. Then git opens an editor, the first line is the header, then an empty line and the body. To see the result, run `git log -1 --format=%B`.
+
+`-s` (`--signoff`) adds the line `Signed-off-by: Name <email>` from `user.name` and `user.email` of your git to the trailer block. It is a text mark that the author agrees to the contribution terms of the project (DCO). If the project requires `trailer-required: [Signed-off-by]`, a push without `-s` does not pass.
+
+`-S` (`--gpg-sign`, a capital letter) is a different thing. It is a cryptographic signature of the commit with a GPG or SSH key. COMMITPOLICY checks only the text of the message, it neither checks nor requires a commit signature. TAGPOLICY checks tag signatures ([tagpolicy.en.md](tagpolicy.en.md)).
+
+### How to fix a commit after a denial
+
+The hook rejects the whole push, so the rejected commits exist only on your machine. Fix the message and push again:
+- the last commit: `git commit --amend` (with `-s` if `Signed-off-by` is missing)
+- several commits: `git rebase -i origin/main`, in the list replace `pick` with `reword` next to the commits and rewrite their messages
+
+If `rebase -i` also rewrote commits that were already on the server before, push with `--force-with-lease`.
+
+You can check a message locally before the push, see [Checking locally](#checking-locally).
+
+## How COMMITPOLICY checks it
+
+The file consists of rulesets. A ruleset is a set of rules and the branches it applies to. For example, strict rules for `main` and release branches, and feature branches without checks. A push passes only when every ruleset that applies to the branch found no errors.
+
+Teams have different standards: Conventional Commits with or without a scope, a required issue or not, prose or lists in the body, a free format. So the rules are a catalogue of independent checks, not one schema. Every rule has a level, a value and an optional filter by type. A rule that is not in the file is not checked, there are no built-in default rules.
+
+Who may change COMMITPOLICY itself is set by a PATHPOLICY rule ([pathpolicy.en.md](pathpolicy.en.md)). Without such a rule anyone with push access changes the file.
 
 ## Examples
 
@@ -89,47 +170,62 @@ rulesets:
 | `rulesets[].rules` | no | rules from the catalogue |
 | `rulesets[].message` | no | text the author of a failing commit sees |
 
-Every ruleset that matches the branch applies (AND). In a `refs` list, `*` matches within one segment: `refs/heads/*` matches `main` but not `feature/x`.
+Every ruleset whose `refs` cover the branch applies to it. A violation of any of them is a denial.
+
+### Which branches a ruleset applies to (`refs`)
+
+- `all` - all branches
+- `default` - only the default branch of the project, usually `main`
+- `protected` - the default branch and the branches the project protects in GitLab (Settings > Repository > Protected branches)
+- a list - branches and tags by their full git name
+
+A full name is how git names a branch or a tag inside the repository: the branch `main` is `refs/heads/main`, the branch `release/1.2` is `refs/heads/release/1.2`, the tag `v1.0.0` is `refs/tags/v1.0.0`. The list needs exactly the full name. For a short `main` the `validate` command answers with the error `refs: main is not a ref pattern such as refs/heads/release/*`.
+
+`*` in the list stands for any characters except `/`. `refs/heads/release/*` covers `refs/heads/release/1.2` but not `refs/heads/release/1.2/hotfix`. `refs/heads/*` covers `refs/heads/main` but not `refs/heads/feature/x`.
 
 Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 KiB, up to 50 rulesets and up to 50 usernames in `except.users` of one ruleset.
 
 ## Formats
 
-**`conventional`** - the header is `type(scope)!: subject`: a type, an optional scope in parentheses, an optional `!`, a colon, one space and a non-empty subject.
+The format sets how the hook parses the header.
 
-**`free`** - the whole header is the subject. Rules about type and scope are not available for such a ruleset.
+**`conventional`** (default) - a Conventional Commits header, as in [What a commit message consists of](#what-a-commit-message-consists-of). The scheme is `type(scope)!: subject`, scope and `!` are optional. A type is Latin letters, digits, `_` and `-`.
 
-The grammar of the format is always checked, there is no separate rule for it:
-- for `conventional` - the header as above and an empty line between the header and the body
-- for `free` - a non-empty header and an empty line before the body
+**`free`** - a free header, the whole first line is the subject. Rules about type and scope are not available for such a ruleset. The format is for teams that write, for example, `PAY-123 Round refunds to cents`.
+
+These checks always apply, there is no separate rule for them:
+- `conventional`: the header as above and an empty line between the header and the body
+- `free`: a non-empty header and an empty line before the body
 - a message with a NUL byte or a commit object larger than 1 MiB is a violation
 
-How a message is read:
+How the hook reads a message:
 - `\r\n` becomes `\n` (the GitLab UI writes `\r\n`), trailing empty lines are dropped (git always adds `\n`)
-- the trailer block is the last paragraph whose every line looks like `Key: value` or `Key #value`, as in `git interpret-trailers`. `BREAKING CHANGE:` is a trailer too. The order of trailers does not matter
+- the trailer block is the last paragraph whose every line looks like `Key: value` or `Key #value`, as in `git interpret-trailers`. `BREAKING CHANGE:` is a trailer too. The order of trailers does not matter. If even one line of the paragraph is not a trailer, the whole paragraph is part of the body
 - the body is not limited in form: lists, paragraphs, code, long descriptions are fine as long as `body-max-line-length` is not set
 
 ## Rule catalogue
 
-Every rule is `{ level, value, types }`:
-- `level` - `error`, `warn` or `off`
-- `value` - the value of the rule (`body-required` has none)
-- `types` - an optional list of types: the rule applies only to commits of these types
+Every rule is written as `{ level, value, types }`:
+- `level` - `error` (a denial), `warn` (only a warning) or `off` (disabled)
+- `value` - the value of the rule. `body-required` has none
+- `types` - an optional list of types. The rule applies only to commits of these types. For example, `body-required` with `types: [feat, fix]` requires a body only in `feat` and `fix`
 
-| Rule | `value` | Format | What it checks |
-| --- | --- | --- | --- |
-| `type-enum` | list | conventional | the type is in the list |
-| `scope` | `optional`, `required`, `forbidden` | conventional | presence of a scope |
-| `scope-enum` | list | conventional | the scope is in the list. A scope `a, b` or `a/b` is split into parts, each must be in the list |
-| `breaking-bang` | `allow`, `forbid` | conventional | `type!:` |
-| `header-max-length` | number | any | length of the first line in Unicode characters |
-| `subject-case` | `lower-first`, `sentence`, `any` | any | case of the first letter of the subject |
-| `subject-full-stop` | `forbid`, `require` | any | a full stop at the end of the subject |
-| `body-required` | none | any | there is a body |
-| `body-max-line-length` | number | any | length of every body line. Lines with a URL and code (a fenced block or indented lines) are not counted |
-| `reference` | `location`, `pattern`, `keys` | any | an issue reference is found in the given place |
-| `trailer-required` | list of keys | any | trailers with these keys are present |
-| `pattern` | regex | any | the message matches the regex from its start |
+The examples in the last column fail the check with the given value.
+
+| Rule | `value` | Format | What it checks | Fails |
+| --- | --- | --- | --- | --- |
+| `type-enum` | list | conventional | the type is in the list | `bugfix: round refunds` with `[feat, fix]` |
+| `scope` | `optional`, `required`, `forbidden` | conventional | whether there is a scope | `fix: round refunds` with `required` |
+| `scope-enum` | list | conventional | the scope is in the list. A scope `a, b` or `a/b` is split into parts, each must be in the list | `fix(ui): round refunds` with `[api, billing]` |
+| `breaking-bang` | `allow`, `forbid` | conventional | whether `!` is allowed | `feat!: drop v1` with `forbid` |
+| `header-max-length` | number | any | length of the header in Unicode characters | a 101-character header with `100` |
+| `subject-case` | `lower-first`, `sentence`, `any` | any | the first letter of the subject: lowercase, uppercase or any | `fix: Round refunds` with `lower-first` |
+| `subject-full-stop` | `forbid`, `require` | any | a full stop at the end of the subject | `fix: round refunds.` with `forbid` |
+| `body-required` | none | any | there is a body | a message of only a header |
+| `body-max-line-length` | number | any | length of every body line. Lines with a URL and code (a fenced block or indented lines) are not counted | a 101-character body line with `100` |
+| `reference` | `location`, `pattern`, `keys` | any | an issue reference in the given place | a message without `#665` |
+| `trailer-required` | list of keys | any | the trailer block has lines with these keys | a commit without `-s` with `[Signed-off-by]` |
+| `pattern` | regex | any | the message matches the regex from its start | see [`pattern`](#pattern) |
 
 `reference`:
 - `location: any` - a reference anywhere in the message, for example `(group/project#665)` inside a body paragraph
@@ -185,7 +281,7 @@ Preset rules apply to every ruleset of the file, ruleset rules override them by 
 
 ## Modes and denials
 
-COMMITPOLICY is about hygiene, not access, so a failure does not block work (fail open). What the author of a push controls is a violation, not a skip.
+COMMITPOLICY keeps the history in order, it does not guard access. So when the check cannot be done (the file in the default branch is broken, the GitLab API did not answer), the push passes with a warning instead of being blocked. This is called fail open. What the author of a push controls, for example a message that is slow for the regex, is a violation, not a skip.
 
 | Situation | Result |
 | --- | --- |
@@ -249,4 +345,4 @@ repopolicy:
     - gitlab-repopolicy lint-commit --ruleset protected --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME..HEAD"
 ```
 
-The binary in the job comes from a verified release, for example in the runner image. For `origin/<target>` the job needs the history of the target branch: `GIT_DEPTH: 0` or `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. The exit code of `lint-commit` is 0 when there are no `error` level violations (warnings do not count) and 1 when there are.
+The binary in the job comes from a verified release, for example in the runner image. For `origin/<target>` the job needs the history of the target branch: `GIT_DEPTH: 0` or `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`. The exit code of `lint-commit` is 0 when there are no `error` level violations (warnings do not count), 1 when there are, and 2 for wrong command arguments.

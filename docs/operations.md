@@ -50,11 +50,18 @@ jq -c 'select(.receive_id == "Q4ZJ7OXKMV3HB2LDSY6TNRWAEC") | {event, module, dec
 | `policy_recovery` | Owner змінив PATHPOLICY через recovery | **так, кожна** |
 | `invalid_policy` | PATHPOLICY або TAGPOLICY у default branch невалідна | **так** |
 | `invalid_commit_policy` | COMMITPOLICY у default branch невалідна (перевірку пропущено) | ні |
+| `invalid_branch_policy` | BRANCHPOLICY у default branch невалідна (імена нових гілок не перевіряються, push проходить з попередженням) | ні |
 | `authorization_backend_failure` | API недоступний на захищеній операції, токен не діє (зокрема 401 під час перевірки правила), service account не бачить проєкт (`reason`: `project_not_visible`, `role_below_maintainer`) | так, якщо їх кілька за 5 хвилин: одну подію дає короткий збій API, серію - прострочений токен, група без service account або недоступний API. Поріг під своє навантаження вибирає інсталяція |
 | `unknown_principal` | deploy key або нерозбірний `GL_ID` на захищеному шляху | ні |
 | `breakglass` | дозвіл break-glass виданий (`action: grant`), відкликаний (`action: revoke`) або використаний hook | **так** |
 | `settings_drift` | `settings-check` знайшов розбіжність | **так** |
 | `internal_error` | внутрішня помилка бінарника, збій `token rotate` (`action: token_rotate`) | **так** |
+
+**Як називається подія відмови.** Зазвичай відмова - подія `decision` з кодом відмови в `code`. Але якщо для тієї самої гілки чи тегу ще й не відповів API GitLab або сталася внутрішня помилка, подія називається за цим збоєм: `authorization_backend_failure` або `internal_error`. Сам код відмови тоді лишається в `violations[].code`. Наприклад, тег з чужим підписом, для якого API не відповів, чи захищений тег, - це подія `authorization_backend_failure` з `"decision": "deny"` і `tag_signer_not_allowed` у `violations`. Тому алерт на серію `authorization_backend_failure` може спрацювати і на звичайні відмови, а шукати всі відмови варто за `"decision": "deny"`, а не лише за `"event": "decision"`:
+
+```sh
+jq -c 'select(.decision == "deny") | {event, code, codes: [.violations[]?.code], project_path, ref}' /var/log/gitlab-repopolicy/audit.log
+```
 
 Окремо варто стежити за `decision` з `code: invalid_policy_update` у `mode: audit`: таку версію policy hook у `enforce` не пропустив би, а після перемикання вона заблокує проєкт.
 
@@ -84,7 +91,7 @@ Recovery вмикається, коли в PATHPOLICY не залишилося 
 sudo gitlab-repopolicy admins --project group/project
 ```
 
-показує admins із файлу, effective admins і чи ввімкнено recovery. Збій API - помилка, а не "0 admins".
+показує admins із файлу, effective admins і чи ввімкнено recovery. Збій API - помилка, а не "0 admins". `admins` і `explain` читають конфігурацію сервера і токен (`--config`, за замовчуванням `/etc/gitlab-repopolicy/config.yaml`), тому запускаються на ноді Gitaly від root або від користувача git.
 
 ```text
 $ sudo gitlab-repopolicy admins --project acme/app
@@ -240,7 +247,7 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 | `could not check permissions: the GitLab API did not answer` на захищених змінах | API недоступний або токен прострочений | `selftest`; у audit `reason` |
 | `this project is not connected to gitlab-repopolicy correctly` | токен відхилено або hook не може його прочитати (токен читається лише при першому зверненні до API, тому push без API проходять), service account не учасник групи або роль нижча за Maintainer | `selftest`; у audit `reason` (`project_not_visible`, `role_below_maintainer`); `coverage` |
 | те саме в особистому проєкті | власник проєкту заблокований або забанений: токен service account таких користувачів не бачить, і проєкт вважається груповим | очікувана поведінка, fail closed |
-| `the check did not finish within the server limits` | push більший за ліміти (`limits`, `max_api_calls`, `timeouts`) | розбити push на частини; якщо push малий, ліміт занизький |
+| `the check did not finish within the server limits` | push більший за ліміти: `max_api_calls`, `timeouts` або понад 50 000 комітів, чиї шляхи перевіряє PATHPOLICY | розбити push на частини; якщо push малий, ліміт занизький |
 | `internal error: the push was not checked and is rejected` з id | внутрішня помилка бінарника | знайти подію `internal_error` з цим `receive_id` в audit |
 | `the audit log is not writable, tell your GitLab administrators` | користувач hook не може писати в `audit.file` | `sudo -u git gitlab-repopolicy selftest`, права каталогу логу |
 | у MR або Web IDE лише "pre-receive hook declined" без тексту | відмову дав інший hook у `pre-receive.d/` без рядка `GL-HOOK-ERR` | перевірте сусідні файли в `pre-receive.d/` |
@@ -263,7 +270,12 @@ git clone --mirror https://gitlab.example.com/acme/app.git app.git
 gitlab-repopolicy test --repo app.git --old <old> --new <new> --ref refs/heads/main --user alice --project acme/app --project-id 812
 ```
 
-`--project` і `--project-id` - шлях і ID справжнього проєкту: з ними `test` питає API про ролі й protected branches саме цього проєкту. Без них береться `local/test/repository` з ID 1, і відповіді API стосуються проєкту 1.
+`--project` і `--project-id` - шлях і ID справжнього проєкту. З ними `test` питає API про ролі й protected branches саме цього проєкту. Без них береться `local/test/repository` з ID 1, і відповіді API стосуються проєкту 1.
+
+Що потрібно для `test`:
+- конфігурація сервера (`--config`, за замовчуванням `/etc/gitlab-repopolicy/config.yaml`) і токен з неї, коли правилам потрібен API. Тому `test` запускають на ноді Gitaly від користувача, який може їх прочитати, наприклад `sudo -u git`
+- хто пушить. `--user alice` задає `GL_USERNAME`, а `GL_ID` (`user-<id>`) `test` шукає через API за username. Без API задайте його явно, `--gl-id user-314`, інакше `test` завершиться помилкою `--gl-id is not given and user alice cannot be looked up`
+- `--protocol` (`ssh` за замовчуванням, `http` або `web`) - як ніби push прийшов цим способом. Від нього залежать рядок `checked as:` у виводі і `protocol` в audit
 
 Код виходу 0 - push було б прийнято, і `test` друкує підсумок: `allowed: no rule was touched, 3 new commits` або `allowed: the rules allow the change, 3 new commits`. 1 - відмова з тим самим текстом, що побачив би користувач, або помилка виконання. 2 - помилка у використанні, наприклад не задано обов'язковий прапорець.
 

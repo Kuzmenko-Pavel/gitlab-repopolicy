@@ -3,18 +3,13 @@
 
 # PATHPOLICY
 
-PATHPOLICY answers one question: may the person who pushes changes to the repository change these files. The file lives in the repository root as `PATHPOLICY` (no extension, case matters), its content is YAML.
+PATHPOLICY sets who may change certain files of the repository: the CI configuration, deploy scripts, production values. The file lives in the repository root as `PATHPOLICY` (no extension, case matters), its content is YAML. If a protected file is changed by a person who is not in the rule, GitLab denies the push.
 
-PATHPOLICY is the root of trust of a project. Its `admins` decide who changes PATHPOLICY itself, and ordinary path rules decide who changes the other policy files (`COMMITPOLICY`, `TAGPOLICY`).
-
-## How the policy is read
-
-- The hook reads every policy file from the **anchor**. The anchor is the commit the default branch of the project points to before this push. A push cannot weaken the rules for itself: changes in a push are always evaluated by the rules that were already in the default branch
-- One anchor for all branches and tags of one push. A branch with its own, weaker PATHPOLICY does not authorize itself
-- A new version of a policy file is checked when it is pushed to **any** branch, including a feature branch. The author sees the error at once, not at merge time. Details - [acceptance of a new version](#acceptance-of-a-new-version)
-- GitLab permissions stay as they are. The hook runs after the regular GitLab permission check and can only deny: PATHPOLICY narrows permissions and never grants new ones
+First we go through PATHPOLICY on an example and see how to read a denial. Then comes the reference of fields and rules.
 
 ## Example
+
+The platform team wants only itself to change the CI configuration and the deploy logic, and only itself and release-manager to change the Helm production values:
 
 ```yaml
 # examples/ci-config/PATHPOLICY
@@ -42,9 +37,26 @@ rules:
     allow: [platform-lead, release-manager]
 ```
 
-The `ci-config` rule applies to every branch (`refs` is not set, that is `all`), because the pipeline of any branch runs the CI configuration of that very branch, with the runners and variables of the project. `refs: protected` would let a Developer push a branch with a changed `.gitlab-ci.yml`, and its pipeline would run that change before any review. So the `message` says to ask the owners of the path rather than to open a merge request.
+What it says:
+- `admins` - the people who may change the PATHPOLICY file itself. Without this list anyone whom PATHPOLICY gets in the way would simply remove their restriction from it
+- `rules` - the rules. Each rule says which files (`paths`) who may change (`allow`) and in which branches (`refs`)
+- `message` - the text that the person who is denied sees
 
-Delegating the other policy files to their owners:
+How it works for different people. bob is a Developer of the project and is in no `allow`.
+
+| Who | Changes what | Where | Result |
+| --- | --- | --- | --- |
+| bob | `README.md` | any branch | allowed. No rule concerns this file, GitLab decides as usual |
+| bob | `.gitlab-ci.yml` | any branch, even their own feature branch | denied by the rule `ci-config` |
+| ci-maintainer | `.gitlab-ci.yml` | any branch | allowed |
+| bob | `helm/app/values-prod.yaml` | their own feature branch | allowed. The rule `prod-values` applies only in protected branches |
+| bob | a merge of this feature branch into `main` | `main` | denied by the rule `prod-values`, because bob makes the change to `main` |
+| release-manager | a merge of the same branch into `main` | `main` | allowed |
+| bob | the `PATHPOLICY` file itself | any branch | denied. Only `admins` may change PATHPOLICY |
+
+Why `ci-config` applies to every branch and not only to protected ones. The pipeline of any branch runs the CI configuration of that very branch, with the runners and variables of the project. If the rule applied only to protected branches, a Developer would push a branch with a changed `.gitlab-ci.yml`, and its pipeline would run that change before any review. So the `message` says to ask the owners of the files to make the change rather than to open a merge request.
+
+PATHPOLICY protects the other policy files (`COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY`) the same way, with a rule for their name. This way every file gets its owner:
 
 ```yaml
 # examples/delegation/PATHPOLICY
@@ -68,6 +80,58 @@ rules:
     allow: [cluster-owner]
 ```
 
+Without such a rule anyone with push access may change a policy file. The hook accepts such a version but warns about it.
+
+## How to read a denial
+
+This is the denial when bob changed `.gitlab-ci.yml` in the branch `feature`:
+
+```text
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: platform-lead, sre-lead, ci-maintainer
+remote:   files:
+remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
+remote:   this rule applies to every branch: ask one of them to push the change
+remote:
+remote: rules: PATHPOLICY in main (9f1c2ab)
+remote: checked as: bob (HTTPS)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
+```
+
+git adds `remote:` to every line the server sent. Line by line:
+
+| Line | What it means |
+| --- | --- |
+| `push rejected by the rules of this repository (1 problem)` | the push is not accepted as a whole, no branch and no tag from it changed. In parentheses - how many problems were found |
+| `PATHPOLICY rule "ci-config", branch feature: ...` | the title of the problem: which rule file, which rule, which branch and what is wrong |
+| `may change them:` | who may make this change |
+| `files:` | which files of your push this rule protects |
+| text in English | the `message` of the rule, written by the owners of the files |
+| `this rule applies to every branch: ...` | the rule applies to every branch, so a separate branch does not get around it |
+| `rules: PATHPOLICY in main (9f1c2ab)` | the rules are taken from the branch `main`, from the commit `9f1c2ab`. This version decides, not the one in your branch |
+| `checked as: bob (HTTPS)` | whom the hook checked and how the push came (HTTPS, SSH, the GitLab UI or API). If it is not you, the push was made on behalf of someone else, for example from a CI job that another user started |
+| `who can help: ...` | only in denials you cannot fix yourself: a GitLab API failure, a wrong server setup, a broken rule file in `main` |
+| `GL-HOOK-ERR: ...` | a short summary in one line. A merge request, the Web IDE and the GitLab API show only this line |
+
+What to do next:
+- the change is really needed - ask someone from `may change them` to make it or to create a branch with it. A merge request from you does not help if the rule applies to every branch, because you cannot even push the branch
+- the rule seems wrong - contact the `admins` of PATHPOLICY. `gitlab-repopolicy admins` (below) or the `PATHPOLICY` file in `main` lists them
+- you touched a protected file by accident - remove its change from the commits (`git restore --source=origin/main -- .gitlab-ci.yml`, then `git commit --amend` or a new commit) and push again
+
+One problem is one block: if the same violation is on several branches and tags of one push, the head of the block lists all of them. On a merge through the API GitLab answers only "Branch cannot be merged" and writes the denial into the `merge_error` field of the merge request. API results (a role, "blocked") never get into the message, only into audit.
+
+This output is for a branch that is not the default one. To know whether the branch is protected, the hook asks the GitLab API. So `gitlab-repopolicy test` (below) reproduces it only with a working token. For `main` the decision is made without the API.
+
+## How the hook reads the rules
+
+- The hook takes every policy file from the **anchor**. The anchor is the commit the default branch of the project (usually `main`) pointed to before this push. So a push cannot weaken the rules for itself: changes in a push are always evaluated by the rules that were already in `main`
+- One anchor for all branches and tags of one push. A branch with its own, weaker PATHPOLICY does not allow changes to itself
+- A new version of a policy file is checked when it is pushed to **any** branch, including a feature branch. The author sees the error at once, not at merge time. Details - [acceptance of a new version](#acceptance-of-a-new-version)
+- GitLab permissions stay as they are. The hook runs after the regular GitLab permission check and can only deny: PATHPOLICY narrows permissions and never grants new ones
+
 ## Fields
 
 | Field | Required | Meaning |
@@ -81,11 +145,11 @@ rules:
 | `rules[].allow` | yes | 1-50 usernames. An empty list is not allowed, so that a path cannot be frozen by accident |
 | `rules[].message` | no | text for the person who is denied, up to 1000 characters. Without it the message lists `allow` |
 
-Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 KiB.
+Unknown keys, YAML anchors and aliases are an error. The file size is up to 64 KiB. A push that brings more than 50 000 new commits is not checked by the hook and is denied with `limit_exceeded`.
 
 ## Who makes the change
 
-The person who makes the change is called a principal below. `admins` and `allow` hold only usernames of specific people or bots. There are no groups or roles on purpose: group membership changes outside the review of the policy file, and a person added to a group for another task would silently get the right.
+The person who makes the change is called a principal below: a person or a bot on whose behalf GitLab accepted the push. `admins` and `allow` hold only usernames of specific people or bots. There are no groups or roles on purpose: group membership changes outside the review of the policy file, and a person added to a group for another task would silently get the right.
 
 Usernames are compared case-insensitively, as in GitLab. The format is that of a GitLab username.
 
@@ -106,11 +170,24 @@ Commit author, committer and commit signatures are not used for authorization: t
 
 ## Path matching
 
-- A pattern is a doublestar glob anchored at the repository root. `*` matches within one segment, `**` matches zero or more segments, `?`, `[abc]`
-- `terraform/prod/**` does not match `x/terraform/prod/a.tf`. There is no negation (`!`), no braces `{a,b}` and no gitignore rule "a name without `/` matches in any directory"
-- Matching is byte-wise and case-sensitive, the way git sees the path
-- A pattern is relative: no leading `/`, no `\`, no empty, `.` or `..` segments, UTF-8, up to 256 bytes and at most four `**`
-- Rename and move are a deletion of the old path and an addition of the new one: both are checked. A change of file mode, a symlink and a gitlink (submodule) are path changes too
+A path in `paths` is a pattern (glob) relative to the repository root. Special characters:
+- `*` - any characters within one part of the path, that is it does not cross `/`
+- `**` - any number of directories, including none
+- `?` - one character, `[abc]` - one character from the list
+
+| Pattern | Matches | Does not match |
+| --- | --- | --- |
+| `Makefile` | `Makefile` | `src/Makefile`, `makefile` |
+| `*.tf` | `main.tf` | `infra/main.tf` |
+| `ci/**` | `ci/a.yml`, `ci/x/y.yml` | `x/ci/a.yml` |
+| `helm/**/values-prod.yaml` | `helm/values-prod.yaml`, `helm/app/values-prod.yaml`, `helm/a/b/values-prod.yaml` | `helm/app/values-stage.yaml` |
+
+Limitations:
+- a pattern always starts at the root, `terraform/prod/**` does not match `x/terraform/prod/a.tf`. There is no gitignore rule "a name without `/` matches in any directory"
+- no negation (`!`) and no braces `{a,b}`
+- matching is byte-wise and case-sensitive, the way git sees the path
+- no leading `/`, no `\`, no empty parts, `.` or `..`, UTF-8, up to 256 bytes and at most four `**`
+- rename and move are a deletion of the old path and an addition of the new one: both are checked. A change of file mode, a symlink and a gitlink (submodule) are path changes too
 
 **Every matching rule must be satisfied (AND).** If a path falls under two rules, the author of the change must be in `allow` of both. A new rule can only narrow who may change a path. A narrow rule does not widen a broad one: if `**` is allowed only to platform-lead and `docs/**` to a technical writer, `docs/a.md` may be changed only by someone who is in both lists. The `explain` command (below) shows which rules match.
 
@@ -125,7 +202,7 @@ A path that no rule matches is authorized by GitLab as usual. PATHPOLICY is not 
 | `default` | only the default branch | the content difference before and after the push |
 | a list, for example `["refs/heads/release/*"]` | branches and tags from the list, even if GitLab does not protect them | the content difference before and after the push |
 
-In a list, `*` matches within one segment: `refs/heads/*` matches `refs/heads/main` but not `refs/heads/feature/x`.
+In a list, branches and tags are written by their full git name: the branch `main` is `refs/heads/main`, the branch `release/1.2` is `refs/heads/release/1.2`, the tag `v1.0.0` is `refs/tags/v1.0.0`. A short `main` in a list is an error. `*` stands for any characters except `/`. So `refs/heads/*` matches `refs/heads/main` but not `refs/heads/feature/x`.
 
 Why it differs. In default and protected branches the decision depends on who makes the change to the branch itself: a merge into `release/1` of a commit from somebody else's branch needs the right of whoever pressed merge, even if the commit already sits in another branch. Reverting a file with a force push is a change too. In other branches only the new commits of the push are checked: a rebase of a feature branch onto a fresh `main`, where the platform team changed CI, does not turn into somebody else's change, and a branch from an already checked commit changes nothing.
 
@@ -165,16 +242,16 @@ A recovery push changes only PATHPOLICY. Protected paths in the same push are ch
 
 A new version of any policy file is checked in any branch. An error denies the push with `invalid_policy_update` unless stated otherwise.
 
-| Check | PATHPOLICY | COMMITPOLICY | TAGPOLICY |
-| --- | --- | --- | --- |
-| a regular file (not a directory, symlink or submodule), size within the limit | yes | yes | yes |
-| `version`, schema, unknown keys, limits | yes | yes | yes |
-| patterns and regular expressions compile, `pattern` examples pass | yes | yes | `tags` |
-| usernames added in this version exist and are active (one GraphQL request) | yes | `except.users` | no |
-| signing keys | no | no | yes |
-| at least one effective admin | `lockout_prevented` | no | no |
-| the API is unavailable during the checks | `authorization_backend_failure` | `authorization_backend_failure` | no |
-| a delegated file is not covered by a PATHPOLICY rule | no | warning | warning |
+| Check | PATHPOLICY | COMMITPOLICY | TAGPOLICY | BRANCHPOLICY |
+| --- | --- | --- | --- | --- |
+| a regular file (not a directory, symlink or submodule), size within the limit | yes | yes | yes | yes |
+| `version`, schema, unknown keys, limits | yes | yes | yes | yes |
+| patterns and regular expressions compile, `pattern` examples pass | yes | yes | `tags` | yes, and the order of the rules ([branchpolicy.en.md](branchpolicy.en.md)) |
+| usernames added in this version exist and are active (one GraphQL request) | yes | `except.users` | no | no |
+| signing keys | no | no | yes | no |
+| at least one effective admin | `lockout_prevented` | no | no | no |
+| the API is unavailable during the checks | `authorization_backend_failure` | `authorization_backend_failure` | no | no |
+| a delegated file is not covered by a PATHPOLICY rule | no | warning | warning | warning |
 
 Usernames that were already in the anchor version are not checked again. `settings-check` finds principals that are gone ([operations.en.md](operations.en.md)).
 
@@ -202,28 +279,9 @@ If PATHPOLICY is deleted while COMMITPOLICY, TAGPOLICY or BRANCHPOLICY stay, any
 | `limit_exceeded` | the check did not finish within the server limits | a limit of time, API calls or commits |
 | `internal_error` | internal error: the push was not checked and is rejected | an internal error; the output has an id to look up in audit |
 
-Under uncertainty PATHPOLICY fails closed: if the answer cannot be obtained, a push that touches protected paths is denied. A push that touches no rule does not depend on the API.
+PATHPOLICY guards access. So when the hook cannot get the answer it needs (the GitLab API did not answer, the file in `main` is broken, an internal error), a push that touched protected files is denied, not let through. This is called fail closed. A push that touched no rule does not depend on the API and goes through.
 
-A denial in the terminal:
-
-```text
-remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
-remote:
-remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
-remote:   may change them: platform-lead, sre-lead, ci-maintainer
-remote:   files:
-remote:     .gitlab-ci.yml
-remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
-remote:   this rule applies to every branch: ask one of them to push the change
-remote:
-remote: rules: PATHPOLICY in main (9f1c2ab)
-remote: checked as: bob (HTTPS)
-remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
-```
-
-One problem is one block: if the same violation is on several branches and tags of one push, the head of the block lists all of them. `rules:` shows which version of the policy the rules come from, `checked as:` who the hook checked and how.
-
-In a merge request, the Web IDE and API responses GitLab shows only the `GL-HOOK-ERR` line, so it describes the first problem in full and lists the others by title. On a merge through the API GitLab answers only "Branch cannot be merged" and writes the denial into the `merge_error` field of the merge request. API results (a role, "blocked") never get into the message, only into audit.
+How to read the text of a denial - [above](#how-to-read-a-denial).
 
 ## Checking without a push
 
@@ -234,14 +292,19 @@ In a merge request, the Web IDE and API responses GitLab shows only the `GL-HOOK
 | `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | which rules match the path and whether the user satisfies them. Exit code 0 means allowed or no rule matched, 1 means denied or an error (the error text is on stderr), 2 means `--project`, `--user` or `--path` is missing |
 | `gitlab-repopolicy admins --project P` | admins from the file, effective admins and whether recovery is on |
 
-`explain` and `admins` read PATHPOLICY from the default branch of the project through the API, that is the version the next push will be evaluated by.
+`validate` without `--online` works anywhere the binary and the file are: locally, in a merge request CI. `explain`, `admins` and `validate --online` call the GitLab API with the token of the hook. They run on a Gitaly node, as a user who can read the server config (`--config`, by default `/etc/gitlab-repopolicy/config.yaml`) and the token file from it. `explain` and `admins` read PATHPOLICY from the default branch of the project, that is the version the next push will be evaluated by.
 
-A `validate` error:
+The `gitlab-repopolicy test` command reproduces the denial for a specific push ([operations.en.md](operations.en.md#check-a-push-without-pushing)). It needs:
+- `--user` and `--gl-id user-<id>` of whoever pushed. Without `--gl-id` the command looks the ID up through the API, and without a working token it fails with `--gl-id is not given and user bob cannot be looked up`
+- `--protocol` - `ssh` (default), `http` or `web`. The `checked as:` line depends on it
+- the GitLab API if the branch is not the default one, because the hook asks whether it is protected
+
+An example of a `validate` error. The hook prints the line of the file where the error is:
 
 ```text
 $ gitlab-repopolicy validate -f PATHPOLICY
 PATHPOLICY: invalid
-  rule ci: paths: "/ci/**": patterns are relative to the repository root, remove the leading /
+  line 6: rule ci: paths: "/ci/**": patterns are relative to the repository root, remove the leading /
 ```
 
 ## What PATHPOLICY does not protect

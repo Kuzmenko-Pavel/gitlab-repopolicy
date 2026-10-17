@@ -3,18 +3,13 @@
 
 # PATHPOLICY
 
-PATHPOLICY відповідає на одне питання: чи може людина, яка вносить зміни в репозиторій, змінювати ці файли. Файл лежить у корені репозиторію з ім'ям `PATHPOLICY` (без розширення, регістр важливий), вміст - YAML.
+PATHPOLICY визначає, хто може змінювати певні файли репозиторію: CI-конфігурацію, deploy-скрипти, production-значення. Файл лежить у корені репозиторію з ім'ям `PATHPOLICY` (без розширення, регістр важливий), вміст - YAML. Якщо зміну захищеного файлу вносить людина, якої немає в правилі, GitLab відхиляє push.
 
-PATHPOLICY - корінь довіри проєкту. Його `admins` вирішують, хто змінює сам PATHPOLICY, а звичайні path-правила вирішують, хто змінює інші policy-файли (`COMMITPOLICY`, `TAGPOLICY`).
-
-## Як читається policy
-
-- Hook читає всі policy-файли з **якоря**. Якір - коміт, на який вказує default branch проєкту до цього push. Push не може послабити правила для самого себе: зміни в push завжди оцінюють за правилами, які вже були в default branch
-- Один якір на всі гілки й теги одного push. Гілка зі своєю, слабшою версією PATHPOLICY не авторизує сама себе
-- Нову версію policy-файлу перевіряють у момент push у **будь-яку** гілку, зокрема у feature-гілку. Автор бачить помилку одразу, а не під час merge. Докладно - [приймання нової версії](#приймання-нової-версії)
-- Права GitLab нікуди не зникають. Hook запускається після штатної перевірки GitLab і може лише відмовити: PATHPOLICY звужує права і ніколи не видає нових
+Спочатку розберемо PATHPOLICY на прикладі і подивимося, як читати відмову. Далі - довідник полів і правил.
 
 ## Приклад
+
+Команда платформи хоче, щоб CI-конфігурацію і deploy-логіку змінювала лише вона, а production-значення Helm - лише вона і release-manager:
 
 ```yaml
 # examples/ci-config/PATHPOLICY
@@ -42,9 +37,26 @@ rules:
     allow: [platform-lead, release-manager]
 ```
 
-Правило `ci-config` діє на всіх гілках (`refs` не задано, тобто `all`), бо pipeline будь-якої гілки виконує CI-конфігурацію саме цієї гілки, з runner'ами і змінними проєкту. `refs: protected` дозволив би Developer запушити гілку зі зміненим `.gitlab-ci.yml`, і її pipeline виконав би цю зміну ще до review. Тому `message` радить попросити власників шляху, а не відкривати merge request.
+Що тут написано:
+- `admins` - люди, які можуть змінювати сам файл PATHPOLICY. Без цього списку будь-хто, кому PATHPOLICY заважає, просто прибрав би з неї своє обмеження
+- `rules` - правила. Кожне правило каже, які файли (`paths`) хто може змінювати (`allow`) і в яких гілках (`refs`)
+- `message` - текст, який побачить той, кому відмовили
 
-Делегування інших policy-файлів їхнім власникам:
+Як це працює для різних людей. bob - Developer проєкту, його немає в жодному `allow`.
+
+| Хто | Що змінює | Де | Результат |
+| --- | --- | --- | --- |
+| bob | `README.md` | будь-яка гілка | дозволено. Жодне правило не стосується цього файлу, рішення приймає GitLab, як зазвичай |
+| bob | `.gitlab-ci.yml` | будь-яка гілка, навіть своя feature-гілка | відмова за правилом `ci-config` |
+| ci-maintainer | `.gitlab-ci.yml` | будь-яка гілка | дозволено |
+| bob | `helm/app/values-prod.yaml` | своя feature-гілка | дозволено. Правило `prod-values` діє лише в захищених гілках |
+| bob | merge цієї feature-гілки в `main` | `main` | відмова за правилом `prod-values`, бо зміну в `main` вносить bob |
+| release-manager | merge тієї самої гілки в `main` | `main` | дозволено |
+| bob | сам файл `PATHPOLICY` | будь-яка гілка | відмова. Змінювати PATHPOLICY можуть лише `admins` |
+
+Чому `ci-config` діє в усіх гілках, а не лише в захищених. Pipeline будь-якої гілки виконує CI-конфігурацію саме цієї гілки, з runner'ами і змінними проєкту. Якби правило діяло лише в захищених гілках, Developer запушив би гілку зі зміненим `.gitlab-ci.yml`, і її pipeline виконав би цю зміну ще до review. Тому `message` радить попросити власників файлів внести зміну, а не відкривати merge request.
+
+Інші policy-файли (`COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY`) PATHPOLICY захищає так само, правилом із їхнім ім'ям. Так кожен файл отримує свого власника:
 
 ```yaml
 # examples/delegation/PATHPOLICY
@@ -68,6 +80,58 @@ rules:
     allow: [cluster-owner]
 ```
 
+Без такого правила policy-файл може змінити будь-хто з правом push. Hook приймає таку версію, але попереджає про це.
+
+## Як читати відмову
+
+Так виглядає відмова, коли bob змінив `.gitlab-ci.yml` у гілці `feature`:
+
+```text
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: platform-lead, sre-lead, ci-maintainer
+remote:   files:
+remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
+remote:   this rule applies to every branch: ask one of them to push the change
+remote:
+remote: rules: PATHPOLICY in main (9f1c2ab)
+remote: checked as: bob (HTTPS)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
+```
+
+`remote:` git додає до кожного рядка, який надіслав сервер. Далі рядок за рядком:
+
+| Рядок | Що означає |
+| --- | --- |
+| `push rejected by the rules of this repository (1 problem)` | push не прийнято цілком, жодна гілка і жоден тег з нього не змінилися. У дужках - скільки проблем знайдено |
+| `PATHPOLICY rule "ci-config", branch feature: ...` | заголовок проблеми: який файл правил, яке правило, яка гілка і що не так |
+| `may change them:` | хто може внести цю зміну |
+| `files:` | які саме файли з вашого push захищені цим правилом |
+| текст англійською | `message` правила, його написали власники файлів |
+| `this rule applies to every branch: ...` | правило діє в усіх гілках, тож обійти його окремою гілкою не вийде |
+| `rules: PATHPOLICY in main (9f1c2ab)` | правила взято з гілки `main`, з коміту `9f1c2ab`. Саме ця версія вирішує, а не та, що у вашій гілці |
+| `checked as: bob (HTTPS)` | кого перевіряв hook і як прийшов push (HTTPS, SSH, UI або API GitLab). Якщо тут не ви, push зроблено від чужого імені, наприклад з CI job, який запустив інший користувач |
+| `who can help: ...` | є лише у відмовах, де ви нічого не можете виправити самі: збій API GitLab, неправильне налаштування сервера, зламаний файл правил у `main` |
+| `GL-HOOK-ERR: ...` | короткий підсумок одним рядком. Merge request, Web IDE і API GitLab показують лише його |
+
+Що робити далі:
+- зміна справді потрібна - попросіть когось із `may change them` внести її або створити гілку з нею. Merge request від вас не допоможе, якщо правило діє в усіх гілках, бо ви не зможете навіть запушити гілку
+- правило здається хибним - зверніться до `admins` PATHPOLICY. Перелік показує `gitlab-repopolicy admins` (нижче) або сам файл `PATHPOLICY` у `main`
+- зачепили захищений файл випадково - приберіть його зміну з комітів (`git restore --source=origin/main -- .gitlab-ci.yml`, потім `git commit --amend` або новий коміт) і зробіть push ще раз
+
+Одна проблема - один блок: якщо те саме порушення є в кількох гілках і тегах одного push, у заголовку блоку перелічено їх усі. Під час merge через API GitLab відповідає лише "Branch cannot be merged", а текст відмови записує в поле `merge_error` merge request. Результати API (роль, "заблокований") у повідомлення не потрапляють ніколи, тільки в audit.
+
+Цей вивід - для гілки, яка не є default. Щоб дізнатися, чи захищена гілка, hook питає API GitLab. Тому `gitlab-repopolicy test` (нижче) відтворить його лише з робочим токеном. Для `main` рішення приймається без API.
+
+## Як hook читає правила
+
+- Hook бере всі policy-файли з **якоря**. Якір - це коміт, на який вказувала default branch проєкту (зазвичай `main`) до цього push. Тому push не може послабити правила для самого себе: зміни в push завжди оцінюють за правилами, які вже були в `main`
+- Один якір на всі гілки й теги одного push. Гілка зі своєю, слабшою версією PATHPOLICY не дозволяє зміни сама собі
+- Нову версію policy-файлу перевіряють у момент push у **будь-яку** гілку, зокрема у feature-гілку. Автор бачить помилку одразу, а не під час merge. Докладно - [приймання нової версії](#приймання-нової-версії)
+- Права GitLab нікуди не зникають. Hook запускається після штатної перевірки GitLab і може лише відмовити: PATHPOLICY звужує права і ніколи не видає нових
+
 ## Поля
 
 | Поле | Обов'язкове | Значення |
@@ -81,11 +145,11 @@ rules:
 | `rules[].allow` | так | 1-50 username. Порожній список заборонений, щоб шлях не можна було випадково заморозити |
 | `rules[].message` | ні | текст для того, кому відмовили, до 1000 символів. Без нього повідомлення перелічує `allow` |
 
-Невідомі ключі, YAML anchors і aliases - помилка. Розмір файлу - до 64 KiB.
+Невідомі ключі, YAML anchors і aliases - помилка. Розмір файлу - до 64 KiB. Push, що приносить понад 50 000 нових комітів, hook не перевіряє і відхиляє з `limit_exceeded`.
 
 ## Хто вносить зміну
 
-Того, хто вносить зміну, далі називаємо principal. У `admins` і `allow` пишуть лише username конкретних людей або ботів. Груп і ролей немає навмисно: членство в групі змінюється поза review policy-файлу, і людина, яку додали до групи заради іншої задачі, мовчки отримала б право.
+Того, хто вносить зміну, далі називаємо principal: людина або бот, від імені якого GitLab прийняв push. У `admins` і `allow` пишуть лише username конкретних людей або ботів. Груп і ролей немає навмисно: членство в групі змінюється поза review policy-файлу, і людина, яку додали до групи заради іншої задачі, мовчки отримала б право.
 
 Username порівнюють без урахування регістру, як у GitLab. Формат - як у username GitLab.
 
@@ -106,11 +170,24 @@ Commit author, committer і підписи комітів для авториз�
 
 ## Зіставлення шляхів
 
-- Патерн - doublestar-glob, прив'язаний до кореня репозиторію. `*` - у межах одного сегмента, `**` - нуль і більше сегментів, `?`, `[abc]`
-- `terraform/prod/**` не збігається з `x/terraform/prod/a.tf`. Немає заперечення (`!`), фігурних дужок `{a,b}` і правила gitignore "ім'я без `/` збігається в будь-якому каталозі"
-- Збіг побайтовий і з урахуванням регістру, так, як шлях бачить git
-- Патерн відносний: без початкового `/`, без `\`, без порожніх сегментів, `.` і `..`, в UTF-8, до 256 байт і не більше чотирьох `**`
-- Rename і move - це видалення старого шляху і додавання нового: перевіряються обидва. Зміна режиму файлу, symlink і gitlink (submodule) - теж зміна шляху
+Шлях у `paths` - це шаблон (glob) відносно кореня репозиторію. Спеціальні символи:
+- `*` - будь-які символи в межах однієї частини шляху, тобто не перетинає `/`
+- `**` - будь-яка кількість каталогів, зокрема жодного
+- `?` - один символ, `[abc]` - один символ зі списку
+
+| Шаблон | Охоплює | Не охоплює |
+| --- | --- | --- |
+| `Makefile` | `Makefile` | `src/Makefile`, `makefile` |
+| `*.tf` | `main.tf` | `infra/main.tf` |
+| `ci/**` | `ci/a.yml`, `ci/x/y.yml` | `x/ci/a.yml` |
+| `helm/**/values-prod.yaml` | `helm/values-prod.yaml`, `helm/app/values-prod.yaml`, `helm/a/b/values-prod.yaml` | `helm/app/values-stage.yaml` |
+
+Обмеження:
+- шаблон завжди від кореня, `terraform/prod/**` не охоплює `x/terraform/prod/a.tf`. Правила gitignore "ім'я без `/` збігається в будь-якому каталозі" тут немає
+- немає заперечення (`!`) і фігурних дужок `{a,b}`
+- збіг побайтовий і з урахуванням регістру, так, як шлях бачить git
+- без початкового `/`, без `\`, без порожніх частин, `.` і `..`, в UTF-8, до 256 байт і не більше чотирьох `**`
+- rename і move - це видалення старого шляху і додавання нового: перевіряються обидва. Зміна режиму файлу, symlink і gitlink (submodule) - теж зміна шляху
 
 **Мають виконуватися всі правила, що збіглися (AND).** Якщо шлях потрапив у два правила, автор зміни має бути в `allow` обох. Нове правило може лише звузити коло авторів. Вузьке правило не розширює широке: якщо `**` дозволено лише platform-lead, а `docs/**` - технічному письменнику, то `docs/a.md` може змінювати тільки той, хто є в обох списках. Перевірити, які правила збігаються, можна командою `explain` (нижче).
 
@@ -125,7 +202,7 @@ Commit author, committer і підписи комітів для авториз�
 | `default` | лише default branch | різниця вмісту до і після push |
 | список, наприклад `["refs/heads/release/*"]` | гілки й теги зі списку, навіть якщо в GitLab вони не захищені | різниця вмісту до і після push |
 
-У списку `*` збігається в межах одного сегмента: `refs/heads/*` збігається з `refs/heads/main`, але не з `refs/heads/feature/x`.
+У списку гілки й теги пишуть повним ім'ям git: гілка `main` - це `refs/heads/main`, гілка `release/1.2` - `refs/heads/release/1.2`, тег `v1.0.0` - `refs/tags/v1.0.0`. Коротке `main` у списку - помилка. `*` заміняє будь-які символи, крім `/`. Тому `refs/heads/*` охоплює `refs/heads/main`, але не `refs/heads/feature/x`.
 
 Чому по-різному. У default і protected гілках рішення залежить від того, хто вносить зміну в саму гілку: merge у `release/1` коміту з чужої гілки потребує права в того, хто натиснув merge, навіть якщо коміт уже лежить в іншій гілці. Відкат файлу через force push теж є зміною. В інших гілках перевіряються лише нові коміти push: rebase feature-гілки на свіжий `main`, де platform-команда змінила CI, не перетворюється на чужу зміну, а гілка від уже перевіреного коміту нічого не змінює.
 
@@ -165,16 +242,16 @@ Recovery-push змінює тільки PATHPOLICY. Захищені шляхи 
 
 Нову версію будь-якого policy-файлу перевіряють у будь-якій гілці. Помилка дає відмову `invalid_policy_update`, якщо не сказано інше.
 
-| Перевірка | PATHPOLICY | COMMITPOLICY | TAGPOLICY |
-| --- | --- | --- | --- |
-| звичайний файл (не каталог, не symlink, не submodule), розмір у межах ліміту | так | так | так |
-| `version`, схема, невідомі ключі, ліміти | так | так | так |
-| патерни й regex компілюються, приклади `pattern` проходять | так | так | `tags` |
-| додані в цій версії username існують і активні (один GraphQL-запит) | так | `except.users` | ні |
-| ключі підпису | ні | ні | так |
-| є хоча б один effective admin | `lockout_prevented` | ні | ні |
-| API недоступний під час перевірок | `authorization_backend_failure` | `authorization_backend_failure` | ні |
-| делегований файл не покритий правилом PATHPOLICY | ні | попередження | попередження |
+| Перевірка | PATHPOLICY | COMMITPOLICY | TAGPOLICY | BRANCHPOLICY |
+| --- | --- | --- | --- | --- |
+| звичайний файл (не каталог, не symlink, не submodule), розмір у межах ліміту | так | так | так | так |
+| `version`, схема, невідомі ключі, ліміти | так | так | так | так |
+| патерни й regex компілюються, приклади `pattern` проходять | так | так | `tags` | так, і порядок правил ([branchpolicy.md](branchpolicy.md)) |
+| додані в цій версії username існують і активні (один GraphQL-запит) | так | `except.users` | ні | ні |
+| ключі підпису | ні | ні | так | ні |
+| є хоча б один effective admin | `lockout_prevented` | ні | ні | ні |
+| API недоступний під час перевірок | `authorization_backend_failure` | `authorization_backend_failure` | ні | ні |
+| делегований файл не покритий правилом PATHPOLICY | ні | попередження | попередження | попередження |
 
 Username, які вже були у версії на якорі, повторно не перевіряються. Зниклих principals знаходить `settings-check` ([operations.md](operations.md)).
 
@@ -202,28 +279,9 @@ Username, які вже були у версії на якорі, повторн
 | `limit_exceeded` | the check did not finish within the server limits | ліміт часу, викликів API або комітів |
 | `internal_error` | internal error: the push was not checked and is rejected | внутрішня помилка, у виводі id для пошуку в audit |
 
-За невизначеності PATHPOLICY закривається (fail closed): якщо відповідь отримати не можна, push, що зачепив захищені шляхи, відхиляється. Push, який не зачепив жодного правила, від API не залежить.
+PATHPOLICY стежить за доступом. Тому, коли hook не може отримати потрібну відповідь (API GitLab не відповів, файл у `main` зламаний, внутрішня помилка), push, що зачепив захищені файли, відхиляється, а не пропускається. Це називають fail closed. Push, який не зачепив жодного правила, від API не залежить і проходить.
 
-Так виглядає відмова в терміналі:
-
-```text
-remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
-remote:
-remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
-remote:   may change them: platform-lead, sre-lead, ci-maintainer
-remote:   files:
-remote:     .gitlab-ci.yml
-remote:   The platform team changes the CI/CD configuration and the deploy logic. Ask platform-lead, sre-lead or ci-maintainer to make this change.
-remote:   this rule applies to every branch: ask one of them to push the change
-remote:
-remote: rules: PATHPOLICY in main (9f1c2ab)
-remote: checked as: bob (HTTPS)
-remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: platform-lead, sre-lead, ci-maintainer)
-```
-
-Одна проблема - один блок: якщо те саме порушення є в кількох гілках і тегах одного push, у заголовку блоку перелічено їх усі. `rules:` показує, з якої версії policy взято правила, `checked as:` - кого і яким способом перевіряв hook.
-
-У merge request, Web IDE і відповідях API GitLab показує лише рядок `GL-HOOK-ERR`, тому в ньому перша проблема описана повністю, а решта перелічена заголовками. Під час merge через API GitLab відповідає лише "Branch cannot be merged", а текст відмови записує в поле `merge_error` merge request. Результати API (роль, "заблокований") у повідомлення не потрапляють ніколи, тільки в audit.
+Як читати текст відмови - [вище](#як-читати-відмову).
 
 ## Перевірка без push
 
@@ -234,14 +292,19 @@ remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHP
 | `gitlab-repopolicy explain --project P --user U --path X [--ref R]` | які правила збіглися зі шляхом і чи виконує їх користувач. Код виходу 0 - дозволено або жодне правило не збіглося, 1 - заборонено або помилка (текст помилки в stderr), 2 - не задано `--project`, `--user` чи `--path` |
 | `gitlab-repopolicy admins --project P` | admins із файлу, effective admins і чи ввімкнено recovery |
 
-`explain` і `admins` читають PATHPOLICY з default branch проєкту через API, тобто ту версію, за якою буде оцінено наступний push.
+`validate` без `--online` працює будь-де, де є бінарник і файл: локально, у CI merge request. `explain`, `admins` і `validate --online` звертаються до API GitLab з токеном hook. Їх запускають на ноді Gitaly, від користувача, який може прочитати конфігурацію сервера (`--config`, за замовчуванням `/etc/gitlab-repopolicy/config.yaml`) і файл токена з неї. `explain` і `admins` читають PATHPOLICY з default branch проєкту, тобто ту версію, за якою буде оцінено наступний push.
 
-Приклад помилки `validate`:
+Відтворити відмову для конкретного push можна командою `gitlab-repopolicy test` ([operations.md](operations.md#перевірити-push-без-push)). Їй потрібні:
+- `--user` і `--gl-id user-<id>` того, хто пушив. Без `--gl-id` команда шукає ID через API, а без робочого токена завершується помилкою `--gl-id is not given and user bob cannot be looked up`
+- `--protocol` - `ssh` (за замовчуванням), `http` або `web`. Від нього залежить рядок `checked as:`
+- API GitLab, якщо гілка не default, бо hook питає, чи вона захищена
+
+Приклад помилки `validate`. Hook друкує рядок файлу, де знайдено помилку:
 
 ```text
 $ gitlab-repopolicy validate -f PATHPOLICY
 PATHPOLICY: invalid
-  rule ci: paths: "/ci/**": patterns are relative to the repository root, remove the leading /
+  line 6: rule ci: paths: "/ci/**": patterns are relative to the repository root, remove the leading /
 ```
 
 ## Чого PATHPOLICY не захищає

@@ -11,7 +11,7 @@ Unknown keys, including an unknown module name under `modules`, YAML anchors and
 
 ## The whole file
 
-This is [config/config.yaml](../config/config.yaml) from the package. The values are the defaults, except those marked as an example: `default_branch` and `settings_check` are empty by default.
+This is [config/config.yaml](../config/config.yaml) from the package. Its values are the defaults, except two examples. `default_branch: [main]` and `settings_check` (`protected_tags: ["v*"]`, `job_token_push: false`) are empty by default, that is these checks are off until you set them. The package ships the example to show the format, so before the first run decide whether these values suit your instance.
 
 ```yaml
 # Server config of gitlab-repopolicy: /etc/gitlab-repopolicy/config.yaml.
@@ -71,10 +71,11 @@ modules:
 default_branch: [main]
 
 # What settings-check expects of every project with PATHPOLICY. Empty values
-# are not checked and are the default; the values below are examples.
-# ci_config_path, principals and the protection of the default branch are
-# always checked, the branches that BRANCHPOLICY requires to be protected too;
-# protected_tags are checked in projects with TAGPOLICY.
+# are not checked and are the default; ["v*"] and false below are examples.
+# Projects with PATHPOLICY also always get ci_config_path, principals and the
+# protection of the default branch checked; projects with PATHPOLICY or
+# BRANCHPOLICY the branches that BRANCHPOLICY requires to be protected;
+# protected_tags are checked only in projects with PATHPOLICY and TAGPOLICY.
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false
@@ -133,9 +134,17 @@ gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsoc
 | `audit` | the hook denies nobody and writes decisions to audit with `"enforced": false`. The mode for the first run and for a quick rollback when the cause of a failure is unclear |
 | `off` | the hook checks nothing and writes nothing |
 
-A change applies from the next push: the hook reads the configuration on every run, nothing needs a restart.
+A change applies from the next push. The hook reads the configuration on every run, nothing needs a restart.
 
-Before switching from `audit` to `enforce`, make sure audit has no `invalid_policy` events: after the switch an invalid PATHPOLICY in the default branch blocks the project completely, an invalid TAGPOLICY blocks tags.
+The first run on a production instance is with `audit`:
+
+```yaml
+mode: audit
+```
+
+Pushes pass as before, and the audit log shows whom the hook would have denied: a `decision` event with `"decision": "deny"` and `"enforced": false`. When there are no such events or all of them are expected, switch to `enforce`. The order of the steps - [integration-guide.en.md](integration-guide.en.md).
+
+Before switching from `audit` to `enforce`, make sure audit has no `invalid_policy` events. After the switch an invalid PATHPOLICY in the default branch blocks the project completely, an invalid TAGPOLICY blocks tags.
 
 ## `modules`
 
@@ -143,13 +152,18 @@ The hook does not load a disabled module: its policy file becomes an ordinary fi
 
 ## `default_branch`
 
-The list of allowed names of the default branch, for example `[main]`, or `[main, master]` during a migration. An empty list (the default) turns the check off. Names are short, without `refs/heads/` and without `*`.
+The list of allowed names of the default branch. An empty list (the default) turns the check off. Names are short, as GitLab shows them, without `refs/heads/` and without `*`.
+
+```yaml
+default_branch: [main]            # every project has the default branch main
+default_branch: [main, master]    # during the move from master to main
+```
 
 The hook reads every policy file from the default branch. In Settings > Repository > Branch defaults a Maintainer can make a branch without policies the default one, and the next push would pass without rules. So the hook denies every push to a project whose default branch has a name outside the list, with the code `default_branch_not_allowed`. The modules do not run then.
 
 In an empty repository GitLab makes the first pushed branch the default one, whatever its name. So the first push into a repository without branches and tags must bring the branch HEAD names (usually `main`). A push of only another branch is denied with a hint to push `main` first; a push of only tags passes.
 
-The check applies to every project of the instance, including those without policy files: otherwise the bypass is not closed. Personal namespaces are not checked. Turn it on with the global `mode: audit`: look for `default_branch_not_allowed` events in audit, fix the default branch in those projects, and only then switch to `enforce`.
+The check applies to every project of the instance, including those without policy files, otherwise the bypass is not closed. Personal namespaces are not checked. Turn it on with the global `mode: audit`. Find `decision` events with `"code": "default_branch_not_allowed"` in audit, fix the default branch in those projects, and only then switch to `enforce`.
 
 `settings-check` uses the same list ([operations.en.md](operations.en.md#settings-check)).
 
@@ -157,18 +171,29 @@ The check applies to every project of the instance, including those without poli
 
 What `settings-check` expects of every project with PATHPOLICY. An empty value is not checked.
 
+```yaml
+settings_check:
+  protected_tags: ["v*"]   # tags v* are protected in Settings > Repository > Protected tags
+  job_token_push: false    # push with CI_JOB_TOKEN is off
+```
+
 | Key | What is compared |
 | --- | --- |
 | `protected_tags` | these tag patterns are protected. Only in projects with TAGPOLICY on the default branch |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` (`false` means it must be off) |
 
-Regardless of these keys, `settings-check` always checks the name of the default branch against `default_branch`, that the default branch is protected, for projects with BRANCHPOLICY that the patterns of its rules with `protected: true` are protected, the CI configuration path and that every principal from the policy files exists. Details - [operations.en.md](operations.en.md#settings-check).
+Regardless of these keys, `settings-check` checks:
+- in projects with PATHPOLICY - the name of the default branch against `default_branch`, that the default branch is protected, the CI configuration path and that every principal from the policy files exists
+- in projects with BRANCHPOLICY - that the patterns of its rules with `protected: true` are protected
+- in projects with only BRANCHPOLICY, without PATHPOLICY - only the name of the default branch and the protection of the BRANCHPOLICY patterns
+
+`settings-check` skips projects without PATHPOLICY and BRANCHPOLICY. Details - [operations.en.md](operations.en.md#settings-check).
 
 The expectations are the same for the whole instance; there are no settings per group or project. So put into the lists only what holds for every project with PATHPOLICY. `protected_tags` gives no drift in projects without release tags, because it is checked only where there is TAGPOLICY. Keep the CI configuration check also for projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance.
 
 ## `help`
 
-Both keys are optional, up to 200 characters, without control characters.
+What a person whom the hook denied sees, and where to turn. Both keys are optional, up to 200 characters, without control characters.
 
 - `help.contact` is printed in the `who can help:` line of denials the user cannot fix alone: an API failure, server limits, an internal error, a broken policy in the default branch. Without this key the line says `your GitLab administrators`
 - `help.docs_url` is printed in the `rules:` line at the end of every denial and warning

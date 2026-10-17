@@ -55,10 +55,11 @@ modules:
 default_branch: [main]
 
 # What settings-check expects of every project with PATHPOLICY. Empty values
-# are not checked and are the default; the values below are examples.
-# ci_config_path, principals and the protection of the default branch are
-# always checked, the branches that BRANCHPOLICY requires to be protected too;
-# protected_tags are checked in projects with TAGPOLICY.
+# are not checked and are the default; ["v*"] and false below are examples.
+# Projects with PATHPOLICY also always get ci_config_path, principals and the
+# protection of the default branch checked; projects with PATHPOLICY or
+# BRANCHPOLICY the branches that BRANCHPOLICY requires to be protected;
+# protected_tags are checked only in projects with PATHPOLICY and TAGPOLICY.
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false

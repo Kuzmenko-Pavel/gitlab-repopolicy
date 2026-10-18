@@ -439,13 +439,20 @@ type mergeRequest struct {
 
 func openMR(t *testing.T, u *standUser, p *project, source, target string) *mergeRequest {
 	t.Helper()
-	// A branch just created through the commits API is not always visible to
-	// the merge requests API yet.
-	waitUntil(t, time.Minute, "branch "+source, func() bool { return branchExists(t, p, source) })
+	// The merge requests API can answer that a branch just created through the
+	// commits API does not exist, even after the branches API returns it.
 	var mr mergeRequest
-	require.NoError(t, gl.api(t.Context(), u.Token, http.MethodPost, p.api("/merge_requests"), map[string]any{
-		"source_branch": source, "target_branch": target, "title": "feat: merge " + source,
-	}, &mr))
+	waitUntil(t, time.Minute, "merge request from "+source, func() bool {
+		err := gl.api(t.Context(), u.Token, http.MethodPost, p.api("/merge_requests"), map[string]any{
+			"source_branch": source, "target_branch": target, "title": "feat: merge " + source,
+		}, &mr)
+		var ae *apiError
+		if errors.As(err, &ae) && ae.Status == http.StatusBadRequest && strings.Contains(ae.Body, "does not exist") {
+			return false
+		}
+		require.NoError(t, err)
+		return true
+	})
 	return &mr
 }
 

@@ -70,17 +70,7 @@ func createProject(t *testing.T, name string, readme bool) *project {
 		"initialize_with_readme": readme,
 		"wiki_access_level":      "enabled",
 	}, &p))
-	// GitLab refreshes inherited access in Sidekiq; until then members and
-	// the service account get 404 for the new project.
-	tokens := []string{gl.state.ServiceAccount.Token, user("alice").Token, user("bob").Token, user("olga").Token}
-	waitUntil(t, time.Minute, "access to "+path, func() bool {
-		for _, token := range tokens {
-			if err := gl.api(t.Context(), token, http.MethodGet, fmt.Sprintf("/projects/%d", p.ID), nil, nil); err != nil {
-				return false
-			}
-		}
-		return true
-	})
+	require.NoError(t, gl.waitMemberAccess(t.Context(), p.ID))
 	return &project{ID: p.ID, Path: p.Path}
 }
 
@@ -290,23 +280,17 @@ type auditEvent struct {
 	Decision    string `json:"decision"`
 	Enforced    bool   `json:"enforced"`
 	Code        string `json:"code"`
-	Action      string `json:"action"`
 	ProjectPath string `json:"project_path"`
-	UserID      int    `json:"user_id"`
 	Username    string `json:"username"`
 	GLID        string `json:"gl_id"`
 	Protocol    string `json:"protocol"`
 	Ref         string `json:"ref"`
-	Reason      string `json:"reason"`
 	Signer      string `json:"signer"`
 	Violations  []struct {
-		Rule   string `json:"rule"`
 		Code   string `json:"code"`
 		Reason string `json:"reason"`
 	} `json:"violations"`
-	DurationMS int64  `json:"duration_ms"`
-	Version    string `json:"version"`
-	Git        string `json:"git"`
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // auditEvents returns the events of the audit log for a GL_PROJECT_PATH.
@@ -428,10 +412,7 @@ type mergeRequest struct {
 	State               string `json:"state"`
 	MergeError          string `json:"merge_error"`
 	DetailedMergeStatus string `json:"detailed_merge_status"`
-	MergedBy            *struct {
-		Username string `json:"username"`
-	} `json:"merged_by"`
-	HeadPipeline *struct {
+	HeadPipeline        *struct {
 		ID     int    `json:"id"`
 		Status string `json:"status"`
 	} `json:"head_pipeline"`
@@ -439,13 +420,20 @@ type mergeRequest struct {
 
 func openMR(t *testing.T, u *standUser, p *project, source, target string) *mergeRequest {
 	t.Helper()
-	// A branch just created through the commits API is not always visible to
-	// the merge requests API yet.
-	waitUntil(t, time.Minute, "branch "+source, func() bool { return branchExists(t, p, source) })
+	// The merge requests API can answer that a branch just created through the
+	// commits API does not exist, even after the branches API returns it.
 	var mr mergeRequest
-	require.NoError(t, gl.api(t.Context(), u.Token, http.MethodPost, p.api("/merge_requests"), map[string]any{
-		"source_branch": source, "target_branch": target, "title": "feat: merge " + source,
-	}, &mr))
+	waitUntil(t, time.Minute, "merge request from "+source, func() bool {
+		err := gl.api(t.Context(), u.Token, http.MethodPost, p.api("/merge_requests"), map[string]any{
+			"source_branch": source, "target_branch": target, "title": "feat: merge " + source,
+		}, &mr)
+		var ae *apiError
+		if errors.As(err, &ae) && ae.Status == http.StatusBadRequest && strings.Contains(ae.Body, "does not exist") {
+			return false
+		}
+		require.NoError(t, err)
+		return true
+	})
 	return &mr
 }
 

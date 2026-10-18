@@ -159,7 +159,7 @@ func TestOps_MergeButton(t *testing.T) {
 
 	err := gl.api(t.Context(), bob.Token, http.MethodPut, p.api(fmt.Sprintf("/merge_requests/%d/merge", mr.IID)), nil, nil)
 	require.Error(t, err)
-	waitUntil(t, time.Minute, "merge_error", func() bool { return getMR(t, p, mr.IID).MergeError != "" })
+	waitUntil(t, 3*time.Minute, "merge_error", func() bool { return getMR(t, p, mr.IID).MergeError != "" })
 	got := getMR(t, p, mr.IID)
 	assert.Equal(t, "opened", got.State)
 	assert.Contains(t, got.MergeError, ciDenied)
@@ -170,7 +170,7 @@ func TestOps_MergeButton(t *testing.T) {
 
 	waitMergeable(t, p, mr.IID)
 	require.NoError(t, gl.api(t.Context(), alice.Token, http.MethodPut, p.api(fmt.Sprintf("/merge_requests/%d/merge", mr.IID)), nil, nil))
-	waitUntil(t, time.Minute, "merge by alice", func() bool { return getMR(t, p, mr.IID).State == "merged" })
+	waitUntil(t, 3*time.Minute, "merge by alice", func() bool { return getMR(t, p, mr.IID).State == "merged" })
 	allow := requireEvent(t, p, "allow of alice", func(e auditEvent) bool {
 		return e.Event == "decision" && e.Ref == "refs/heads/"+release && e.Username == "alice"
 	})

@@ -13,3 +13,5 @@ ignore:
   - "tests/**"
 comment:
   layout: "diff, flags, files"
+  # Without it the comment shows only the coverage of the changed lines.
+  hide_project_coverage: false

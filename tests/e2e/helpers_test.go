@@ -70,17 +70,7 @@ func createProject(t *testing.T, name string, readme bool) *project {
 		"initialize_with_readme": readme,
 		"wiki_access_level":      "enabled",
 	}, &p))
-	// GitLab refreshes inherited access in Sidekiq; until then members and
-	// the service account get 404 for the new project.
-	tokens := []string{gl.state.ServiceAccount.Token, user("alice").Token, user("bob").Token, user("olga").Token}
-	waitUntil(t, time.Minute, "access to "+path, func() bool {
-		for _, token := range tokens {
-			if err := gl.api(t.Context(), token, http.MethodGet, fmt.Sprintf("/projects/%d", p.ID), nil, nil); err != nil {
-				return false
-			}
-		}
-		return true
-	})
+	require.NoError(t, gl.waitMemberAccess(t.Context(), p.ID))
 	return &project{ID: p.ID, Path: p.Path}
 }
 
@@ -290,23 +280,17 @@ type auditEvent struct {
 	Decision    string `json:"decision"`
 	Enforced    bool   `json:"enforced"`
 	Code        string `json:"code"`
-	Action      string `json:"action"`
 	ProjectPath string `json:"project_path"`
-	UserID      int    `json:"user_id"`
 	Username    string `json:"username"`
 	GLID        string `json:"gl_id"`
 	Protocol    string `json:"protocol"`
 	Ref         string `json:"ref"`
-	Reason      string `json:"reason"`
 	Signer      string `json:"signer"`
 	Violations  []struct {
-		Rule   string `json:"rule"`
 		Code   string `json:"code"`
 		Reason string `json:"reason"`
 	} `json:"violations"`
-	DurationMS int64  `json:"duration_ms"`
-	Version    string `json:"version"`
-	Git        string `json:"git"`
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // auditEvents returns the events of the audit log for a GL_PROJECT_PATH.
@@ -428,10 +412,7 @@ type mergeRequest struct {
 	State               string `json:"state"`
 	MergeError          string `json:"merge_error"`
 	DetailedMergeStatus string `json:"detailed_merge_status"`
-	MergedBy            *struct {
-		Username string `json:"username"`
-	} `json:"merged_by"`
-	HeadPipeline *struct {
+	HeadPipeline        *struct {
 		ID     int    `json:"id"`
 		Status string `json:"status"`
 	} `json:"head_pipeline"`

@@ -62,7 +62,7 @@ func (s *stand) bootstrap(ctx context.Context) error {
 		{"groups", s.ensureGroups},
 		{"projects", s.ensureProjects},
 		{"memberships", s.ensureMemberships},
-		{"member access", s.waitMemberAccess},
+		{"member access", func(ctx context.Context) error { return s.waitMemberAccess(ctx, s.state.Projects[groupProject].ID) }},
 		{"SSH keys", s.ensureSSHKeys},
 		{"project access token", s.ensureProjectToken},
 		{"runner", s.ensureRunner},
@@ -322,16 +322,16 @@ type apiKey struct {
 	Key string `json:"key"`
 }
 
-// waitMemberAccess waits until every active member sees the group project:
-// GitLab refreshes project access after a membership change in the background.
-func (s *stand) waitMemberAccess(ctx context.Context) error {
+// waitMemberAccess waits until every active member sees the project: GitLab
+// refreshes inherited access in the background, and until then they get 404.
+func (s *stand) waitMemberAccess(ctx context.Context, projectID int) error {
 	tokens := []string{s.state.ServiceAccount.Token}
 	for _, u := range standUsers {
 		if u.access > 0 && !u.blocked {
 			tokens = append(tokens, s.state.Users[u.username].Token)
 		}
 	}
-	path := fmt.Sprintf("/projects/%d", s.state.Projects[groupProject].ID)
+	path := fmt.Sprintf("/projects/%d", projectID)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	for _, token := range tokens {
@@ -345,7 +345,7 @@ func (s *stand) waitMemberAccess(ctx context.Context) error {
 			}
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("%s is still not visible to a member: %w", groupProject, ctx.Err())
+				return fmt.Errorf("project %d is still not visible to a member: %w", projectID, ctx.Err())
 			case <-time.After(2 * time.Second):
 			}
 		}

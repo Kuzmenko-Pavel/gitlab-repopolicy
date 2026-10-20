@@ -119,8 +119,8 @@ func (s *Set) newCommits(ctx context.Context, u module.RefUpdate, firstParent bo
 }
 
 // CandidatePaths is a local superset of Paths for every class of the ref:
-// the net diff and the paths of new commits on update, the paths of commits
-// not in the default branch on create.
+// the net diff and the paths of every commit of old..new on update, the
+// paths of commits not in the default branch on create.
 func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
@@ -144,7 +144,7 @@ func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string,
 		if err != nil {
 			return nil, err
 		}
-		commits, err := s.NewCommits(ctx, u, MaxPathCommits)
+		commits, err := s.CandidateCommits(ctx, u, MaxPathCommits)
 		if err != nil {
 			return nil, err
 		}
@@ -156,8 +156,11 @@ func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string,
 	})
 }
 
-// Paths are the paths changed by the update under scope: the net diff of the
-// trees for default and protected refs, the paths of new commits for other refs.
+// Paths are the paths changed by the update under scope. For default and
+// protected refs they are the net diff of the trees and the paths of every
+// commit that enters the ref: a change reverted later in the same push still
+// counts, and the net diff keeps a rollback by a force push. For other refs
+// they are the paths of new commits.
 func (s *Set) Paths(ctx context.Context, u module.RefUpdate, scope module.Scope) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
@@ -174,7 +177,19 @@ func (s *Set) Paths(ctx context.Context, u module.RefUpdate, scope module.Scope)
 			// attribute other people's changes to the pusher.
 			commits, err = s.NewCommits(ctx, u, MaxPathCommits)
 		case u.Kind() == module.Update:
-			return s.git.DiffNames(ctx, oldC, newC)
+			diff, err := s.git.DiffNames(ctx, oldC, newC)
+			if err != nil {
+				return nil, err
+			}
+			scope.FirstParent = false
+			if commits, err = s.EnteringCommits(ctx, u, scope, MaxPathCommits); err != nil {
+				return nil, err
+			}
+			paths, err := s.git.CommitPaths(ctx, commits)
+			if err != nil {
+				return nil, err
+			}
+			return union(diff, paths), nil
 		default:
 			scope.FirstParent = false
 			commits, err = s.EnteringCommits(ctx, u, scope, MaxPathCommits)

@@ -324,3 +324,59 @@ func TestLimits_NewCommits(t *testing.T) {
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "limit_exceeded", ev[len(ev)-1]["code"])
 }
+
+// changeAndRevert commits a change of ci.yml and its revert: the push has no
+// net diff of ci.yml.
+func changeAndRevert(s *Stand) {
+	s.Commit("ci: evil", map[string]string{"ci.yml": "evil"})
+	s.Commit("ci: revert", map[string]string{"ci.yml": "v1"})
+}
+
+// TestPathPolicy_ChangedAndReverted: a protected file changed and reverted in
+// one push is still a change of the default branch and of a branch of a
+// match list, also when the commits are in another branch first.
+func TestPathPolicy_ChangedAndReverted(t *testing.T) {
+	t.Run("main", func(t *testing.T) {
+		s, _ := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		changeAndRevert(s)
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`, "ci.yml")
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+	})
+	t.Run("branch of a match list", func(t *testing.T) {
+		s, base := pathStand(t, pathRelease, map[string]string{"ci.yml": "v1"})
+		s.Seed(base + ":refs/heads/release/1")
+		changeAndRevert(s)
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), `PATHPOLICY rule "release-ci", branch release/1`)
+	})
+	t.Run("fast-forward from another branch", func(t *testing.T) {
+		s, base := pathStand(t, pathRelease, map[string]string{"ci.yml": "v1"})
+		s.Seed(base + ":refs/heads/release/1")
+		changeAndRevert(s)
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature")) // the list of the rule does not have feature
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), `PATHPOLICY rule "release-ci", branch release/1`)
+	})
+	t.Run("merge into main", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.git(s.Work, "checkout", "-q", "-b", "feature")
+		changeAndRevert(s)
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "checkout", "-q", "-B", "main", base)
+		s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'main'", "feature")
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+	})
+	t.Run("rollback by a force push", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		assertDenied(t, s.Push(bob, "+"+base+":refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+	})
+}
+
+// TestLimits_DefaultBranch: more than 50 000 commits entering the default
+// branch fail closed, because every one of them is checked.
+func TestLimits_DefaultBranch(t *testing.T) {
+	s, base := pathStand(t, pathPolicy, nil)
+	s.fastImport(base, "refs/heads/many", 50_001)
+	assertDenied(t, s.Push(alice, "refs/heads/many:refs/heads/main"), "the check did not finish within the server limits")
+}

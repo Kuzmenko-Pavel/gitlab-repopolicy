@@ -161,7 +161,50 @@ func TestPaths_ForcePushRollback(t *testing.T) {
 	entering, err := s.EnteringCommits(ctx, u, def, 10)
 	require.NoError(t, err)
 	assert.Empty(t, entering)
-	assert.Equal(t, 2, c.revLists)
+	assert.Equal(t, 3, c.revLists, "the entering commits of Paths, then the views of the test with their own limit")
+}
+
+// TestPaths_ChangedAndRevertedInOnePush: a commit that changes a file and a
+// commit that reverts it leave no net diff, but the default branch and a
+// protected branch still count the change, and so do the candidates of a
+// branch that takes both commits from another branch.
+func TestPaths_ChangedAndRevertedInOnePush(t *testing.T) {
+	f := newFixture(t)
+	base := f.commit("base", map[string]string{"ci.yml": "v1", "app.go": "a"})
+	f.commit("evil", map[string]string{"ci.yml": "evil"})
+	back := f.commit("revert", map[string]string{"ci.yml": "v1"})
+	f.publish(base+":refs/heads/main", base+":refs/heads/release/1")
+	f.stage(back)
+	s, _ := f.set("refs/heads/main")
+	for _, tc := range []struct {
+		ref   string
+		scope module.Scope
+	}{{"refs/heads/main", def}, {"refs/heads/release/1", module.Scope{Class: module.ClassProtected, Key: "gitlab"}}} {
+		u := update(base, back, tc.ref)
+		paths, err := s.Paths(ctx, u, tc.scope)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ci.yml"}, paths, tc.ref)
+		candidates, err := s.CandidatePaths(ctx, u)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ci.yml"}, candidates, "the candidates are a superset of Paths: %s", tc.ref)
+	}
+
+	// Both commits are in another branch first: no new commits, still a candidate.
+	f.publish(back + ":refs/heads/feature")
+	s, _ = f.set("refs/heads/main")
+	u := update(base, back, "refs/heads/release/1")
+	commits, err := s.NewCommits(ctx, u, 10)
+	require.NoError(t, err)
+	assert.Empty(t, commits)
+	candidates, err := s.CandidatePaths(ctx, u)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ci.yml"}, candidates)
+	paths, err := s.Paths(ctx, u, module.Scope{Class: module.ClassProtected, Key: "gitlab"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ci.yml"}, paths)
+	paths, err = s.Paths(ctx, update(base, back, "refs/heads/feature2"), other)
+	require.NoError(t, err)
+	assert.Empty(t, paths, "an ordinary branch checks only new commits")
 }
 
 func TestPaths_RebaseOnMainOnlyOwnChanges(t *testing.T) {
@@ -328,7 +371,7 @@ func TestMemoised(t *testing.T) {
 		_, err = s.Paths(ctx, u, other)
 		require.NoError(t, err)
 	}
-	assert.Equal(t, 1, c.revLists, "one rev-list per ref and view")
+	assert.Equal(t, 2, c.revLists, "one rev-list per ref and view: old..new of the candidates, then the new commits")
 }
 
 // fixtureGit is the git of the fixtures: GIT_BIN when it is a path. exec looks

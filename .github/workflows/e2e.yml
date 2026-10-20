@@ -40,3 +40,13 @@ jobs:
       - run: make test-e2e
         env:
           GITLAB_VERSION: ${{ matrix.gitlab }}
+      - if: failure()
+        run: make test-e2e-logs
+        env:
+          GITLAB_VERSION: ${{ matrix.gitlab }}
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs-${{ matrix.gitlab }}
+          path: bin/e2e-logs/
+          retention-days: 14

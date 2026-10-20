@@ -4,12 +4,14 @@ package e2e
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -515,7 +517,19 @@ func TestOps_DefaultBranchSwitched(t *testing.T) {
 	mustCommit(t, alice, p, "main", "", "feat: before the switch", create("a.txt", "1"))
 	createBranch(t, alice, p, "legacy", "main")
 	require.NoError(t, gl.root(t.Context(), http.MethodPut, p.api(""), map[string]any{"default_branch": "legacy"}, nil))
-	_, err := commit(t, alice, p, "main", "", "feat: after the switch", update("a.txt", "2"))
+	var got struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	require.NoError(t, gl.root(t.Context(), http.MethodGet, p.api(""), nil, &got))
+	require.Equal(t, "legacy", got.DefaultBranch)
+	sha, err := commit(t, alice, p, "main", "", "feat: after the switch", update("a.txt", "2"))
+	if err == nil {
+		// What the hook saw tells a HEAD that was not switched yet from a hook that did not run.
+		h := fmt.Sprintf("%x", sha256.Sum256([]byte(strconv.Itoa(p.ID))))
+		repo := "/var/opt/gitlab/git-data/repositories/@hashed/" + h[:2] + "/" + h[2:4] + "/" + h + ".git"
+		t.Logf("commit %s entered main\nHEAD: %s\naudit: %+v\ngitaly:\n%s", sha, inContainer(t, "cat "+repo+"/HEAD"), auditEvents(t, p.Path),
+			inContainer(t, "grep -E '"+p.Path+"|"+h+"' /var/log/gitlab/gitaly/current | grep -E 'PreReceiveHook|UserCommitFiles|WriteRef' || true"))
+	}
 	requireHookDenied(t, err, "the default branch legacy is not one of main")
 	e := requireEvent(t, p, "deny of the switched default", func(e auditEvent) bool { return e.Event == "decision" && e.Decision == "deny" })
 	assert.Equal(t, "default_branch_not_allowed", e.Code)

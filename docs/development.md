@@ -42,7 +42,7 @@ make code-lint test-unit test-integration
 | `test-coverage` | unit-тести з покриттям у `coverage/`. Integration-тести проходять широкі шляхи і в покриття не входять. У CI job `unit` відправляє `coverage/coverage.out` у Codecov: у PR з'являються коментар з різницею покриття проти main і перевірка `codecov/project`, яка падає, якщо покриття проєкту впало більш ніж на 1% |
 | `test-fuzz` | кожна fuzz-ціль по `FUZZTIME` |
 | `test-load` | бенчмарки hook |
-| `test-e2e`, `test-e2e-down` | стенд GitLab CE і сценарії на ньому |
+| `test-e2e`, `test-e2e-down`, `test-e2e-logs` | стенд GitLab CE і сценарії на ньому |
 | `security-sast`, `security-dependency-scan`, `security-secret-scan` | gosec, govulncheck, gitleaks |
 | `release-snapshot` | архіви й пакети без підпису і публікації |
 
@@ -110,7 +110,7 @@ make test-e2e
 make test-e2e-down
 ```
 
-`test-e2e` збирає бінарник під Linux, піднімає в docker compose GitLab CE `GITLAB_VERSION` і gitlab-runner, готує стенд через API (користувачі, групи, service account, проєкти, SSH-ключі, runner), встановлює hook командою `install-hook` і запускає сценарії з `tests/e2e`. Перший старт GitLab займає кілька хвилин; стенд живе між запусками, повторний `make test-e2e` лише заново готує стан. `test-e2e-down` видаляє стенд разом з volumes.
+`test-e2e` збирає бінарник під Linux, піднімає в docker compose GitLab CE `GITLAB_VERSION` і gitlab-runner, готує стенд через API (користувачі, групи, service account, проєкти, SSH-ключі, runner), встановлює hook командою `install-hook` і запускає сценарії з `tests/e2e`. Перший старт GitLab займає кілька хвилин; стенд живе між запусками, повторний `make test-e2e` лише заново готує стан. `test-e2e-down` видаляє стенд разом з volumes. `test-e2e-logs` копіює зі стенду в `bin/e2e-logs/` audit log, логи Gitaly, Rails, Sidekiq і Workhorse. Коли e2e падає в CI, workflow зберігає їх артефактом `e2e-logs-<версія>` на 14 днів.
 
 | Змінна | За замовчуванням | Значення |
 | --- | --- | --- |

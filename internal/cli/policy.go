@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +18,9 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/identity"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/branch"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
 )
 
 // maxRangeCommits bounds lint-commit --range.
@@ -56,9 +59,17 @@ func readPolicyFile(path string, m module.Module) ([]byte, error) {
 	return data, err
 }
 
+// target is a policy file that validate checks.
+type target struct {
+	path string
+	mod  module.Module
+}
+
 // runValidate implements "validate [-f FILE] [--module NAME] [--config FILE]
-// [--online [--project P]]": the checks of acceptance; with --online also the
-// principals through the API of the server config.
+// [--online [--project P]] [--branch NAME] [--tag NAME]": the checks of
+// acceptance; with --online also the principals through the API of the
+// server config; --branch and --tag tell what the merged BRANCHPOLICY or
+// TAGPOLICY requires of a name.
 func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
@@ -67,19 +78,22 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 	configPath := fs.String("config", "", "server config: presets; with --online also gitlab_url and token_file")
 	online := fs.Bool("online", false, "also check that principals exist, through the GitLab API of --config")
 	project := fs.String("project", "", "with --online: project ID or path, to check the access of admins")
+	branchName := fs.String("branch", "", "show the BRANCHPOLICY rule of a new branch with this name and its result")
+	tagName := fs.String("tag", "", "show the TAGPOLICY rules of a tag with this name and their signers")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
 	out := &output{w: stdio.Out}
-	if fs.NArg() > 0 {
+	usage := func(format string, a ...any) int {
 		out.w = stdio.Err
-		out.printf("gitlab-repopolicy validate: unexpected arguments %q\n", fs.Args())
+		out.printf("gitlab-repopolicy validate: "+format+"\n", a...)
 		return withOutput(out.err, ExitUsage)
 	}
+	if fs.NArg() > 0 {
+		return usage("unexpected arguments %q", fs.Args())
+	}
 	if *online && *configPath == "" {
-		out.w = stdio.Err
-		out.printf("gitlab-repopolicy validate: --online needs --config with gitlab_url and token_file\n")
-		return withOutput(out.err, ExitUsage)
+		return usage("--online needs --config with gitlab_url and token_file")
 	}
 	s, err := moduleSettings(*configPath)
 	if err != nil {
@@ -99,10 +113,15 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 			return withOutput(out.err, ExitError)
 		}
 	}
-	var targets []struct {
-		path string
-		mod  module.Module
+	// queries are the modules whose file --branch and --tag need.
+	queries := map[string]string{}
+	if *branchName != "" {
+		queries["branchpolicy"] = "--branch"
 	}
+	if *tagName != "" {
+		queries["tagpolicy"] = "--tag"
+	}
+	var targets []target
 	switch {
 	case *file != "":
 		var m module.Module
@@ -112,31 +131,29 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 			}
 		}
 		if m == nil {
-			out.w = stdio.Err
-			out.printf("gitlab-repopolicy validate: %s is not a policy file; use --module with one of %s\n", *file, moduleNames(mods))
-			return withOutput(out.err, ExitUsage)
+			return usage("%s is not a policy file; use --module with one of %s", *file, moduleNames(mods))
 		}
-		targets = append(targets, struct {
-			path string
-			mod  module.Module
-		}{*file, m})
+		targets = append(targets, target{*file, m})
 	default:
 		for _, m := range mods {
 			if _, err := os.Stat(m.File()); err == nil {
-				targets = append(targets, struct {
-					path string
-					mod  module.Module
-				}{m.File(), m})
+				targets = append(targets, target{m.File(), m})
 			}
 		}
-		if len(targets) == 0 {
-			out.printf("no policy files in the current directory\n")
-			return withOutput(out.err, ExitOK)
+	}
+	for _, mod := range slices.Sorted(maps.Keys(queries)) {
+		flagName := queries[mod]
+		if !slices.ContainsFunc(targets, func(t target) bool { return t.mod.Name() == mod }) {
+			return usage("%s needs a %s file: -f FILE or %s in the current directory", flagName, strings.ToUpper(mod), strings.ToUpper(mod))
 		}
+	}
+	if len(targets) == 0 {
+		out.printf("no policy files in the current directory\n")
+		return withOutput(out.err, ExitOK)
 	}
 	code := ExitOK
 	for _, tg := range targets {
-		problems, err := validateFile(ctx, tg.path, tg.mod, v)
+		p, problems, err := validateFile(ctx, tg.path, tg.mod, v)
 		if err != nil {
 			out.printf("%s: invalid\n  %v\n", tg.path, err)
 			code = ExitError
@@ -167,24 +184,131 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 		for _, n := range notes {
 			out.printf("  not checked: %s\n", n)
 		}
+		if len(errs) > 0 {
+			continue
+		}
+		printOrigins(out, p)
+		switch {
+		case tg.mod.Name() == "branchpolicy" && *branchName != "":
+			if bp, ok := p.(*branch.Policy); ok {
+				printBranch(ctx, out, bp, *branchName, v)
+			}
+		case tg.mod.Name() == "tagpolicy" && *tagName != "":
+			printTag(out, p, *tagName)
+		}
 	}
 	return withOutput(out.err, code)
 }
 
-func validateFile(ctx context.Context, path string, m module.Module, v module.Validator) ([]module.Problem, error) {
+func validateFile(ctx context.Context, path string, m module.Module, v module.Validator) (module.Policy, []module.Problem, error) {
 	data, err := readPolicyFile(path, m)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	p, err := m.Parse(data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	problems := p.Validate(ctx, v)
 	if vv, ok := p.(module.VersionValidator); ok {
 		problems = append(problems, vv.ValidateVersion(nil, time.Now())...)
 	}
-	return problems, nil
+	return p, problems, nil
+}
+
+// printOrigins shows where the merged rules and their fields come from, for
+// a file that extends presets.
+func printOrigins(out *output, p module.Policy) {
+	pu, ok := p.(module.PresetUser)
+	if !ok || len(pu.Presets()) == 0 {
+		return
+	}
+	names := make([]string, 0, len(pu.Presets()))
+	for _, ref := range pu.Presets() {
+		names = append(names, ref.Name)
+	}
+	out.printf("  extends: %s\n", strings.Join(names, ", "))
+	for _, r := range pu.Origins() {
+		out.printf("  rule %s: %s\n", r.Rule, strings.Join(r.Layers, ", "))
+		for _, f := range r.Fields {
+			out.printf("    %s: %s\n", f.Field, strings.Join(f.Layers, ", "))
+		}
+	}
+}
+
+// printBranch tells what the rule of a new branch name requires; the user
+// prefix is checked only with --online.
+func printBranch(ctx context.Context, out *output, p *branch.Policy, name string, v module.Validator) {
+	r, ok := p.RuleFor(name)
+	if !ok {
+		out.printf("branch %s: no rule matches, the name is not checked\n", name)
+		return
+	}
+	out.printf("branch %s: rule %s (match: %s; from %s)\n", name, r.Rule, r.Match, strings.Join(r.Source, ", "))
+	denied := func(why string) {
+		out.printf("  result: denied, %s\n", why)
+		if r.Message != "" {
+			out.printf("  message: %s\n", r.Message)
+		}
+	}
+	if r.Deny {
+		denied("branches of this class may not be created")
+		return
+	}
+	var requires []string
+	if r.UserPrefix {
+		prefix, _, found := strings.Cut(name, "/")
+		if !found || prefix == "" {
+			denied("the name does not start with a GitLab username and /")
+			return
+		}
+		if v == nil {
+			requires = append(requires, prefix+" is an active GitLab user (checked with --online)")
+		} else {
+			users, st := v.Users(ctx, []string{prefix})
+			u, found := users[strings.ToLower(prefix)]
+			switch {
+			case !st.IsConfirmed():
+				requires = append(requires, prefix+" is an active GitLab user (not checked: "+st.Reason()+")")
+			case !found || !u.Active:
+				denied(prefix + " is not an active GitLab user")
+				return
+			default:
+				out.printf("  %s is an active GitLab user\n", prefix)
+			}
+		}
+	}
+	if r.Protected {
+		requires = append(requires, "the project protects the branch in Settings > Repository > Protected branches")
+	}
+	for _, req := range requires {
+		out.printf("  requires: %s\n", req)
+	}
+	if len(requires) == 0 {
+		out.printf("  result: allowed\n")
+		return
+	}
+	out.printf("  result: allowed when the requirements hold\n")
+}
+
+// printTag tells which rules apply to a tag name and which keys may sign it;
+// signatures are not checked offline.
+func printTag(out *output, p module.Policy, name string) {
+	r, ok := tag.RulesFor(p, name)
+	if !ok {
+		out.printf("tag %s: no rule matches, the tag is not checked\n", name)
+		return
+	}
+	out.printf("tag %s: rules %s (from %s)\n", name, strings.Join(r.Rules, ", "), strings.Join(r.Source, ", "))
+	if len(r.Signers) == 0 {
+		out.printf("  signers: none, the matching rules have no signer in common; every such tag is denied\n")
+	} else {
+		out.printf("  signers: %s\n", strings.Join(r.Signers, ", "))
+	}
+	if r.Protected {
+		out.printf("  requires: the project protects the tag in Settings > Repository > Protected tags\n")
+	}
+	out.printf("  the tag must be signed by one of the signers; validate does not check signatures\n")
 }
 
 // onlineValidator answers the online checks of validate --online. Without a

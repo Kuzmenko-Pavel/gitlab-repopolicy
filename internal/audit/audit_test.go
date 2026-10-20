@@ -35,8 +35,10 @@ func sampleEvent() Event {
 		ProjectID: 812, ProjectPath: "example/payments/deployment", UserID: 314, Username: "alice",
 		GLID: "user-314", Protocol: "web", Ref: "refs/heads/main",
 		OldRev: "9f1c", NewRev: "b77a", AnchorRev: "9f1c", PolicyBlob: "3e5d",
-		Violations: []Violation{{Rule: "ci-config", Paths: []string{".gitlab-ci.yml"}, Reason: "not in allow: dev-1"}},
-		APICalls:   2, DurationMS: 143,
+		Violations: []Violation{{Rule: "ci-config", Paths: []string{".gitlab-ci.yml"}, Reason: "not in allow: dev-1",
+			Source: []string{"preset:org-ci", "file"}}},
+		Presets:  []Preset{{Name: "org-ci", SHA256: "5b0d7e3a1c9f4e2b8a6d0c3f7e1b9a4d2c8f6e0b3a7d1c5f9e2b4a8d6c0f3e7b"}},
+		APICalls: 2, DurationMS: 143,
 	}
 }
 

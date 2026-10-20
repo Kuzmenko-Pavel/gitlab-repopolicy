@@ -99,3 +99,27 @@ func TestBranchPolicy_InvalidAnchorSkipped(t *testing.T) {
 	assert.Len(t, Events(s.Audit(), "invalid_branch_policy"), 1)
 	assert.Empty(t, Events(s.Audit(), "invalid_policy"))
 }
+
+// TestBranchPolicy_AuditSourceAndPresets: a decision names the layers of the
+// rule and the presets of the file with their digests.
+func TestBranchPolicy_AuditSourceAndPresets(t *testing.T) {
+	s, _ := branchStand(t)
+	s.Commit("feat: x", map[string]string{"a": "1"})
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/Fix_Login"), "BRANCHPOLICY rule \"other\"")
+	ev := Events(s.Audit(), "decision")
+	require.Len(t, ev, 1)
+	vs := ev[0]["violations"].([]any)
+	require.Len(t, vs, 1)
+	assert.Equal(t, []any{"preset:team"}, vs[0].(map[string]any)["source"])
+	presets := ev[0]["presets"].([]any)
+	require.Len(t, presets, 1)
+	p := presets[0].(map[string]any)
+	assert.Equal(t, "team", p["name"])
+	assert.Regexp(t, `^[0-9a-f]{64}$`, p["sha256"])
+
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/master"), "BRANCHPOLICY rule \"no-master\"")
+	ev = Events(s.Audit(), "decision")
+	require.Len(t, ev, 1)
+	assert.Equal(t, []any{"file"}, ev[0]["violations"].([]any)[0].(map[string]any)["source"])
+	assert.Equal(t, p["sha256"], ev[0]["presets"].([]any)[0].(map[string]any)["sha256"], "the digest does not change between pushes")
+}

@@ -233,7 +233,7 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 			Summary: fmt.Sprintf("%s: only people listed in PATHPOLICY rule %s may change it", filesText(names), r.name),
 			Reason:  "principal is not a person: " + e.in.Principal.GLID, Help: r.helpOf(), Source: r.source})
 		e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventUnknownPrincipal, Ref: u.Ref, OldRev: u.Old, NewRev: u.New,
-			Violations: []audit.Violation{{Rule: r.name, Paths: names}}})
+			Violations: []audit.Violation{{Rule: r.name, Paths: names, Source: r.source}}})
 	case !r.allows(person.Username):
 		e.deny(module.Violation{Code: module.CodeProtectedPath, Rule: r.name, Ref: u.Ref, Items: hit,
 			Facts:   []string{"may change them: " + strings.Join(r.allow, ", ")},

@@ -266,3 +266,28 @@ func TestRun_BranchPolicyOnly(t *testing.T) {
 	assert.Equal(t, []string{CheckDefaultBranch, CheckProtected}, checks(rep.Drifted()[0]))
 	assert.Equal(t, "not protected: release/v1.0.0 (BRANCHPOLICY)", rep.Drifted()[0].Drifts[1].Reason, "the default branch itself is not required")
 }
+
+func TestRun_Presets(t *testing.T) {
+	api := healthy()
+	api.projects = append(api.projects, project(2, "acme/lib"))
+	api.files["1:main:COMMITPOLICY"] = "version: 1\nextends: org\n"
+	api.files["2:main:COMMITPOLICY"] = "version: 1\nextends: missing\n"
+	api.files["2:main:TAGPOLICY"] = "version: 1\nextends: missing\n"
+	api.branches[2], api.repo[2], api.tags[2] = []string{"main"}, []string{"main"}, []string{"v*"}
+	presets := map[string]map[string]any{"commitpolicy": {"org": map[string]any{"rules": map[string]any{
+		"all": map[string]any{"match": "all", "parser": "conventional", "message": "m",
+			"checks": map[string]any{"type-enum": map[string]any{"level": "error", "value": []any{"feat"}}}}}}}}
+	set := modules.Default(modules.Settings{Presets: presets})
+	rep, err := Run(context.Background(), api, Options{Expected: expected(), DefaultBranches: []string{"main"}, Guard: set.Root, Modules: set.All()})
+	require.NoError(t, err)
+	require.Len(t, rep.Checked, 2)
+	assert.Empty(t, rep.Checked[0].Drifts, "the preset exists")
+	require.Len(t, rep.Drifted(), 1)
+	d := rep.Drifted()[0]
+	assert.Equal(t, int64(2), d.ID)
+	assert.Equal(t, []string{CheckPolicy, CheckPolicy}, checks(d))
+	assert.Equal(t, `COMMITPOLICY on main: extends: preset "missing" is not defined in the server config`, d.Drifts[0].Reason,
+		"the module is skipped on a push")
+	assert.Equal(t, `TAGPOLICY on main cannot be parsed: extends: preset "missing" is not defined in the server config`, d.Drifts[1].Reason,
+		"the file is broken")
+}

@@ -31,6 +31,7 @@ type policy struct {
 	keys    []*key
 	byLabel map[string]*key
 	presets []module.PresetRef
+	origins []module.RuleOrigin
 }
 
 type rule struct {
@@ -64,7 +65,7 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &policy{byLabel: map[string]*key{}, presets: res.Refs(s.presets)}
+	p := &policy{byLabel: map[string]*key{}, presets: res.Refs(s.presets), origins: res.RuleOrigins()}
 	if keys := res.Doc.Fields["keys"]; keys != nil {
 		for _, label := range slices.Sorted(slices.Values(keys.Keys)) {
 			k, err := parseKey(label, keys.Fields[label].Str)
@@ -101,6 +102,9 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 // Presets are the presets the file extends, for the audit log.
 func (p *policy) Presets() []module.PresetRef { return p.presets }
 
+// Origins are the merged rules with their layers, for validate.
+func (p *policy) Origins() []module.RuleOrigin { return p.origins }
+
 func (r *rule) allows(label string) bool {
 	for _, s := range r.signers {
 		if s == label {
@@ -108,6 +112,37 @@ func (r *rule) allows(label string) bool {
 		}
 	}
 	return false
+}
+
+// NameRules is what TAGPOLICY requires of a tag name, for validate --tag.
+type NameRules struct {
+	Rules []string
+	// Signers are the keys every matching rule allows, as "label (format)".
+	Signers   []string
+	Protected bool
+	Source    []string
+}
+
+// RulesFor returns the rules of a tag name in a parsed TAGPOLICY; ok is
+// false when no rule matches.
+func RulesFor(p module.Policy, name string) (NameRules, bool) {
+	tp, isTag := p.(*policy)
+	if !isTag {
+		return NameRules{}, false
+	}
+	rules := tp.matching(name)
+	if len(rules) == 0 {
+		return NameRules{}, false
+	}
+	out := NameRules{Source: sources(rules)}
+	for _, r := range rules {
+		out.Rules = append(out.Rules, r.name)
+		out.Protected = out.Protected || r.protected
+	}
+	for _, l := range allowedSigners(rules) {
+		out.Signers = append(out.Signers, tp.keysText([]string{l}))
+	}
+	return out, true
 }
 
 // matching are the rules whose match has the tag name.

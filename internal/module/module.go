@@ -226,6 +226,24 @@ type PresetRef struct {
 // PresetUser is a policy that extends presets of the server config.
 type PresetUser interface {
 	Presets() []PresetRef
+	// Origins are the merged rules in merge order with their layers.
+	Origins() []RuleOrigin
+}
+
+// RuleOrigin is a merged rule with the layers it comes from, "preset:<name>"
+// or "file", for validate.
+type RuleOrigin struct {
+	Rule   string
+	Layers []string
+	// Fields are the fields of the rule in its order: the layer whose value
+	// won, or every layer that set something in a mapping.
+	Fields []FieldOrigin
+}
+
+// FieldOrigin is a field of a merged rule with its layers.
+type FieldOrigin struct {
+	Field  string
+	Layers []string
 }
 
 // Item is a file or a commit with optional details.

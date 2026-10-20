@@ -170,6 +170,7 @@ code-lint-commits: code-build
 code-generate:
 	go test ./internal/schema -run '^TestSchemas$$' -update
 	go test ./internal/report -run '^TestGolden$$' -update
+	go test ./internal/audit -run '^TestGolden$$' -update
 
 .PHONY: code-deps-update
 ## Update dependencies of the product and of every tool module.

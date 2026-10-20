@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +123,14 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 		default:
 			allowed = false
 			out.printf("%s: NOT allowed; allow: %s\n", head, strings.Join(r.Allow, ", "))
+		}
+		// The fields of a rule from a preset say which layer set each one.
+		if slices.ContainsFunc(r.Source, func(l string) bool { return strings.HasPrefix(l, "preset:") }) {
+			fields := make([]string, 0, len(r.Fields))
+			for _, f := range r.Fields {
+				fields = append(fields, f.Field+" "+strings.Join(f.Layers, ", "))
+			}
+			out.printf("    fields from: %s\n", strings.Join(fields, "; "))
 		}
 	}
 	if allowed {

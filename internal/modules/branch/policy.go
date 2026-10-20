@@ -28,6 +28,7 @@ type Policy struct {
 	// rules are ordered by priority: the first rule that matches a name wins.
 	rules   []*rule
 	presets []module.PresetRef
+	origins []module.RuleOrigin
 	// unusable says why the rules cannot be used: a missing or broken
 	// preset, or a merge result that fails its checks. The module is then
 	// skipped with a warning.
@@ -71,7 +72,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 		return nil, err
 	}
 	mode := res.Doc.Fields["mode"]
-	p := &Policy{warnMode: mode != nil && mode.Str == "warn", presets: res.Refs(s.presets)}
+	p := &Policy{warnMode: mode != nil && mode.Str == "warn", presets: res.Refs(s.presets), origins: res.RuleOrigins()}
 	for _, name := range res.Rules() {
 		var y ruleYAML
 		if err := res.DecodeRule(name, &y); err != nil {
@@ -91,6 +92,9 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 
 // Presets are the presets the file extends, for the audit log.
 func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// Origins are the merged rules with their layers, for validate.
+func (p *Policy) Origins() []module.RuleOrigin { return p.origins }
 
 // check finds what makes the merged rules unusable: a repeated priority
 // leaves the order to chance, a rule after match: all or with the match of a
@@ -137,6 +141,30 @@ func (p *Policy) Validate(context.Context, module.Validator) []module.Problem {
 		problems = append(problems, module.Problem{Msg: line})
 	}
 	return problems
+}
+
+// NameRule is the rule of the class a branch name falls into, for validate
+// --branch.
+type NameRule struct {
+	Rule                        string
+	Match                       string
+	Deny, UserPrefix, Protected bool
+	Message                     string
+	Source                      []string
+}
+
+// RuleFor returns the rule of a new branch name; ok is false when no rule
+// matches or the rules cannot be used.
+func (p *Policy) RuleFor(name string) (NameRule, bool) {
+	if p.unusable != nil {
+		return NameRule{}, false
+	}
+	r := first(p.rules, name)
+	if r == nil {
+		return NameRule{}, false
+	}
+	return NameRule{Rule: r.name, Match: r.match.String(), Deny: r.deny, UserPrefix: r.userPrefix, Protected: r.protected,
+		Message: r.message, Source: r.source}, true
 }
 
 // MustProtect reports whether a branch must be protected in GitLab: its rule

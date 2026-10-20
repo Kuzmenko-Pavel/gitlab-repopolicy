@@ -66,6 +66,6 @@ func (a App) runSettingsCheck(ctx context.Context, args []string, _ []string, st
 	if len(drifted) > 0 {
 		return withOutput(out.err, ExitError)
 	}
-	out.printf("%d projects with PATHPOLICY checked, no drift\n", len(rep.Checked))
+	out.printf("%d projects with policy files checked, no drift\n", len(rep.Checked))
 	return withOutput(out.err, ExitOK)
 }

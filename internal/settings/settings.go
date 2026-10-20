@@ -1,7 +1,7 @@
 // Package settings implements settings-check: it compares the settings of
-// projects with PATHPOLICY or BRANCHPOLICY against the expectations of the
-// server config and of BRANCHPOLICY, and checks that the principals of their
-// policies still exist.
+// projects with policy files against the expectations of the server config
+// and of BRANCHPOLICY, and checks that the policy files can be used and that
+// the principals of their policies still exist.
 // Settings live in the database of Rails, the hook never sees them change, so
 // this is detection, not prevention.
 package settings
@@ -48,7 +48,7 @@ type Drift struct {
 	Reason string
 }
 
-// Project is the result of one project with PATHPOLICY.
+// Project is the result of one project with policy files.
 type Project struct {
 	ID     int64
 	Path   string
@@ -57,9 +57,9 @@ type Project struct {
 
 // Report of a run.
 type Report struct {
-	// Checked are the projects with PATHPOLICY, in ID order.
+	// Checked are the projects with policy files, in ID order.
 	Checked []Project
-	// Skipped is the number of member projects without PATHPOLICY or in personal namespaces.
+	// Skipped is the number of member projects without policy files or in personal namespaces.
 	Skipped int
 }
 

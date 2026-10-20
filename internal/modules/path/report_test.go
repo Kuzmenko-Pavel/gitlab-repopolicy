@@ -65,6 +65,11 @@ func TestExplainPath(t *testing.T) {
 
 	got, st := p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/feature", "alice", refs)
 	require.True(t, st.IsConfirmed())
+	require.NotEmpty(t, got)
+	assert.Equal(t, module.FieldOrigin{Field: "allow", Layers: file}, got[0].Fields[2])
+	for i := range got {
+		got[i].Fields = nil
+	}
 	assert.Equal(t, []PathRule{
 		{Name: "ci", Match: "all", Applies: true, Allow: []string{"platform-lead", "Alice"}, Allowed: true, Source: file},
 		{Name: "main-only", Match: "default", Applies: false, Allow: []string{"alice"}, Allowed: true, Source: file},

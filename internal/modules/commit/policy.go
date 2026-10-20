@@ -50,6 +50,7 @@ type Policy struct {
 	warnMode bool
 	rules    []*rule
 	presets  []module.PresetRef
+	origins  []module.RuleOrigin
 	// unusable says why the rules cannot be used: a preset is missing or
 	// broken. The module is then skipped with a warning.
 	unusable error
@@ -107,7 +108,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 		return nil, err
 	}
 	mode := res.Doc.Fields["mode"]
-	p := &Policy{warnMode: mode != nil && mode.Str == "warn", presets: res.Refs(s.presets)}
+	p := &Policy{warnMode: mode != nil && mode.Str == "warn", presets: res.Refs(s.presets), origins: res.RuleOrigins()}
 	for _, name := range res.Rules() {
 		var y ruleYAML
 		if err := res.DecodeRule(name, &y); err != nil {
@@ -124,6 +125,9 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 
 // Presets are the presets the file extends, for the audit log.
 func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// Origins are the merged rules with their layers, for validate.
+func (p *Policy) Origins() []module.RuleOrigin { return p.origins }
 
 // newRule builds a merged rule that Spec accepted.
 func newRule(name string, y ruleYAML, source []string) (*rule, error) {

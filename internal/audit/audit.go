@@ -52,15 +52,18 @@ type Event struct {
 	PolicyBlob  string      `json:"policy_blob,omitempty"`
 	Reason      string      `json:"reason,omitempty"`
 	Violations  []Violation `json:"violations,omitempty"`
-	Rules       []string    `json:"rules,omitempty"`
-	Signer      string      `json:"signer,omitempty"`
-	Fingerprint string      `json:"fingerprint,omitempty"`
-	Truncated   bool        `json:"truncated,omitempty"`
-	APICalls    int         `json:"api_calls"`
-	DurationMS  int64       `json:"duration_ms"`
-	Version     string      `json:"version"`
-	Git         string      `json:"git,omitempty"`
-	Node        string      `json:"node,omitempty"`
+	// Presets are the presets of the server config that the policy file of
+	// the module extends.
+	Presets     []Preset `json:"presets,omitempty"`
+	Rules       []string `json:"rules,omitempty"`
+	Signer      string   `json:"signer,omitempty"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	Truncated   bool     `json:"truncated,omitempty"`
+	APICalls    int      `json:"api_calls"`
+	DurationMS  int64    `json:"duration_ms"`
+	Version     string   `json:"version"`
+	Git         string   `json:"git,omitempty"`
+	Node        string   `json:"node,omitempty"`
 }
 
 // Violation is the audit view of a module violation; Reason may hold API results.
@@ -70,6 +73,16 @@ type Violation struct {
 	Paths   []string `json:"paths,omitempty"`
 	Commits []string `json:"commits,omitempty"`
 	Reason  string   `json:"reason,omitempty"`
+	// Source lists the layers the rules of the violation come from in merge
+	// order: "preset:<name>" or "file".
+	Source []string `json:"source,omitempty"`
+}
+
+// Preset is a preset of the server config with the SHA-256 of its canonical
+// JSON, so the audit log tells which version of the preset applied.
+type Preset struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
 }
 
 // Writer serialises events to a file opened with O_APPEND and, optionally, to

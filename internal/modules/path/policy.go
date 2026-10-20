@@ -37,6 +37,7 @@ type Policy struct {
 	admins  []string
 	rules   []*rule
 	presets []module.PresetRef
+	origins []module.RuleOrigin
 }
 
 type rule struct {
@@ -71,7 +72,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Policy{presets: res.Refs(s.presets)}
+	p := &Policy{presets: res.Refs(s.presets), origins: res.RuleOrigins()}
 	for _, a := range res.Doc.Fields["admins"].Items {
 		p.admins = append(p.admins, a.Str)
 	}
@@ -92,6 +93,9 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 
 // Presets are the presets the file extends, for the audit log.
 func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// Origins are the merged rules with their layers, for validate.
+func (p *Policy) Origins() []module.RuleOrigin { return p.origins }
 
 // helpOf is the help of a rule for its violation, nil without one.
 func (r *rule) helpOf() []module.Help {
@@ -208,6 +212,8 @@ type PathRule struct {
 	Allowed bool
 	// Source lists the layers of the rule: "preset:<name>" or "file".
 	Source []string
+	// Fields are the fields of the rule with their layers.
+	Fields []module.FieldOrigin
 }
 
 // ExplainPath returns the rules that match the path, for gitlab-repopolicy
@@ -227,8 +233,14 @@ func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		if !st.IsConfirmed() {
 			return nil, st
 		}
-		out = append(out, PathRule{Name: r.name, Match: r.match.String(), Applies: applies, Allow: r.allow,
-			Allowed: r.allows(username), Source: r.source})
+		pr := PathRule{Name: r.name, Match: r.match.String(), Applies: applies, Allow: r.allow,
+			Allowed: r.allows(username), Source: r.source}
+		for _, o := range p.origins {
+			if o.Rule == r.name {
+				pr.Fields = o.Fields
+			}
+		}
+		out = append(out, pr)
 	}
 	return out, module.Confirmed()
 }

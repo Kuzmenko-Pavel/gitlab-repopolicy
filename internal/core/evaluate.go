@@ -91,12 +91,29 @@ func (r *receive) apply(l *loaded, res *module.Result) {
 		if e.PolicyBlob == "" {
 			e.PolicyBlob = l.blob
 		}
+		e.Presets = presetsOf(l)
 		r.events = append(r.events, r.event(e))
 	}
 	if !res.Touched && len(res.Violations) == 0 {
 		return
 	}
-	r.events = append(r.events, r.decisionEvents(l, res)...)
+	for _, e := range r.decisionEvents(l, res) {
+		e.Presets = presetsOf(l)
+		r.events = append(r.events, e)
+	}
+}
+
+// presetsOf are the presets that the policy of a module extends.
+func presetsOf(l *loaded) []audit.Preset {
+	pu, ok := l.policy.(module.PresetUser)
+	if !ok {
+		return nil
+	}
+	var out []audit.Preset
+	for _, p := range pu.Presets() {
+		out = append(out, audit.Preset{Name: p.Name, SHA256: p.SHA256})
+	}
+	return out
 }
 
 // importantCode is the code that names the event of a ref: a failure of
@@ -158,7 +175,7 @@ func (r *receive) decisionEvents(l *loaded, res *module.Result) []audit.Event {
 			}
 		}
 		for _, v := range vs {
-			av := audit.Violation{Rule: v.Rule, Code: v.Code, Reason: v.Reason}
+			av := audit.Violation{Rule: v.Rule, Code: v.Code, Reason: v.Reason, Source: v.Source}
 			for _, it := range v.Items {
 				if it.Commit {
 					av.Commits = append(av.Commits, it.Name)

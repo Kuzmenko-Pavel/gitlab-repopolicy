@@ -1,0 +1,20 @@
+# Strict mode: only release and work branches may be created. The last rule
+# has match: all and deny, so a name of no other class is refused instead of
+# passing unchecked.
+version: 1
+
+rules:
+  release:
+    match: ['/^release\/v\d+\.\d+\.\d+$/']
+    priority: 10
+    protected: true
+    message: Release branches look like release/v1.4.0.
+  work:
+    match: ['/^[a-z0-9.]+\/[a-z0-9._-]+$/']
+    priority: 20
+    message: Work branches are <prefix>/<name>, for example kpn/disable_auth.
+  other:
+    match: all
+    priority: 1000
+    deny: true
+    message: Use release/vX.Y.Z or <prefix>/<name>.

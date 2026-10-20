@@ -1,0 +1,99 @@
+# The presets of a server config, only the presets key: in an installation
+# they are part of /etc/gitlab-repopolicy/config.yaml. A policy file takes
+# them by name with extends; validate --config examples/presets.yaml merges
+# them like the hook does.
+presets:
+  pathpolicy:
+    org-ci:
+      rules:
+        ci-config:
+          match: all
+          paths: [".gitlab-ci.yml", ".gitlab/ci/**"]
+          allow: [platform-lead, sre-lead]
+          message: The platform team changes the CI/CD configuration.
+          help:
+            contact: "#platform"
+        deploy:
+          match: all
+          paths: ["scripts/deploy/**"]
+          allow: [platform-lead]
+          message: The deploy scripts belong to platform-lead.
+
+  commitpolicy:
+    org-commits:
+      rules:
+        conventional:
+          match: default
+          parser: conventional
+          except:
+            merge_commit: true
+            git_reverts: true
+          checks:
+            type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
+            header-max-length: { level: error, value: 100 }
+            subject-full-stop: { level: error, value: forbid }
+          message: Commits in the default branch follow Conventional Commits.
+          help:
+            docs_url: https://www.conventionalcommits.org/en/v1.0.0/
+
+  branchpolicy:
+    org-branches:
+      rules:
+        release:
+          match: ['/^release\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+          priority: 100
+          protected: true
+          message: Release branches look like release/v1.4.0. Protect release/* with "Allowed to push and merge Maintainers".
+        release-bad:
+          match: ['/^release\//']
+          priority: 110
+          deny: true
+          message: Release branches look like release/v1.4.0.
+        hotfix:
+          match: ['/^hotfix\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+          priority: 200
+          protected: true
+          message: Hotfix branches look like hotfix/v1.4.1. Protect hotfix/* with "Allowed to push and merge Maintainers".
+        hotfix-bad:
+          match: ['/^hotfix\//']
+          priority: 210
+          deny: true
+          message: Hotfix branches look like hotfix/v1.4.1.
+        epic:
+          match: ['/^epic\/[a-z0-9][a-z0-9._-]*$/']
+          priority: 300
+          protected: true
+          message: Epic branches look like epic/payments. Protect epic/* in Protected branches.
+        epic-bad:
+          match: ['/^epic\//']
+          priority: 310
+          deny: true
+          message: Epic branches look like epic/payments.
+        demo:
+          match: ['/^demo\/[a-z0-9][a-z0-9._-]*$/']
+          priority: 400
+          protected: true
+          message: Demo branches look like demo/client-a. Protect demo/* in Protected branches.
+        demo-bad:
+          match: ['/^demo\//']
+          priority: 410
+          deny: true
+          message: Demo branches look like demo/client-a.
+        work:
+          match: ['/^[a-z0-9][a-z0-9._-]*\/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)\/)?[a-z0-9][a-z0-9._-]*$/']
+          priority: 900
+          user_prefix: true
+          message: Work branches are <username>/[<issue>/]<name>, for example kpn/disable_auth or kpn/PAY-12/refunds.
+
+  tagpolicy:
+    org-tags:
+      rules:
+        staging:
+          match: ['/^v\d+\.\d+\.\d+-staging$/']
+          signers: [release-lead, dev-lead]
+          message: Staging releases are signed by release-lead or dev-lead.
+        prod:
+          match: ['/^v\d+\.\d+\.\d+-prod$/']
+          signers: [release-lead]
+          protected: true
+          message: Prod releases are signed by release-lead. Protect v*-prod in Settings > Repository > Protected tags.

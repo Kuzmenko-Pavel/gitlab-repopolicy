@@ -200,3 +200,14 @@ func TestValidate_Tag(t *testing.T) {
 	assert.Equal(t, ExitUsage, code)
 	assert.Contains(t, errOut, "--branch needs a BRANCHPOLICY file")
 }
+
+func TestValidate_BrokenPreset(t *testing.T) {
+	inDir(t, map[string]string{
+		"COMMITPOLICY": goodPolicy,
+		"config.yaml":  "presets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all}\n",
+	})
+	code, out, _ := run(t, "validate", "--config", "config.yaml")
+	assert.Equal(t, ExitError, code, "a preset no file extends is still reported")
+	assert.Contains(t, out, "config.yaml: invalid presets\n  error: presets.commitpolicy.org: ")
+	assert.Contains(t, out, "COMMITPOLICY: valid\n")
+}

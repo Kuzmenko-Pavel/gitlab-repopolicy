@@ -1,0 +1,19 @@
+# Two requirements for the commits of the default branch, one rule each: no
+# work-in-progress headers, and a reference to an issue in a trailer.
+version: 1
+
+rules:
+  no-wip:
+    match: default
+    parser: free
+    checks:
+      pattern: { level: error, location: header, value: '!/^(WIP|fixup!|squash!)/i' }
+    message: Squash or reword work-in-progress commits before the merge.
+  issue-ref:
+    match: default
+    parser: free
+    except:
+      merge_commit: true
+    checks:
+      pattern: { level: error, location: trailer, keys: [Refs, Closes], value: '/^[A-Za-z0-9_.\/-]*#[0-9]+$/' }
+    message: 'End the message with a trailer such as "Refs: payments/api#123".'

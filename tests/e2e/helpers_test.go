@@ -26,9 +26,11 @@ import (
 const ciPolicy = `version: 1
 admins: [alice]
 rules:
-  - name: ci
+  ci:
+    match: all
     paths: ["ci/**"]
     allow: [alice]
+    message: CI belongs to alice.
 `
 
 // user returns a user created by the bootstrap.

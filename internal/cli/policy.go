@@ -147,11 +147,26 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 			return usage("%s needs a %s file: -f FILE or %s in the current directory", flagName, strings.ToUpper(mod), strings.ToUpper(mod))
 		}
 	}
+	// A broken preset does not stop the hook: only the files that extend it
+	// suffer, so validate reports it on its own.
+	code := ExitOK
+	var presetErrs []string
+	for _, m := range mods {
+		if r, ok := m.(module.PresetReporter); ok {
+			presetErrs = append(presetErrs, r.PresetErrors()...)
+		}
+	}
+	if len(presetErrs) > 0 {
+		out.printf("%s: invalid presets\n", *configPath)
+		for _, e := range presetErrs {
+			out.printf("  error: %s\n", e)
+		}
+		code = ExitError
+	}
 	if len(targets) == 0 {
 		out.printf("no policy files in the current directory\n")
-		return withOutput(out.err, ExitOK)
+		return withOutput(out.err, code)
 	}
-	code := ExitOK
 	for _, tg := range targets {
 		p, problems, err := validateFile(ctx, tg.path, tg.mod, v)
 		if err != nil {

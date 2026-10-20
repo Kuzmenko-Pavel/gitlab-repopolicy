@@ -18,21 +18,24 @@ import (
 var policyModules = map[string]string{"PATHPOLICY": "pathpolicy", "COMMITPOLICY": "commitpolicy", "TAGPOLICY": "tagpolicy", "BRANCHPOLICY": "branchpolicy"}
 
 // TestExamples covers the examples/ part of the compatibility corpus: every
-// example is a valid policy file of its module.
+// example is a valid policy file of its module, merged with the presets of
+// examples/presets.yaml, a server config with only presets.
 func TestExamples(t *testing.T) {
 	root := filepath.Join("..", "..", "examples")
+	presets, err := filepath.Abs(filepath.Join(root, "presets.yaml"))
+	require.NoError(t, err)
 	seen := map[string]int{}
 	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil || d.IsDir() || path == filepath.Join(root, "presets.yaml") {
 			return err
 		}
 		module, ok := policyModules[d.Name()]
-		if !assert.True(t, ok, "%s: examples hold only PATHPOLICY, COMMITPOLICY, TAGPOLICY and BRANCHPOLICY files", path) {
+		if !assert.True(t, ok, "%s: examples hold only PATHPOLICY, COMMITPOLICY, TAGPOLICY and BRANCHPOLICY files and presets.yaml", path) {
 			return nil
 		}
 		abs, err := filepath.Abs(path)
 		require.NoError(t, err)
-		out, code := (&Stand{t: t}).binary(t.TempDir(), "validate", "--module", module, "-f", abs)
+		out, code := (&Stand{t: t}).binary(t.TempDir(), "validate", "--config", presets, "--module", module, "-f", abs)
 		assert.Equal(t, 0, code, "%s:\n%s", path, out)
 		seen[module]++
 		return nil

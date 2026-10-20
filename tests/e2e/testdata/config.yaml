@@ -8,3 +8,8 @@ audit:
   file: /var/log/gitlab-repopolicy/audit.log
   stdout: false
 default_branch: [main]
+# The stand may run on a single CPU, where GitLab answers in seconds. The
+# hook total stays below the deadline Rails gives the Gitaly call, about 55s.
+timeouts:
+  total: 45s
+  http: 15s

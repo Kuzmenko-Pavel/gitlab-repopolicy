@@ -518,6 +518,17 @@ func TestOps_DefaultBranchSwitched(t *testing.T) {
 	alice := user("alice")
 	mustCommit(t, alice, p, "main", "", "feat: before the switch", create("a.txt", "1"))
 	createBranch(t, alice, p, "legacy", "main")
+	// Sidekiq handles the push of the README later: it points HEAD to the
+	// default branch it reads, then protects that branch. A switch made before
+	// it would be undone, so the test waits until main is protected.
+	waitUntil(t, 3*time.Minute, "protection of main", func() bool {
+		err := gl.root(t.Context(), http.MethodGet, p.api("/protected_branches/main"), nil, nil)
+		if isStatus(err, http.StatusNotFound) {
+			return false
+		}
+		require.NoError(t, err)
+		return true
+	})
 	require.NoError(t, gl.root(t.Context(), http.MethodPut, p.api(""), map[string]any{"default_branch": "legacy"}, nil))
 	var got struct {
 		DefaultBranch string `json:"default_branch"`

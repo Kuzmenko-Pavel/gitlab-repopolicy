@@ -35,19 +35,19 @@ A Maintainer is partly inside: their git changes are limited, project settings a
 | GitLab administrator | no | no | no | impersonation, membership |
 | root on a Gitaly node, the `git` user | no | no | no | writes around hooks |
 
-BRANCHPOLICY is not in the table because it does not tell actors apart. The rules are the same for everyone who can create a branch. It limits which branches can be created. `deny` forbids a class, and a name that falls into no class is denied. It is hygiene, not protection against an attacker. On an API failure the `user_prefix` and `protected` checks are skipped with a warning, and existing branches are not checked.
+BRANCHPOLICY is not in the table because it does not tell actors apart. The rules are the same for everyone who can create a branch. It limits which branches can be created: `deny` forbids a class, and a name that falls into no class is not checked. A rule with `match: all` and `deny: true` forbids everything that is not described. It is hygiene, not protection against an attacker. On an API failure the `user_prefix` and `protected` checks are skipped with a warning, and existing branches are not checked.
 
 ## Bypasses through project settings
 
 The hook is called only when a branch or a tag changes. Changes in Settings are writes to the GitLab database, and the hook does not see them. Every bypass needs the Maintainer role:
 
-| Maintainer action | With `refs: all` | With `refs: protected` | Compensation |
-| --- | --- | --- | --- |
-| "CI/CD configuration file" to an unprotected path, another project or a URL | **bypass** | **bypass** | `settings-check` |
-| push a changed CI to an ordinary branch, then protect the branch | closed | **bypass** | `refs: all` by default |
-| make a branch without policy files or with old versions the default | closed if `default_branch` is set | closed if `default_branch` is set | the hook denies every push to a project whose default branch is not in `default_branch`; effects without a push (a manual pipeline run, `CI_DEFAULT_BRANCH`) are detected by `settings-check` |
-| turn on push with `CI_JOB_TOKEN` | **bypass**: the job pushes as the user who started the pipeline | **bypass** | `settings-check` |
-| pipeline variables to change the behaviour of a job | out of scope | out of scope | a minimal role for pipeline variables |
+| Maintainer action | Result | Compensation |
+| --- | --- | --- |
+| "CI/CD configuration file" to an unprotected path, another project or a URL | **bypass** | `settings-check` |
+| make a branch without policy files or with old versions the default | closed if `default_branch` is set | the hook denies every push to a project whose default branch is not in `default_branch`; effects without a push (a manual pipeline run, `CI_DEFAULT_BRANCH`) are detected by `settings-check` |
+| turn on push with `CI_JOB_TOKEN` | **bypass**: the job pushes as the user who started the pipeline | `settings-check` |
+| remove the protection of a release branch | the content of the branch does not change, and a rule with a `match` list applies by the name of the branch, not by the protection in GitLab | `settings-check` for BRANCHPOLICY with `protected: true` |
+| pipeline variables to change the behaviour of a job | out of scope | a minimal role for pipeline variables |
 
 If `default_branch` has several names, for example `[main, master]` during a migration, switching the default between them is an accepted risk: the installation named both branches allowed itself.
 
@@ -55,18 +55,22 @@ If `default_branch` has several names, for example `[main, master]` during a mig
 
 ## What is protected
 
-- **A change of protected paths** in any way: a push over HTTPS and SSH, the merge button, auto-merge, the Web IDE, the API, revert and cherry-pick in the UI, a push from CI. The hook sees the identity of whoever makes the change, not the commit author
-- **Weakening the rules in the same push.** A policy is read from the default branch before the push; a new version of a policy cannot be used for itself
-- **A branch with its own weaker policy.** One anchor for the whole push: the rules for all branches and tags are taken from the commit the default branch pointed to before the push
-- **A forged author.** Author, committer and commit signatures are not used for authorization
-- **A deploy key created by an admin.** Not a person, denied on a protected path
-- **Client push options** do not affect the decision
-- **`refs/replace/*`.** Child git processes ignore replace refs, so a replaced object cannot hide a change
-- **Reverting a file with a force push** in default and protected branches is a change too, and it is checked
-- **Evil merge.** A path changed in the merge commit itself shows as a change
-- **A signed staging tag under a prod tag name.** The name inside the tag object is checked against the name it is pushed under
-- **Uncertainty.** An API failure, an expired token, a service account without access, an invalid policy, an internal error deny a protected change. An API failure never turns recovery on
-- **DoS through input.** Limits on size, number of rules, time and API calls; regular expressions in TAGPOLICY and in COMMITPOLICY references are RE2 with linear time, `pattern` runs with a timeout
+- **A change of protected paths in any way.** bob changes `.gitlab-ci.yml` with the Edit button of the UI, through the API, with a revert or a cherry-pick in the UI or with a push from CI. The hook sees whoever makes the change, not the commit author, and denies the same way as on `git push`
+- **Intermediate commits.** bob pushes to `main` a commit with a changed `.gitlab-ci.yml` and the next commit that reverts it. The resulting file is the same, but the pipeline of the first commit would run the change, so in the default branch, protected branches and branches of a `match` list every commit that enters the branch is checked
+- **Rewritten history in a shared branch (B+).** bob rebases a branch with a commit of alice and pushes their own new content of `ci.yml` in a rewritten commit. The hook lets through only content that this branch or the default branch already had, so new content cannot hide among rewritten commits
+- **Content from another branch.** bob creates a branch with their own `ci.yml` and then brings this content into the shared branch with a rebase. The allowed versions of the file come only from the branch itself and the default branch, not from other branches and tags, so another branch does not make content "known"
+- **A tag outside of branches.** bob puts a tag on a local commit with a changed `.gitlab-ci.yml` and pushes only the tag. The pipeline of the tag would run an unchecked commit, so a tag is accepted only when a branch holds its commit after the push
+- **Weakening the rules in the same push.** bob removes their restriction from PATHPOLICY and changes a protected file in the same push. The rules are read from the default branch before the push, so the new version applies only from the next push
+- **A branch with its own weaker policy.** bob pushes a branch where PATHPOLICY allows them everything. The rules for all branches and tags come from the default branch before the push
+- **A forged author.** bob writes a commit with `--author "alice <alice@example.com>"`. Author, committer and commit signatures are not used for the decision
+- **A deploy key created by an admin.** A push with a deploy key to a protected path is denied: a deploy key is not a person
+- **Client push options** (`git push -o ...`) do not affect the decision
+- **`refs/replace/*`.** bob pushes a replace ref so that a changed commit looks innocent. The hook ignores replace refs and sees the real object
+- **Reverting a file with a force push.** bob force-pushes `main` back to a commit with an old `ci.yml`. The difference of the content of the branch before and after the push is a change too
+- **Evil merge.** bob changes `ci.yml` in the merge commit itself while resolving a conflict. A path changed in the merge commit shows as a change
+- **A signed staging tag under a prod tag name.** bob takes a signed staging tag and pushes it as `v1.4.0-prod`. The name inside the tag object is checked against the name it is pushed under
+- **Uncertainty.** The GitLab API did not answer when the hook needs to know who bob is. An API failure, an expired token, a service account without access, a broken file or preset, an internal error deny a protected change. An API failure never turns recovery on
+- **DoS through input.** bob writes a commit message on which a regular expression would run for years. All regular expressions are RE2 with linear time, plus limits on size, the number of rules and commits, time and API calls
 
 ## Out of scope
 
@@ -75,8 +79,8 @@ If `default_branch` has several names, for example `[main, master]` during a mig
 - Two simultaneous pushes. The hook reads the anchor at the start of its push, and another push may change the default branch in the meantime. git updates a branch only if its value is still the one the push came with, so git itself rejects an outdated state of the default branch
 - The behaviour of the code that the protected CI builds and deploys: gitlab-repopolicy protects the pipeline, not the application
 - A rename or deletion of a user frees the username. If another person takes it, they get the rights from the policy until the policy is fixed. `settings-check` reports principals that no longer exist
-- A new branch or tag on an old commit that is already in a protected branch is not checked by PATHPOLICY and COMMITPOLICY. TAGPOLICY checks the signature of such a tag
-- A merge into an unprotected branch brings no new commits: PATHPOLICY does not check it, COMMITPOLICY checks only the merge commit, not the merged commits that are already in the repository
+- A new branch or tag on an old commit that a branch already holds is not checked by PATHPOLICY and COMMITPOLICY: this commit was checked with the branch. TAGPOLICY checks the signature of such a tag
+- A merge into an ordinary branch under `match: all` brings only content the repository already has: PATHPOLICY checks only new content, COMMITPOLICY only the merge commit. The change is checked when the branch is merged into `main`
 - A compromised private signing key: until the merge of the TAGPOLICY change that removes the key, it can sign a release. An SSH key also has no expiry: its lifetime and a separate key for signing are the responsibility of whoever adds the key to TAGPOLICY
 - The service account token reads the code, metadata and values of CI/CD variables of every group. This is a GitLab property of the Maintainer role and the `read_api` scope, the hook does not use it. On one Linux package node this is no more than the `git` user, which runs Rails and Gitaly, already has. With separate Gitaly nodes it is an accepted risk: protect the token file and the nodes
 - The hook does not protect the GitHub repository of the project itself: here repository rules and artifact signatures keep releases intact ([release.en.md](release.en.md))

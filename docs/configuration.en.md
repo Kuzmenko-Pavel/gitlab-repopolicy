@@ -50,8 +50,6 @@ breakglass_dir: /etc/gitlab-repopolicy/breakglass
 timeouts:
   total: 10s            # one hook invocation
   http: 3s              # one API request
-  pattern: 100ms        # the COMMITPOLICY pattern rule, per message
-  pattern_budget: 2s    # the same, per push
 
 # API calls per push; more is limit_exceeded.
 max_api_calls: 30
@@ -70,12 +68,13 @@ modules:
 # default is empty.
 default_branch: [main]
 
-# What settings-check expects of every project with PATHPOLICY. Empty values
+# What settings-check expects of the projects with policy files. Empty values
 # are not checked and are the default; ["v*"] and false below are examples.
-# Projects with PATHPOLICY also always get ci_config_path, principals and the
-# protection of the default branch checked; projects with PATHPOLICY or
-# BRANCHPOLICY the branches that BRANCHPOLICY requires to be protected;
-# protected_tags are checked only in projects with PATHPOLICY and TAGPOLICY.
+# Every policy file of a project is also checked to parse with its presets;
+# projects with PATHPOLICY always get ci_config_path, principals and the
+# protection of the default branch checked; projects with BRANCHPOLICY the
+# existing branches that its rules require to be protected; protected_tags
+# are checked only in projects with PATHPOLICY and TAGPOLICY.
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false
@@ -87,10 +86,13 @@ help:
   contact: ""
   docs_url: ""
 
-# Presets for "extends:" in COMMITPOLICY and in BRANCHPOLICY; examples are in
-# docs/configuration.md.
-commitpolicy_presets: {}
-branchpolicy_presets: {}
+# Presets for "extends:" in the policy files, by module. A preset holds only
+# rules; examples are in docs/configuration.md.
+presets:
+  pathpolicy: {}
+  commitpolicy: {}
+  branchpolicy: {}
+  tagpolicy: {}
 ```
 
 ## Settings
@@ -107,16 +109,13 @@ branchpolicy_presets: {}
 | `breakglass_dir` | `/etc/gitlab-repopolicy/breakglass` | break-glass grants ([operations.en.md](operations.en.md#break-glass)) |
 | `timeouts.total` | `10s` | one hook run. Exceeding it is `limit_exceeded` |
 | `timeouts.http` | `3s` | one API request. Not more than `timeouts.total` |
-| `timeouts.pattern` | `100ms` | the COMMITPOLICY `pattern` rule, per message |
-| `timeouts.pattern_budget` | `2s` | the same per push. Not less than `timeouts.pattern` |
 | `max_api_calls` | `30` | API calls per push. Exceeding it is `limit_exceeded` |
 | `modules.<name>` | `enabled` | `enabled` or `disabled` for `pathpolicy`, `commitpolicy`, `tagpolicy`, `branchpolicy` |
 | `default_branch` | empty | allowed names of the default branch for the hook and `settings-check`, see below |
 | `settings_check.*` | empty | what `settings-check` expects, see below |
 | `help.contact` | empty | who to ask, for example `#gitlab-support`. See below |
 | `help.docs_url` | empty | a link to the documentation of the rules for developers, `http://` or `https://` |
-| `commitpolicy_presets` | empty | presets for `extends` in COMMITPOLICY ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)) |
-| `branchpolicy_presets` | empty | presets for `extends` in BRANCHPOLICY, see below |
+| `presets.<module>.<name>` | empty | presets for `extends` in the policy files, separately for `pathpolicy`, `commitpolicy`, `branchpolicy`, `tagpolicy`. See below |
 
 A duration is written as in Go (`10s`, `100ms`, `1h30m`) or in whole days with the suffix `d` (`364d`). Paths are absolute.
 
@@ -169,7 +168,7 @@ The check applies to every project of the instance, including those without poli
 
 ## `settings_check`
 
-What `settings-check` expects of every project with PATHPOLICY. An empty value is not checked.
+What `settings-check` expects of the projects with policy files. An empty value is not checked.
 
 ```yaml
 settings_check:
@@ -183,13 +182,14 @@ settings_check:
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` (`false` means it must be off) |
 
 Regardless of these keys, `settings-check` checks:
+- in every project with policy files - that every file of the default branch parses, and that the presets of its `extends` are in the server config and not broken
 - in projects with PATHPOLICY - the name of the default branch against `default_branch`, that the default branch is protected, the CI configuration path and that every principal from the policy files exists
-- in projects with BRANCHPOLICY - that the patterns of its rules with `protected: true` are protected
-- in projects with only BRANCHPOLICY, without PATHPOLICY - only the name of the default branch and the protection of the BRANCHPOLICY patterns
+- in projects with BRANCHPOLICY - that GitLab protects the existing branches whose rule has `protected: true`
+- in projects without PATHPOLICY - only the name of the default branch, the policy files and the protection of the branches of BRANCHPOLICY
 
-`settings-check` skips projects without PATHPOLICY and BRANCHPOLICY. Details - [operations.en.md](operations.en.md#settings-check).
+`settings-check` skips projects without policy files. Details - [operations.en.md](operations.en.md#settings-check).
 
-The expectations are the same for the whole instance; there are no settings per group or project. So put into the lists only what holds for every project with PATHPOLICY. `protected_tags` gives no drift in projects without release tags, because it is checked only where there is TAGPOLICY. Keep the CI configuration check also for projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance.
+The expectations are the same for the whole instance; there are no settings per group or project. So put into the lists only what holds for every project with policy files. `protected_tags` gives no drift in projects without release tags, because it is checked only where there is TAGPOLICY. Keep the CI configuration check also for projects without `.gitlab-ci.yml`: a Maintainer can turn CI on later or point to a configuration in another project, and a path rule on `.gitlab-ci.yml` closes this bypass in advance.
 
 ## `help`
 
@@ -209,50 +209,146 @@ remote: rules: PATHPOLICY in main (0316d44); docs: https://wiki.example.com/gitl
 remote: checked as: alice (HTTPS)
 ```
 
-## `commitpolicy_presets`
+## `presets`
 
-Presets are COMMITPOLICY rules shared by many repositories: a file in a project refers to a preset with `extends` ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)). The section is empty in the package, because every installation has its own commit standard. An example:
+A preset is a named set of rules of one module in the server config. A standard shared by many projects lives in one place, and the file of a project takes it with the line `extends`. Presets are grouped by module, like `modules`:
 
 ```yaml
-# /etc/gitlab-repopolicy/config.yaml
-commitpolicy_presets:
-  org-conventional:
-    rules:
-      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      subject-case: { level: error, value: lower-first }
-      header-max-length: { level: warn, value: 100 }
+presets:
+  pathpolicy:
+    org-ci:
+      rules:
+        ci-config:
+          match: all
+          paths: [".gitlab-ci.yml"]
+          allow: [platform-lead]
+          message: The platform team changes the CI configuration.
+          help:
+            contact: "#platform"
+  commitpolicy: {}
+  branchpolicy: {}
+  tagpolicy: {}
 ```
 
-The preset name is the key of the section, `rules` are rules in the same format as in a COMMITPOLICY ruleset. Rules of the project file override the preset rules by name.
+- the name of a preset is the key, `[a-z0-9-]{1,63}`. Presets of different modules may have the same names
+- a preset has only `rules`, in the same format as in the file of the module. `admins` of PATHPOLICY and `keys` of TAGPOLICY are always in the file of the project ([why for keys](tagpolicy.en.md#4-a-preset-with-labels-of-signers))
+- every rule of a preset is complete: all required fields are there
+- the `help` of a rule (`contact`, `docs_url`) is printed in a denial by this rule, next to the global `help` above
 
-**Presets for developers.** For `validate` and `lint-commit` on a laptop to see the same presets as the server, hand out a file with only the `commitpolicy_presets` section, for example in the repository with the tools of the team:
+The file of a project:
+
+```yaml
+version: 1
+extends: org-ci             # або список: [org-ci, team-ci]
+```
+
+### How presets and the file merge
+
+Like the values files of Helm: the layers merge one after another, the presets in the order of `extends`, the file last.
+- a mapping (rules, the fields of a rule, `checks`, `except`, `help`) merges key by key
+- a list and a value are replaced as a whole: `allow: [kpn]` in the file does not add kpn to the list of the preset, it replaces the list
+- `null` removes a key: a rule, a field, a check
+- the later layer wins
+
+Required fields are checked after the merge, so a rule in the file may change only some fields of a rule of a preset. A new rule of the file that is in no preset must be complete.
+
+### A step-by-step example
+
+Two presets of COMMITPOLICY: a general one of the organization and a stricter one of the payments team.
 
 ```sh
-gitlab-repopolicy lint-commit --config presets.yaml -f COMMITPOLICY -m "$(cat .git/COMMIT_EDITMSG)"
+cat > presets.yaml <<'EOF'
+presets:
+  commitpolicy:
+    org-commits:
+      rules:
+        conventional:
+          match: default
+          parser: conventional
+          checks:
+            type-enum: { level: error, value: [feat, fix, docs, chore] }
+            header-max-length: { level: error, value: 100 }
+            subject-full-stop: { level: error, value: forbid }
+          message: Commits in the default branch follow Conventional Commits.
+    team-strict:
+      rules:
+        conventional:
+          match: default
+          parser: conventional
+          checks:
+            header-max-length: { level: error, value: 72 }
+            body-required: { level: error, types: [feat, fix] }
+          message: Commits of the payments team follow Conventional Commits with a body.
+          help:
+            contact: "#payments-team"
+EOF
 ```
 
-`validate` and `lint-commit` with `--config` read only `commitpolicy_presets` and `branchpolicy_presets`; other keys are not needed and not checked. `validate --online` calls the API and reads the whole config. The hook and the server commands always check the whole config.
+The project takes both presets, only warns about long headers and allows a full stop at the end of the subject:
 
-## `branchpolicy_presets`
-
-A preset is a branch name standard shared by many projects: the BRANCHPOLICY of a project takes it with `extends` ([branchpolicy.en.md](branchpolicy.en.md#presets-extends)). The section is empty in the package. An example:
-
-```yaml
-# /etc/gitlab-repopolicy/config.yaml
-branchpolicy_presets:
-  org-branches:
-    rules:
-      - name: release
-        match: "release/*"
-        pattern: '^release/v[0-9]+\.[0-9]+\.[0-9]+$'
-        protected: true
-        message: Release branches look like release/v1.4.0. Protect release/* in Protected branches.
-      - name: work
-        match: "*"
-        pattern: '^[a-z0-9.]+/[a-z0-9._/-]+$'
+```sh
+cat > COMMITPOLICY <<'EOF'
+version: 1
+extends: [org-commits, team-strict]
+rules:
+  conventional:
+    checks:
+      header-max-length: { level: warn }
+      subject-full-stop: null
+EOF
 ```
 
-`rules` are rules in the same format as in BRANCHPOLICY. `selftest` shows an invalid preset as `FAIL`, and projects with `extends` on it skip the check with a warning.
+```console
+$ gitlab-repopolicy validate --config presets.yaml
+COMMITPOLICY: valid
+  extends: org-commits, team-strict
+  rule conventional: preset:org-commits, preset:team-strict, file
+    checks: preset:org-commits, preset:team-strict, file
+    checks.header-max-length: preset:org-commits, preset:team-strict, file
+    checks.type-enum: preset:org-commits
+    checks.body-required: preset:team-strict
+    match: preset:team-strict
+    message: preset:team-strict
+    parser: preset:team-strict
+    help: preset:team-strict
+    help.contact: preset:team-strict
+```
+
+How to read it:
+- `checks.header-max-length` went through all three layers. `value: 72` of `team-strict` won over `100` of `org-commits`, because `team-strict` comes later in `extends`. `level: warn` of the file won over `error`
+- `checks.subject-full-stop` is not in the output: the file removed it with `null`
+- `match`, `message` and `parser` come from `team-strict`: the later layer replaced the values of `org-commits`. For `match` and `parser` they are the same, and `message` became the text of the team
+- `checks.type-enum` is only in `org-commits`, `checks.body-required` only in `team-strict`, and both apply
+
+A check of a message against the merged rules:
+
+```console
+$ gitlab-repopolicy lint-commit --config presets.yaml -m "fix: round refunds to cents in the payment service and in the monthly reports"
+message: [conventional] error: body-required: the message needs a body
+message: [conventional] warning: header-max-length: the header is 77 characters, the limit is 72
+```
+
+### A broken or missing preset
+
+A config with an invalid preset loads, and the preset is marked broken. `selftest`, `validate --config` and `settings-check` report it. A file that takes such a preset, or a preset that does not exist:
+
+| Module | What happens on a push |
+| --- | --- |
+| PATHPOLICY, TAGPOLICY | the file counts as broken, like an invalid file in the default branch (fail closed) |
+| COMMITPOLICY, BRANCHPOLICY | the module is skipped with a warning |
+
+A new version of a file with such `extends` is not accepted (`invalid_policy_update`).
+
+### Presets for developers
+
+For `validate` and `lint-commit` on a laptop to see the same presets as the server, hand out a file with only the key `presets`, for example in the deployment repository. A full example is [examples/presets.yaml](../examples/presets.yaml).
+
+```sh
+gitlab-repopolicy validate --config presets.yaml
+gitlab-repopolicy lint-commit --config presets.yaml -m "$(cat .git/COMMIT_EDITMSG)"
+```
+
+`validate` and `lint-commit` with `--config` read only `presets`; other keys are not needed and not checked. `validate --online` calls the API and reads the whole config. Step by step - [validate.en.md](validate.en.md#presets).
 
 ## Other configurations
 

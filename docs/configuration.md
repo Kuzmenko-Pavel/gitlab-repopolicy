@@ -50,8 +50,6 @@ breakglass_dir: /etc/gitlab-repopolicy/breakglass
 timeouts:
   total: 10s            # one hook invocation
   http: 3s              # one API request
-  pattern: 100ms        # the COMMITPOLICY pattern rule, per message
-  pattern_budget: 2s    # the same, per push
 
 # API calls per push; more is limit_exceeded.
 max_api_calls: 30
@@ -70,12 +68,13 @@ modules:
 # default is empty.
 default_branch: [main]
 
-# What settings-check expects of every project with PATHPOLICY. Empty values
+# What settings-check expects of the projects with policy files. Empty values
 # are not checked and are the default; ["v*"] and false below are examples.
-# Projects with PATHPOLICY also always get ci_config_path, principals and the
-# protection of the default branch checked; projects with PATHPOLICY or
-# BRANCHPOLICY the branches that BRANCHPOLICY requires to be protected;
-# protected_tags are checked only in projects with PATHPOLICY and TAGPOLICY.
+# Every policy file of a project is also checked to parse with its presets;
+# projects with PATHPOLICY always get ci_config_path, principals and the
+# protection of the default branch checked; projects with BRANCHPOLICY the
+# existing branches that its rules require to be protected; protected_tags
+# are checked only in projects with PATHPOLICY and TAGPOLICY.
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false
@@ -87,10 +86,13 @@ help:
   contact: ""
   docs_url: ""
 
-# Presets for "extends:" in COMMITPOLICY and in BRANCHPOLICY; examples are in
-# docs/configuration.md.
-commitpolicy_presets: {}
-branchpolicy_presets: {}
+# Presets for "extends:" in the policy files, by module. A preset holds only
+# rules; examples are in docs/configuration.md.
+presets:
+  pathpolicy: {}
+  commitpolicy: {}
+  branchpolicy: {}
+  tagpolicy: {}
 ```
 
 ## Параметри
@@ -107,16 +109,13 @@ branchpolicy_presets: {}
 | `breakglass_dir` | `/etc/gitlab-repopolicy/breakglass` | дозволи break-glass ([operations.md](operations.md#break-glass)) |
 | `timeouts.total` | `10s` | один виклик hook. Перевищення - `limit_exceeded` |
 | `timeouts.http` | `3s` | один запит до API. Не більше `timeouts.total` |
-| `timeouts.pattern` | `100ms` | правило `pattern` COMMITPOLICY на одне повідомлення |
-| `timeouts.pattern_budget` | `2s` | те саме на весь push. Не менше `timeouts.pattern` |
 | `max_api_calls` | `30` | викликів API на один push. Перевищення - `limit_exceeded` |
 | `modules.<ім'я>` | `enabled` | `enabled` або `disabled` для `pathpolicy`, `commitpolicy`, `tagpolicy`, `branchpolicy` |
 | `default_branch` | порожньо | допустимі імена default branch для hook і `settings-check`, див. нижче |
 | `settings_check.*` | порожньо | що очікує `settings-check`, див. нижче |
 | `help.contact` | порожньо | до кого звертатися, наприклад `#gitlab-support`. Див. нижче |
 | `help.docs_url` | порожньо | посилання на документацію правил для розробників, `http://` або `https://` |
-| `commitpolicy_presets` | порожньо | пресети для `extends` у COMMITPOLICY ([commitpolicy.md](commitpolicy.md#пресети-extends)) |
-| `branchpolicy_presets` | порожньо | пресети для `extends` у BRANCHPOLICY, див. нижче |
+| `presets.<модуль>.<ім'я>` | порожньо | пресети для `extends` у файлах політик, окремо для `pathpolicy`, `commitpolicy`, `branchpolicy`, `tagpolicy`. Див. нижче |
 
 Тривалість пишеться як у Go (`10s`, `100ms`, `1h30m`) або цілими днями з суфіксом `d` (`364d`). Шляхи - абсолютні.
 
@@ -169,7 +168,7 @@ Hook читає всі policy-файли з default branch. Maintainer може 
 
 ## `settings_check`
 
-Що очікує `settings-check` від кожного проєкту з PATHPOLICY. Порожнє значення не перевіряється.
+Що очікує `settings-check` від проєктів з файлами політик. Порожнє значення не перевіряється.
 
 ```yaml
 settings_check:
@@ -183,13 +182,14 @@ settings_check:
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` (`false` - має бути вимкнений) |
 
 Незалежно від цих ключів `settings-check` перевіряє:
+- у всіх проєктах з файлами політик - що кожен файл у default branch розбирається, а пресети з його `extends` є в серверному конфігу і не зламані
 - у проєктах з PATHPOLICY - ім'я default branch за `default_branch`, що default branch захищена, шлях CI-конфігурації і що всі principals із policy-файлів існують
-- у проєктах з BRANCHPOLICY - що захищені шаблони її правил з `protected: true`
-- у проєктах лише з BRANCHPOLICY, без PATHPOLICY - тільки ім'я default branch і захист шаблонів BRANCHPOLICY
+- у проєктах з BRANCHPOLICY - що GitLab захищає наявні гілки, чиє правило має `protected: true`
+- у проєктах без PATHPOLICY - лише ім'я default branch, файли політик і захист гілок BRANCHPOLICY
 
-Проєкти без PATHPOLICY і BRANCHPOLICY `settings-check` пропускає. Докладно - [operations.md](operations.md#settings-check).
+Проєкти без файлів політик `settings-check` пропускає. Докладно - [operations.md](operations.md#settings-check).
 
-Очікування одні на весь інстанс, налаштувань на групу чи проєкт немає. Тому в списки варто класти лише те, що вірно для всіх проєктів з PATHPOLICY. `protected_tags` не дає drift у проєктах без релізних тегів, бо перевіряється лише там, де є TAGPOLICY. Перевірку CI-конфігурації варто залишити і для проєктів без `.gitlab-ci.yml`: Maintainer може ввімкнути CI пізніше або вказати шлях до конфігурації в іншому проєкті, а path-правило на `.gitlab-ci.yml` закриває цей обхід заздалегідь.
+Очікування одні на весь інстанс, налаштувань на групу чи проєкт немає. Тому в списки варто класти лише те, що вірно для всіх проєктів з файлами політик. `protected_tags` не дає drift у проєктах без релізних тегів, бо перевіряється лише там, де є TAGPOLICY. Перевірку CI-конфігурації варто залишити і для проєктів без `.gitlab-ci.yml`: Maintainer може ввімкнути CI пізніше або вказати шлях до конфігурації в іншому проєкті, а path-правило на `.gitlab-ci.yml` закриває цей обхід заздалегідь.
 
 ## `help`
 
@@ -209,50 +209,146 @@ remote: rules: PATHPOLICY in main (0316d44); docs: https://wiki.example.com/gitl
 remote: checked as: alice (HTTPS)
 ```
 
-## `commitpolicy_presets`
+## `presets`
 
-Пресети - це правила COMMITPOLICY, спільні для багатьох репозиторіїв: файл у проєкті посилається на пресет через `extends` ([commitpolicy.md](commitpolicy.md#пресети-extends)). У пакеті секція порожня, бо стандарт комітів у кожної інсталяції свій. Приклад:
+Пресет - іменований набір правил одного модуля в серверному конфігу. Стандарт, спільний для багатьох проєктів, лежить в одному місці, а файл проєкту бере його рядком `extends`. Пресети згруповано за модулем, як `modules`:
 
 ```yaml
-# /etc/gitlab-repopolicy/config.yaml
-commitpolicy_presets:
-  org-conventional:
-    rules:
-      type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      subject-case: { level: error, value: lower-first }
-      header-max-length: { level: warn, value: 100 }
+presets:
+  pathpolicy:
+    org-ci:
+      rules:
+        ci-config:
+          match: all
+          paths: [".gitlab-ci.yml"]
+          allow: [platform-lead]
+          message: The platform team changes the CI configuration.
+          help:
+            contact: "#platform"
+  commitpolicy: {}
+  branchpolicy: {}
+  tagpolicy: {}
 ```
 
-Ім'я пресету - ключ секції, `rules` - правила в тому ж форматі, що й у ruleset COMMITPOLICY. Правила файлу проєкту перекривають правила пресету за іменем.
+- ім'я пресета - ключ, `[a-z0-9-]{1,63}`. Пресети різних модулів можуть мати однакові імена
+- у пресеті лише `rules`, у тому ж форматі, що у файлі модуля. `admins` PATHPOLICY і `keys` TAGPOLICY завжди у файлі проєкту ([чому для ключів](tagpolicy.md#4-пресет-з-мітками-підписантів))
+- кожне правило пресета повне: усі обов'язкові поля на місці
+- `help` правила (`contact`, `docs_url`) друкується у відмові за цим правилом, поруч із глобальним `help` вище
 
-**Пресети для розробників.** Щоб `validate` і `lint-commit` на ноутбуці бачили ті самі пресети, що й сервер, роздайте файл лише із секцією `commitpolicy_presets`, наприклад у репозиторії з інструментами команди:
+Файл проєкту:
+
+```yaml
+version: 1
+extends: org-ci             # або список: [org-ci, team-ci]
+```
+
+### Як зливаються пресети і файл
+
+Як values-файли Helm: шари зливаються по черзі, пресети в порядку `extends`, файл останнім.
+- mapping (правила, поля правила, `checks`, `except`, `help`) зливається ключ за ключем
+- список і значення замінюються цілком: `allow: [kpn]` у файлі не додає kpn до списку пресета, а замінює список
+- `null` видаляє ключ: правило, поле, перевірку
+- пізніший шар перемагає
+
+Обов'язкові поля перевіряються вже після злиття, тому у файлі правило може змінювати лише окремі поля правила з пресета. Нове правило файлу, якого немає в жодному пресеті, має бути повним.
+
+### Покроковий приклад
+
+Два пресети COMMITPOLICY: загальний для організації і суворіший для команди платежів.
 
 ```sh
-gitlab-repopolicy lint-commit --config presets.yaml -f COMMITPOLICY -m "$(cat .git/COMMIT_EDITMSG)"
+cat > presets.yaml <<'EOF'
+presets:
+  commitpolicy:
+    org-commits:
+      rules:
+        conventional:
+          match: default
+          parser: conventional
+          checks:
+            type-enum: { level: error, value: [feat, fix, docs, chore] }
+            header-max-length: { level: error, value: 100 }
+            subject-full-stop: { level: error, value: forbid }
+          message: Commits in the default branch follow Conventional Commits.
+    team-strict:
+      rules:
+        conventional:
+          match: default
+          parser: conventional
+          checks:
+            header-max-length: { level: error, value: 72 }
+            body-required: { level: error, types: [feat, fix] }
+          message: Commits of the payments team follow Conventional Commits with a body.
+          help:
+            contact: "#payments-team"
+EOF
 ```
 
-`validate` і `lint-commit` з `--config` читають лише `commitpolicy_presets` і `branchpolicy_presets`, інші ключі не потрібні й не перевіряються. `validate --online` звертається до API і читає конфігурацію повністю. Hook і серверні команди перевіряють конфігурацію завжди повністю.
+Проєкт бере обидва пресети, лише попереджає про довгі header і дозволяє крапку в кінці subject:
 
-## `branchpolicy_presets`
-
-Пресет - стандарт імен гілок, спільний для багатьох проєктів: BRANCHPOLICY проєкту підключає його через `extends` ([branchpolicy.md](branchpolicy.md#пресети-extends)). У пакеті секція порожня. Приклад:
-
-```yaml
-# /etc/gitlab-repopolicy/config.yaml
-branchpolicy_presets:
-  org-branches:
-    rules:
-      - name: release
-        match: "release/*"
-        pattern: '^release/v[0-9]+\.[0-9]+\.[0-9]+$'
-        protected: true
-        message: Release branches look like release/v1.4.0. Protect release/* in Protected branches.
-      - name: work
-        match: "*"
-        pattern: '^[a-z0-9.]+/[a-z0-9._/-]+$'
+```sh
+cat > COMMITPOLICY <<'EOF'
+version: 1
+extends: [org-commits, team-strict]
+rules:
+  conventional:
+    checks:
+      header-max-length: { level: warn }
+      subject-full-stop: null
+EOF
 ```
 
-`rules` - правила в тому ж форматі, що й у BRANCHPOLICY. Невалідний пресет `selftest` показує як `FAIL`, а проєкти з `extends` на нього пропускають перевірку з попередженням.
+```console
+$ gitlab-repopolicy validate --config presets.yaml
+COMMITPOLICY: valid
+  extends: org-commits, team-strict
+  rule conventional: preset:org-commits, preset:team-strict, file
+    checks: preset:org-commits, preset:team-strict, file
+    checks.header-max-length: preset:org-commits, preset:team-strict, file
+    checks.type-enum: preset:org-commits
+    checks.body-required: preset:team-strict
+    match: preset:team-strict
+    message: preset:team-strict
+    parser: preset:team-strict
+    help: preset:team-strict
+    help.contact: preset:team-strict
+```
+
+Як читати:
+- `checks.header-max-length` пройшла всі три шари. `value: 72` з `team-strict` перемогло `100` з `org-commits`, бо `team-strict` пізніше в `extends`. `level: warn` з файлу перемогло `error`
+- `checks.subject-full-stop` у виводі немає: файл видалив її через `null`
+- `match`, `message` і `parser` - з `team-strict`: пізніший шар замінив значення `org-commits`. Для `match` і `parser` вони однакові, а `message` став текстом команди
+- `checks.type-enum` є лише в `org-commits`, `checks.body-required` - лише в `team-strict`, і обидві діють
+
+Перевірка повідомлення за злитими правилами:
+
+```console
+$ gitlab-repopolicy lint-commit --config presets.yaml -m "fix: round refunds to cents in the payment service and in the monthly reports"
+message: [conventional] error: body-required: the message needs a body
+message: [conventional] warning: header-max-length: the header is 77 characters, the limit is 72
+```
+
+### Зламаний або відсутній пресет
+
+Конфіг із невалідним пресетом завантажується, а пресет позначається зламаним. Про нього кажуть `selftest`, `validate --config` і `settings-check`. Файл, який бере такий пресет або пресет, якого немає:
+
+| Модуль | Що відбувається на push |
+| --- | --- |
+| PATHPOLICY, TAGPOLICY | файл вважається зламаним, як невалідний файл у default branch (fail closed) |
+| COMMITPOLICY, BRANCHPOLICY | модуль пропускається з попередженням |
+
+Нова версія файлу з таким `extends` не приймається (`invalid_policy_update`).
+
+### Пресети для розробників
+
+Щоб `validate` і `lint-commit` на ноутбуці бачили ті самі пресети, що й сервер, роздайте файл лише з ключем `presets`, наприклад у репозиторії розгортання. Повний приклад - [examples/presets.yaml](../examples/presets.yaml).
+
+```sh
+gitlab-repopolicy validate --config presets.yaml
+gitlab-repopolicy lint-commit --config presets.yaml -m "$(cat .git/COMMIT_EDITMSG)"
+```
+
+`validate` і `lint-commit` з `--config` читають лише `presets`, інші ключі не потрібні й не перевіряються. `validate --online` звертається до API і читає конфіг повністю. Покроково - [validate.md](validate.md#пресети).
 
 ## Інші конфігурації
 

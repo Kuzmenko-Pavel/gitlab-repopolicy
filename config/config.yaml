@@ -52,12 +52,13 @@ modules:
 # default is empty.
 default_branch: [main]
 
-# What settings-check expects of every project with PATHPOLICY. Empty values
+# What settings-check expects of the projects with policy files. Empty values
 # are not checked and are the default; ["v*"] and false below are examples.
-# Projects with PATHPOLICY also always get ci_config_path, principals and the
-# protection of the default branch checked; projects with PATHPOLICY or
-# BRANCHPOLICY the branches that BRANCHPOLICY requires to be protected;
-# protected_tags are checked only in projects with PATHPOLICY and TAGPOLICY.
+# Every policy file of a project is also checked to parse with its presets;
+# projects with PATHPOLICY always get ci_config_path, principals and the
+# protection of the default branch checked; projects with BRANCHPOLICY the
+# existing branches that its rules require to be protected; protected_tags
+# are checked only in projects with PATHPOLICY and TAGPOLICY.
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false

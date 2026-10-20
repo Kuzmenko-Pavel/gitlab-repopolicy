@@ -1,24 +1,26 @@
-# PATHPOLICY stays with the platform team; the other policy files and the
-# GitLab agent configuration are delegated to their owners by path rules.
+# PATHPOLICY stays with alice. The other policy files and the GitLab agent
+# configuration are delegated to their owners by path rules.
 version: 1
 
-admins: [platform-lead]
+admins: [alice]
 
 rules:
   commit-policy:
     match: all
     paths: ["COMMITPOLICY"]
-    allow: [dev-lead, platform-lead]
-    message: COMMITPOLICY is changed by dev-lead or platform-lead.
+    allow: [dev-lead, alice]
+    message: COMMITPOLICY is changed by dev-lead or alice.
 
   tag-policy:
     match: all
     paths: ["TAGPOLICY"]
-    allow: [release-lead, platform-lead]
-    message: TAGPOLICY is changed by release-lead or platform-lead.
+    allow: [release-lead, alice]
+    message: TAGPOLICY is changed by release-lead or alice.
 
   kubernetes-agents:
     match: default
     paths: [".gitlab/agents/**"]
-    allow: [cluster-owner]
-    message: The agent configuration is read only from the default branch; cluster-owner merges it.
+    allow: [alice]
+    message: >-
+      The agent configuration is read only from the default branch.
+      Change it in your branch and ask alice to merge it.

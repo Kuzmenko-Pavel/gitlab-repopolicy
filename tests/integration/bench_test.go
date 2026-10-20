@@ -29,7 +29,7 @@ var (
 )
 
 // productBinary builds cmd/gitlab-repopolicy once.
-func productBinary(b *testing.B) string {
+func productBinary(b testing.TB) string {
 	b.Helper()
 	benchOnce.Do(func() {
 		dir, err := os.MkdirTemp(workDir, "bench-bin")

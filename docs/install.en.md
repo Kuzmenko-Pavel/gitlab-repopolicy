@@ -80,6 +80,7 @@ What the package installs:
 /etc/gitlab-repopolicy/config.yaml                 config, root:<git-user> 0640, conffile
 /etc/gitlab-repopolicy/breakglass/                 root 0755
 /var/log/gitlab-repopolicy/                        <git-user> 0750
+/etc/logrotate.d/gitlab-repopolicy                 rotation of the audit log, 0644, conffile
 /usr/lib/systemd/system/gitlab-repopolicy-*.{service,timer}   disabled timers
 ```
 
@@ -89,7 +90,22 @@ An upgrade does not change the permissions an administrator set and does not ove
 
 The package is not installed into the GitLab Docker image, see [Docker](#docker).
 
-**Without the package** (archive, other distributions): unpack `gitlab-repopolicy` into `/usr/bin/` and create the same directories and files with the same permissions. A sample `config.yaml` is [config/config.yaml](../config/config.yaml).
+**Without the package** (archive, other distributions, Docker): unpack `gitlab-repopolicy` into `/usr/bin/` and create the same directories and files with the same permissions. A sample `config.yaml` is [config/config.yaml](../config/config.yaml). Set up the rotation of the audit log yourself, for example the same way as the package:
+
+```text
+# /etc/logrotate.d/gitlab-repopolicy
+/var/log/gitlab-repopolicy/audit.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    nocreate
+}
+```
+
+`nocreate`: the hook and the commands run as root create the next `audit.log` with the owner of the log directory, so logrotate does not create it. `su` is not needed: the directory `0750` belongs to the Gitaly user. The path in the file is the default `audit.file`, if you changed it, change it here too. In Docker this file goes on the host, for the directory mounted at `/var/log/gitlab-repopolicy`.
 
 ## 3. Service account and token
 
@@ -346,7 +362,7 @@ Then `selftest` as root and as git.
 
 ## For developers
 
-To check policy files and commit messages locally (`validate`, `lint-commit`), building the binary is enough:
+To check policy files and commit messages locally (`validate`, `lint-commit`), building the binary is enough. How to use it - [validate.en.md](validate.en.md), all commands - [cli.en.md](cli.en.md):
 
 ```sh
 go install github.com/Kuzmenko-Pavel/gitlab-repopolicy/cmd/gitlab-repopolicy@v1.0.0
@@ -397,7 +413,7 @@ Or delete the service account itself in Admin area → Service accounts: its tok
 
 **`selftest` says `ok`, but the projects of a group are not checked.** The service account was not added to the top-level group. `selftest` shows the number of groups in the `groups` line, and `coverage` shows which ones are missing (step 3).
 
-**The commit-msg hook rejects `feat:`, though main allows it.** Without `--ruleset`, `lint-commit` applies every ruleset of the file, because locally it is not known which branch the commit goes to. Name the ruleset you need: `lint-commit --ruleset protected` ([commitpolicy.en.md](commitpolicy.en.md#checking-locally)).
+**The commit-msg hook rejects `feat:`, though main allows it.** Without `--rule`, `lint-commit` applies every rule of the file, because locally it is not known which branch the commit goes to. Name the rule of the branches the work goes to: `lint-commit --rule conventional` ([commitpolicy.en.md](commitpolicy.en.md#checking-without-a-push)).
 
 **The `settings_check` expectations are the same for the whole instance, but infra projects have no tags.** `protected_tags` is checked only in projects with TAGPOLICY on the default branch, so projects without release tags do not drift. Keep the `ci_config_path` check also for projects without `.gitlab-ci.yml` ([configuration.en.md](configuration.en.md#settings_check)).
 

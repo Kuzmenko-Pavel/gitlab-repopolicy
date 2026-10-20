@@ -42,7 +42,7 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | `test-coverage` | unit tests with coverage into `coverage/`. Integration tests go through wide paths and are not counted. In CI the `unit` job sends `coverage/coverage.out` to Codecov: a pull request gets a comment with the coverage difference against main and the `codecov/project` check, which fails when the project coverage drops by more than 1% |
 | `test-fuzz` | every fuzz target for `FUZZTIME` |
 | `test-load` | hook benchmarks |
-| `test-e2e`, `test-e2e-down` | the GitLab CE stand and scenarios on it |
+| `test-e2e`, `test-e2e-down`, `test-e2e-logs` | the GitLab CE stand and scenarios on it |
 | `security-sast`, `security-dependency-scan`, `security-secret-scan` | gosec, govulncheck, gitleaks |
 | `release-snapshot` | archives and packages without signing and publishing |
 
@@ -110,7 +110,7 @@ make test-e2e
 make test-e2e-down
 ```
 
-`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes.
+`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes. `test-e2e-logs` copies the audit log and the logs of Gitaly, Rails, Sidekiq and Workhorse from the stand into `bin/e2e-logs/`. When e2e fails in CI, the workflow keeps them as the artifact `e2e-logs-<version>` for 14 days.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

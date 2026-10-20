@@ -325,6 +325,15 @@ test-e2e:
 	docker compose up --detach --wait --wait-timeout 1200
 	go test -tags $(E2E_TAGS) -count=1 -v -timeout 60m ./tests/e2e/...
 
+.PHONY: test-e2e-logs
+## Copy the audit log and the GitLab logs of the e2e stand into bin/e2e-logs/.
+test-e2e-logs:
+	rm -rf bin/e2e-logs; mkdir -p bin/e2e-logs
+	for f in /var/log/gitlab-repopolicy/audit.log /var/log/gitlab/gitaly/current /var/log/gitlab/gitlab-rails/production_json.log \
+		/var/log/gitlab/gitlab-rails/api_json.log /var/log/gitlab/sidekiq/current /var/log/gitlab/gitlab-workhorse/current; do \
+		docker compose cp "gitlab:$$f" "bin/e2e-logs/$$(echo "$${f#/var/log/}" | tr / -)" || echo "test-e2e-logs: $$f is not copied" >&2; \
+	done
+
 .PHONY: test-e2e-down
 ## Remove the e2e stand COMPOSE_PROJECT_NAME with its volumes.
 test-e2e-down:

@@ -13,8 +13,11 @@ import (
 )
 
 type fakeChanges struct {
-	paths map[string][]string // by ref
-	err   error
+	paths    map[string][]string // by ref
+	err      error
+	changes  []module.PathChange
+	known    map[string][]module.PathState
+	stateErr error
 }
 
 func (f *fakeChanges) CandidatePaths(_ context.Context, u module.RefUpdate) ([]string, error) {
@@ -34,6 +37,14 @@ func (*fakeChanges) EnteringCommits(context.Context, module.RefUpdate, module.Sc
 }
 func (*fakeChanges) NewCommits(context.Context, module.RefUpdate, int) ([]string, error) {
 	return nil, nil
+}
+
+func (f *fakeChanges) NewPathChanges(context.Context, module.RefUpdate) ([]module.PathChange, error) {
+	return f.changes, f.stateErr
+}
+
+func (f *fakeChanges) KnownStates(context.Context, module.RefUpdate, []string) (map[string][]module.PathState, error) {
+	return f.known, f.stateErr
 }
 
 type fakeRefs struct {
@@ -226,6 +237,70 @@ func TestEvaluate_LimitIsAnError(t *testing.T) {
 	require.NoError(t, err)
 	_, err = p.Evaluate(context.Background(), e.in)
 	assert.ErrorIs(t, err, module.ErrLimitExceeded, "the core turns it into limit_exceeded, fail closed")
+}
+
+func TestEvaluate_KnownContentInOrdinaryBranch(t *testing.T) {
+	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
+	bob := module.PathState{Mode: "100644", OID: strings.Repeat("2", 40)}
+	commit := strings.Repeat("c", 40)
+	tests := []struct {
+		name    string
+		changes []module.PathChange
+		err     error
+		denied  []module.Item
+		hint    string
+	}{
+		{name: "rebased change of an allowed person",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: alice}}},
+		{name: "new content",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: bob}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}},
+			hint:    "the content of .gitlab-ci.yml in commit ccccccccc differs both from this branch and from main; new content is pushed by one of them"},
+		{name: "same content, other mode",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: module.PathState{Mode: "100755", OID: alice.OID}}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}}},
+		{name: "path without a change of its own",
+			denied: []module.Item{{Name: ".gitlab-ci.yml"}}, hint: "ask one of them to push the change"},
+		{name: "over the commit limit", err: module.ErrLimitExceeded,
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: alice}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}}, hint: "ask one of them to push the change"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
+			e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}},
+				changes: tt.changes, known: map[string][]module.PathState{".gitlab-ci.yml": {alice}}, stateErr: tt.err}
+			res := e.evaluate(t, basePolicy)
+			if tt.denied == nil {
+				assert.Equal(t, module.Allow, res.Decision)
+				return
+			}
+			require.Len(t, res.Violations, 1)
+			assert.Equal(t, tt.denied, res.Violations[0].Items)
+			if tt.hint != "" {
+				assert.Contains(t, res.Violations[0].Hint, tt.hint)
+			}
+		})
+	}
+}
+
+func TestEvaluate_KnownContentOnlyInOrdinaryBranches(t *testing.T) {
+	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
+	e := newEnv("bob", map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}})
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}},
+		changes: []module.PathChange{{Commit: strings.Repeat("c", 40), Path: "helm/app/values-prod.yaml", State: alice}},
+		known:   map[string][]module.PathState{"helm/app/values-prod.yaml": {alice}}}
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, module.Deny, res.Decision, "a branch of a match list counts every change")
+}
+
+func TestEvaluate_KnownContentStateError(t *testing.T) {
+	e := newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}}, stateErr: errors.New("git failed")}
+	p, err := New(nil).Parse([]byte(basePolicy))
+	require.NoError(t, err)
+	_, err = p.Evaluate(context.Background(), e.in)
+	assert.ErrorContains(t, err, "git failed")
 }
 
 func policyChange(user string, access int) *env {

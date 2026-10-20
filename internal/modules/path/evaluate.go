@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -207,6 +208,20 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 		return nil
 	}
 	e.res.Touched = true
+	hint := r.advice()
+	if scope.Class == module.ClassOther {
+		var why string
+		var err error
+		if hit, names, why, err = e.newContent(ctx, u, hit, names); err != nil {
+			return err
+		}
+		if len(hit) == 0 {
+			return nil
+		}
+		if why != "" {
+			hint = why
+		}
+	}
 	person, st := e.in.Principals.Person(ctx)
 	switch {
 	case !st.IsConfirmed():
@@ -222,11 +237,66 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 	case !r.allows(person.Username):
 		e.deny(module.Violation{Code: module.CodeProtectedPath, Rule: r.name, Ref: u.Ref, Items: hit,
 			Facts:   []string{"may change them: " + strings.Join(r.allow, ", ")},
-			Message: r.message, Hint: r.advice(),
+			Message: r.message, Hint: hint,
 			Summary: fmt.Sprintf("you may not change %s (PATHPOLICY rule %s; may change: %s)", filesText(names), r.name, strings.Join(r.allow, ", ")),
 			Reason:  "not in allow: " + person.Username, Help: r.helpOf(), Source: r.source})
 	}
 	return nil
+}
+
+// short is the abbreviated commit SHA of a hint.
+func short(oid string) string { return oid[:min(len(oid), 9)] }
+
+// newContent keeps the paths of a rule that a new commit of an ordinary
+// branch leaves in a state the branch and the default branch never had: a
+// rebase, squash or cherry-pick of a change of an allowed person is not a
+// change. PATHPOLICY itself is never exempt. Above the commit limit nothing
+// is exempt, and the paths stay denied.
+// The hint, empty when there is no such commit to name, says which commit
+// brings the new content.
+func (e *evaluation) newContent(ctx context.Context, u module.RefUpdate, hit []module.Item, names []string) ([]module.Item, []string, string, error) {
+	changes, err := e.in.Changes.NewPathChanges(ctx, u)
+	if errors.Is(err, module.ErrLimitExceeded) {
+		return hit, names, "", nil
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+	known, err := e.in.Changes.KnownStates(ctx, u, names)
+	if errors.Is(err, module.ErrLimitExceeded) {
+		return hit, names, "", nil
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+	// first is the first commit that brings a new state of a path; a path
+	// without a change of its own stays denied.
+	first := map[string]string{}
+	changed := map[string]bool{}
+	for _, c := range changes {
+		changed[c.Path] = true
+		if _, ok := first[c.Path]; !ok && !slices.Contains(known[c.Path], c.State) {
+			first[c.Path] = c.Commit
+		}
+	}
+	var keptHit []module.Item
+	var kept []string
+	for i, p := range names {
+		if _, ok := first[p]; ok || !changed[p] || isPolicyPath(p) {
+			keptHit = append(keptHit, hit[i])
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, nil, "", nil
+	}
+	for _, p := range kept {
+		if commit, ok := first[p]; ok {
+			return keptHit, kept, fmt.Sprintf("the content of %s in commit %s differs both from this branch and from %s; new content is pushed by one of them",
+				p, short(commit), strings.TrimPrefix(e.in.Refs.Default(), "refs/heads/")), nil
+		}
+	}
+	return keptHit, kept, "", nil
 }
 
 // advice is what to do about a denied change of the paths: a rule for every

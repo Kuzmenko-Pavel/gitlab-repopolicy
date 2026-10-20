@@ -48,6 +48,14 @@ func (f *fakeRepo) NewCommits(context.Context, module.RefUpdate, int) ([]string,
 	return nil, nil
 }
 
+func (*fakeRepo) NewPathChanges(context.Context, module.RefUpdate) ([]module.PathChange, error) {
+	return nil, nil
+}
+
+func (*fakeRepo) KnownStates(context.Context, module.RefUpdate, []string) (map[string][]module.PathState, error) {
+	return nil, nil
+}
+
 func (f *fakeRepo) CandidateCommits(_ context.Context, u module.RefUpdate, _ int) ([]string, error) {
 	if f.limit {
 		return nil, fmt.Errorf("x: %w", module.ErrLimitExceeded)

@@ -256,6 +256,58 @@ func TestDiffAndCommitPaths(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestCommitChanges(t *testing.T) {
+	f := newFixture(t)
+	f.write("A", "a")
+	root := f.commit("root")
+	f.write("A", "a2")
+	f.write("weird\nname", "x")
+	two := f.commit("two")
+	f.git(f.work, "checkout", "-q", "-b", "side", root)
+	f.write("S", "s")
+	side := f.commit("side")
+	f.git(f.work, "checkout", "-q", "main")
+	f.git(f.work, "merge", "-q", "--no-edit", "side")
+	f.write("EVIL", "e")
+	f.git(f.work, "add", "-A")
+	f.git(f.work, "commit", "-q", "--amend", "--no-edit")
+	merge := f.git(f.work, "rev-parse", "HEAD")
+	require.NoError(t, os.Chmod(filepath.Join(f.work, "A"), 0o755))
+	require.NoError(t, os.Remove(filepath.Join(f.work, "S")))
+	modes := f.commit("modes")
+	empty := f.commit("empty")
+	f.push("HEAD:refs/heads/main")
+	r := f.open()
+	ctx := context.Background()
+	oid := func(rev string) string { return f.git(f.work, "rev-parse", rev) }
+
+	commits, err := r.CommitChanges(ctx, []string{root, two, merge, modes, empty})
+	require.NoError(t, err)
+	require.Len(t, commits, 5, "every commit is listed, also one without changes")
+	assert.Equal(t, Commit{OID: empty, Parents: []string{modes}}, commits[4])
+	assert.Equal(t, []string{}, commits[0].Parents)
+	assert.Equal(t, []string{root}, commits[1].Parents)
+	assert.Equal(t, []string{two, side}, commits[2].Parents)
+	byPath := map[string][]Change{}
+	for _, c := range commits {
+		for _, ch := range c.Changes {
+			byPath[ch.Path] = append(byPath[ch.Path], ch)
+		}
+	}
+	require.Len(t, byPath["A"], 3)
+	assert.Equal(t, Change{Path: "A", From: []State{{}}, To: State{Mode: "100644", OID: oid(root + ":A")}}, byPath["A"][0],
+		"a root commit adds its whole tree")
+	assert.Equal(t, State{Mode: "100644", OID: oid(root + ":A")}, byPath["A"][1].From[0])
+	assert.Equal(t, State{Mode: "100755", OID: oid(two + ":A")}, byPath["A"][2].To, "a mode change keeps the blob")
+	assert.Equal(t, []Change{{Path: "EVIL", From: []State{{}, {}}, To: State{Mode: "100644", OID: oid(merge + ":EVIL")}}}, commits[2].Changes,
+		"a merge shows only what differs from every parent")
+	require.Len(t, byPath["S"], 1, "the merge takes S from side as it is")
+	assert.Equal(t, State{}, byPath["S"][0].To, "a deletion leaves no state")
+	assert.Len(t, byPath["weird\nname"], 1)
+	_, err = r.CommitChanges(ctx, []string{"HEAD"})
+	assert.Error(t, err)
+}
+
 func TestRevList(t *testing.T) {
 	f := newFixture(t)
 	c1 := f.commit("1")
@@ -309,6 +361,25 @@ func FuzzCatFileHeader(f *testing.F) {
 		info, err := parseHeader("spec", line)
 		if err == nil && (!IsOID(info.OID) || info.Size < 0) {
 			t.Fatalf("accepted %q as %+v", line, info)
+		}
+	})
+}
+
+func FuzzCommitChanges(f *testing.F) {
+	f.Add([]byte("/5ad379 371891\n:100644 100644 587be6b4c3f93f93c489c0111bba5596147a26cb 371891cad60e0c06ff80b9026658d2695bc572c2 M\x00A\x00"))
+	f.Add([]byte("/5ad379\x00/371891 5ad379\x00"))
+	f.Add([]byte("/5ad379 a b\n::100644 100644 100644 587be6b4c3f93f93c489c0111bba5596147a26cb 587be6b4c3f93f93c489c0111bba5596147a26cb 371891cad60e0c06ff80b9026658d2695bc572c2 MM\x00E\x00"))
+	f.Fuzz(func(t *testing.T, out []byte) {
+		commits, err := parseCommitChanges(out)
+		if err != nil {
+			return
+		}
+		for _, c := range commits {
+			for _, ch := range c.Changes {
+				if len(ch.From) == 0 {
+					t.Fatalf("a change without the states of its parents: %+v", ch)
+				}
+			}
 		}
 	})
 }

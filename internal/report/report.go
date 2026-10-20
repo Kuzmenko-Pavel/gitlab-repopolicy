@@ -36,6 +36,7 @@ var titles = map[string]string{
 	module.CodeBranchName:              "the name does not follow the branch standard",
 	module.CodeBranchNotProtected:      "the branch must be protected, but the project does not protect it",
 	module.CodeTagNotProtected:         "the tag must be protected, but the project does not protect it",
+	module.CodeTagNotOnBranch:          "the tag points to a commit that is in no branch",
 	module.CodeTagSignatureInvalid:     "the signature cannot be accepted",
 	module.CodeDefaultBranchNotAllowed: "the default branch of this project is not allowed",
 	module.CodeLimitExceeded:           "the check did not finish within the server limits",

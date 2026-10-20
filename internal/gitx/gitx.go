@@ -426,6 +426,34 @@ func (r *Repo) RevList(ctx context.Context, o RevListOptions) ([]string, error) 
 	return commits, nil
 }
 
+// OnBranch reports whether commit is reachable from tips or from a branch
+// other than the skipped ones, with one rev-list. skip are branch names
+// without refs/heads/: --exclude matches them against the names that
+// --branches lists, and a branch name has no glob characters.
+func (r *Repo) OnBranch(ctx context.Context, commit string, tips, skip []string) (bool, error) {
+	if !IsOID(commit) {
+		return false, fmt.Errorf("gitx: invalid commit %q", commit)
+	}
+	args := []string{"rev-list", "--max-count=1", commit, "--not"}
+	for _, t := range tips {
+		if !IsOID(t) {
+			return false, fmt.Errorf("gitx: invalid commit %q", t)
+		}
+		args = append(args, t)
+	}
+	for _, b := range skip {
+		if err := checkRev("refs/heads/" + b); err != nil {
+			return false, err
+		}
+		args = append(args, "--exclude="+b)
+	}
+	out, err := r.run(ctx, nil, append(args, "--branches")...)
+	if err != nil {
+		return false, err
+	}
+	return len(bytes.TrimSpace(out)) == 0, nil
+}
+
 // ErrLimit is returned when a list is longer than the requested maximum.
 var ErrLimit = errors.New("gitx: limit exceeded")
 

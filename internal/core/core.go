@@ -168,6 +168,12 @@ func (r *receive) run(ctx context.Context) {
 			return
 		}
 	}
+	if ok, err := r.checkTags(ctx); err != nil || !ok {
+		if err != nil {
+			r.failErr(ctx, err)
+		}
+		return
+	}
 	if err := r.loadPolicies(ctx); err != nil {
 		r.failErr(ctx, err)
 		return
@@ -225,6 +231,63 @@ func (r *receive) addWarning(name string, vs ...module.Violation) {
 		}
 	}
 	r.warnings = append(r.warnings, report.Section{Name: name, Violations: vs})
+}
+
+// checkTags rejects a created or moved tag that does not point to a commit,
+// or whose commit no branch holds after the push: the commit of a tag is
+// checked by the policies only as part of a branch. It reports whether every
+// tag passed.
+func (r *receive) checkTags(ctx context.Context) (bool, error) {
+	var tips, skip []string
+	for _, u := range r.updates {
+		if !u.IsBranch() {
+			continue
+		}
+		skip = append(skip, strings.TrimPrefix(u.Ref, "refs/heads/"))
+		if u.Kind() != module.Delete {
+			tips = append(tips, u.New)
+		}
+	}
+	ok := true
+	for _, u := range r.updates {
+		if !u.IsTag() || u.Kind() == module.Delete {
+			continue
+		}
+		name := strings.TrimPrefix(u.Ref, "refs/tags/")
+		commit, err := r.deps.Git.Peel(ctx, u.New)
+		if errors.Is(err, gitx.ErrNotCommit) {
+			ok = false
+			r.failTag(module.Violation{Code: module.CodeTagObjectInvalid, Ref: u.Ref, Title: "the tag does not point to a commit",
+				Hint:    "tag a commit, for example git tag -a " + name + " <commit>",
+				Summary: "tag " + name + " does not point to a commit; tag a commit instead"}, u, "tag does not point to a commit")
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		on, err := r.deps.Git.OnBranch(ctx, commit, tips, skip)
+		if err != nil {
+			return false, err
+		}
+		if !on {
+			ok = false
+			short := commit[:9]
+			r.failTag(module.Violation{Code: module.CodeTagNotOnBranch, Ref: u.Ref,
+				Facts:   []string{"commit " + short + " is in no branch of the project after this push"},
+				Hint:    "push the branch with the commit first, or together with the tag: git push origin <branch> " + name + ", or git push --follow-tags",
+				Summary: "tag " + name + " points to commit " + short + ", which is in no branch; push the branch with it: git push origin <branch> " + name}, u,
+				"tag commit in no branch: "+commit)
+		}
+	}
+	return ok, nil
+}
+
+// failTag records a denial of a tag by the core.
+func (r *receive) failTag(v module.Violation, u module.RefUpdate, reason string) {
+	v.Reason = reason
+	r.addSection(report.CoreSection, v)
+	r.events = append(r.events, r.event(audit.Event{Event: audit.EventDecision, Decision: "deny", Code: v.Code, Ref: u.Ref,
+		OldRev: u.Old, NewRev: u.New, Reason: reason}))
 }
 
 // errFirstBranch marks the first push into an empty repository that does not

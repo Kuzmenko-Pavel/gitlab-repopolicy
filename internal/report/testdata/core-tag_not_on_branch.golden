@@ -1,0 +1,9 @@
+gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+
+tag v1.4.0: the tag points to a commit that is in no branch
+  commit 3f2a91c0d is in no branch of the project after this push
+  push the branch with the commit first, or together with the tag: git push origin <branch> v1.4.0, or git push --follow-tags
+
+rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
+checked as: alice (HTTPS)
+GL-HOOK-ERR: gitlab-repopolicy: tag v1.4.0 points to commit 3f2a91c0d, which is in no branch; push the branch with it: git push origin <branch> v1.4.0

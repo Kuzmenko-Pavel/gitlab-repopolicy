@@ -251,6 +251,7 @@ const (
 	CodeTagSignerNotAllowed     = "tag_signer_not_allowed"
 	CodeTagSignatureInvalid     = "tag_signature_invalid"
 	CodeTagNotProtected         = "tag_not_protected"
+	CodeTagNotOnBranch          = "tag_not_on_branch"
 	CodeBranchName              = "branch_name_violation"
 	CodeBranchNotProtected      = "branch_not_protected"
 	CodeDefaultBranchNotAllowed = "default_branch_not_allowed"

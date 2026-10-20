@@ -35,7 +35,7 @@ var onMain = Context{
 
 func TestGolden(t *testing.T) {
 	t.Run("core", func(t *testing.T) {
-		for _, code := range []string{module.CodeLimitExceeded, module.CodeInternalError, module.CodeAuthorizationBackend, module.CodeDefaultBranchNotAllowed} {
+		for _, code := range []string{module.CodeLimitExceeded, module.CodeInternalError, module.CodeAuthorizationBackend, module.CodeDefaultBranchNotAllowed, module.CodeTagNotOnBranch} {
 			t.Run(code, func(t *testing.T) {
 				v := module.Violation{Code: code, Ref: "refs/heads/feature", Reason: "secret API detail",
 					Facts: []string{"this is a problem of the server, not of your change"}, Hint: "retry in a few minutes"}
@@ -50,6 +50,12 @@ func TestGolden(t *testing.T) {
 					v.Hint = "a Maintainer sets one of main, master as the default branch in Settings > Repository > Branch defaults"
 					v.Summary = "the default branch legacy is not one of main, master; a Maintainer fixes it in Settings > Repository > Branch defaults"
 					c.Contact, c.DocsURL = "#gitlab-support", "https://wiki.example/repopolicy"
+				}
+				if code == module.CodeTagNotOnBranch {
+					v.Ref = "refs/tags/v1.4.0"
+					v.Facts = []string{"commit 3f2a91c0d is in no branch of the project after this push"}
+					v.Hint = "push the branch with the commit first, or together with the tag: git push origin <branch> v1.4.0, or git push --follow-tags"
+					v.Summary = "tag v1.4.0 points to commit 3f2a91c0d, which is in no branch; push the branch with it: git push origin <branch> v1.4.0"
 				}
 				out := Rejection([]Section{{Name: CoreSection, Violations: []module.Violation{v}}}, c)
 				assert.NotContains(t, out, "secret API detail", "audit reasons never reach the user")

@@ -2,7 +2,6 @@ package testmodule
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 
@@ -29,15 +28,11 @@ func listMatch(patterns []string, ref string) bool {
 
 func (p *Policy) evaluateGuards(ctx context.Context, in *module.Input, res *module.Result) error {
 	for _, u := range in.Updates {
-		if u.Kind() == module.Delete {
+		// The commit of a tag is checked as part of its branch.
+		if u.Kind() == module.Delete || !u.IsBranch() {
 			continue
 		}
 		cand, err := in.Changes.CandidatePaths(ctx, u)
-		if errors.Is(err, module.ErrNotCommit) {
-			res.Touched = true
-			p.add(res, module.Violation{Code: module.CodeTagObjectInvalid, Ref: u.Ref, Message: "the ref does not point to a commit"})
-			continue
-		}
 		if err != nil {
 			return err
 		}

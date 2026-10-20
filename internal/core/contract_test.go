@@ -291,7 +291,7 @@ func TestSignaturesInAudit(t *testing.T) {
 	c1 := r.commit(map[string]string{"TESTPOLICY": "sign\n"})
 	r.publish(c1)
 	c2 := r.commit(map[string]string{"a": "1"})
-	r.stage(c2)
+	r.git(r.work, "push", "-q", r.bare, c2+":refs/heads/feature")
 	res := r.run([]module.Module{closed}, enforce, nil, "",
 		module.RefUpdate{Old: zero40, New: c2, Ref: "refs/tags/v1"}, module.RefUpdate{Old: zero40, New: c2, Ref: "refs/tags/v2"})
 	assert.True(t, res.out.Allow)

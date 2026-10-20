@@ -308,6 +308,40 @@ func TestCommitChanges(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestOnBranch(t *testing.T) {
+	f := newFixture(t)
+	c1 := f.commit("1")
+	f.push("HEAD:refs/heads/main")
+	c2 := f.commit("2")
+	f.push("HEAD:refs/heads/feature", "HEAD:refs/heads/feature-2")
+	c3 := f.commit("3")
+	f.push(c3 + ":refs/tags/v3")
+	r := f.open()
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name       string
+		commit     string
+		tips, skip []string
+		want       bool
+	}{
+		{name: "in a branch", commit: c1, want: true},
+		{name: "in no branch", commit: c3},
+		{name: "in a branch of the same prefix", commit: c2, skip: []string{"feature"}, want: true},
+		{name: "in skipped branches only", commit: c2, skip: []string{"feature", "feature-2"}},
+		{name: "in a new tip", commit: c3, tips: []string{c3}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			on, err := r.OnBranch(ctx, tc.commit, tc.tips, tc.skip)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, on)
+		})
+	}
+	_, err := r.OnBranch(ctx, c1, nil, []string{"feature*"})
+	assert.Error(t, err)
+	_, err = r.OnBranch(ctx, "HEAD", nil, nil)
+	assert.Error(t, err)
+}
+
 func TestRevList(t *testing.T) {
 	f := newFixture(t)
 	c1 := f.commit("1")

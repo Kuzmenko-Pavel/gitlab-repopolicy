@@ -13,7 +13,7 @@
 | pipx | `yamllint` in `make code-lint` |
 | Docker with compose | only for e2e (`make test-e2e`) |
 
-The other tools (golangci-lint, gitleaks, govulncheck, goreleaser, syft, cosign, actionlint, benchstat) make builds itself into `bin/tools/` from the pinned versions in `tools/`. Tests need neither `gpg` nor `ssh-keygen`: they create keys and signatures themselves.
+The other tools (golangci-lint, deadcode, gitleaks, govulncheck, goreleaser, syft, cosign, actionlint, benchstat) make builds itself into `bin/tools/` from the pinned versions in `tools/`. Tests need neither `gpg` nor `ssh-keygen`: they create keys and signatures themselves.
 
 ## Make is the only entry point
 
@@ -32,7 +32,8 @@ Changes to identity, the GitLab API client or installation also need `make test-
 | Target | What it does |
 | --- | --- |
 | `code-fmt` | formats Go code |
-| `code-lint` | golangci-lint with the package dependency rules, tidy of every module, actionlint, yamllint, `schemas/` matching the code |
+| `code-lint` | golangci-lint with the package dependency rules, `code-deadcode`, tidy of every module, actionlint, yamllint, `schemas/` matching the code |
+| `code-deadcode` | functions that no `main` reaches: the hook, the test hook and release-notes. A function that only tests call is dead too |
 | `code-lint-commits` | commit messages after `BASE_REF` against the `COMMITPOLICY` taken from `BASE_REF`, not from the branch. Commits and PR titles of Dependabot are skipped: it takes the case of `Bump` from the history and resets the title on every rebase. Its PRs are merged with `gh pr merge --squash --subject "<type>(deps): bump ..."`, and the squash commit on main is checked on push |
 | `code-generate` | regenerates `schemas/` and the golden files of push output |
 | `code-build` | the binary in `bin/gitlab-repopolicy` |

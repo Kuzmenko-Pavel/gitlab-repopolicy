@@ -76,7 +76,7 @@ E2E_TAGS       := e2e$(if $(filter 1,$(E2E_NIGHTLY)),$(comma)nightly)
 # yamllint is not a Go tool; its version is pinned here and run through pipx.
 YAMLLINT_VERSION := 1.38.0
 # Go tools, one module per tool under tools/<name>.
-TOOLS  := actionlint benchstat cosign gitleaks golangci-lint goreleaser govulncheck syft
+TOOLS  := actionlint benchstat cosign deadcode gitleaks golangci-lint goreleaser govulncheck syft
 BINARY := bin/gitlab-repopolicy
 # Dependabot capitalizes "Bump" from the commit history and resets the PR title on
 # every rebase, so its commits and PR titles are not linted. The squash commit on
@@ -115,7 +115,7 @@ code-fmt: $(TOOLS_BIN)/golangci-lint
 
 .PHONY: code-lint
 ## Lint code, modules, workflows and YAML.
-code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
+code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint code-deadcode
 	golangci-lint config verify
 	golangci-lint run
 	golangci-lint fmt --diff
@@ -125,6 +125,12 @@ code-lint: $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/actionlint
 	go test -count=1 -run '^TestSchemas$$' ./internal/schema
 	actionlint
 	pipx run yamllint==$(YAMLLINT_VERSION) --strict .
+
+.PHONY: code-deadcode
+## Find functions that no main reaches: the hook, the test hook, release-notes.
+code-deadcode: $(TOOLS_BIN)/deadcode
+	dead="$$(deadcode ./cmd/... ./tests/integration/internal/testhook; cd tools/release-notes && deadcode .)"; \
+	if [ -n "$$dead" ]; then echo "$$dead"; echo "code-deadcode: delete the functions above or call them" >&2; exit 1; fi
 
 .PHONY: code-lint-commits
 ## Check commit messages and the PR title against COMMITPOLICY from the base.

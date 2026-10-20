@@ -161,8 +161,10 @@ func TestOps_MergeButton(t *testing.T) {
 
 	err := gl.api(t.Context(), bob.Token, http.MethodPut, p.api(fmt.Sprintf("/merge_requests/%d/merge", mr.IID)), nil, nil)
 	require.Error(t, err)
-	waitUntil(t, 3*time.Minute, "merge_error", func() bool { return getMR(t, p, mr.IID).MergeError != "" })
-	got := getMR(t, p, mr.IID)
+	// The refresh that Sidekiq runs after the push to feature clears merge_error
+	// and may come late, so the message is taken from the answer that has it.
+	var got *mergeRequest
+	waitUntil(t, 3*time.Minute, "merge_error", func() bool { got = getMR(t, p, mr.IID); return got.MergeError != "" })
 	assert.Equal(t, "opened", got.State)
 	assert.Contains(t, got.MergeError, ciDenied)
 	assert.NotContains(t, got.MergeError, "Allowed to change", "only GL-HOOK-ERR lines reach the UI")

@@ -1,0 +1,9 @@
+/var/log/gitlab-repopolicy/audit.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    nocreate
+}

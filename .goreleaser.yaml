@@ -60,6 +60,11 @@ nfpms:
       - dst: /etc/gitlab-repopolicy/breakglass
         type: dir
         file_info: { mode: 0755, mtime: "{{ .CommitDate }}" }
+      # nocreate: the hook and the root commands create the next audit.log with the owner of the directory.
+      - src: packaging/logrotate/gitlab-repopolicy
+        dst: /etc/logrotate.d/gitlab-repopolicy
+        type: config|noreplace
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
       - src: packaging/systemd/gitlab-repopolicy-token-rotate.service
         dst: /usr/lib/systemd/system/gitlab-repopolicy-token-rotate.service
         file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }

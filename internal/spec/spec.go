@@ -52,9 +52,15 @@ type Spec struct {
 	Unique bool
 	// Named items of an Array are objects with a field "name", unique in
 	// the array; errors are prefixed with Named and the name, "rule ci: ...".
+	// For a Dict, Named prefixes errors in a value with Named and its key.
 	Named string
-	// KeyPattern and KeyFormat constrain the keys of a Dict.
-	KeyPattern, KeyFormat string
+	// KeyPattern and KeyFormat constrain the keys of a Dict; KeyNoun names a
+	// key in errors, "label" when empty.
+	KeyPattern, KeyFormat, KeyNoun string
+
+	// Nullable lets a file set the node to null: a layer that removes the
+	// key it would inherit from a preset. Merging removes every null.
+	Nullable bool
 
 	// MinLength and MaxLength bound a String in characters, or in bytes with Bytes.
 	MinLength, MaxLength int
@@ -81,17 +87,28 @@ type Spec struct {
 type Field struct {
 	Name     string
 	Required bool
-	Spec     *Spec
+	// AfterMerge makes a field required only in the result of merging the
+	// presets and the file, where a file may override a preset rule partly.
+	AfterMerge bool
+	Spec       *Spec
 }
 
 // Checks are the checks in code by name. A check gets the value of its node
 // and returns an error without a prefix; the validator adds the location.
 type Checks map[string]func(v *strictyaml.Value) error
 
-// Validate checks v against s and returns the first problem, such as
-// "line 4: rule ci: paths: 1 to 50 patterns are required".
+// Validate checks a file v against s and returns the first problem, such as
+// "line 4: rule ci: paths: 1 to 50 patterns are required". Fields required
+// only after merging may be missing, and nullable nodes may be null.
 func Validate(s *Spec, v *strictyaml.Value, checks Checks) error {
 	w := &walker{checks: checks, regexps: map[string]*regexp.Regexp{}}
+	return w.node(s, v, location{})
+}
+
+// ValidateMerged checks the result of merging the presets and the file, or a
+// preset, which must be complete: every field required after merging is set.
+func ValidateMerged(s *Spec, v *strictyaml.Value, checks Checks) error {
+	w := &walker{checks: checks, regexps: map[string]*regexp.Regexp{}, merged: true}
 	return w.node(s, v, location{})
 }
 
@@ -119,6 +136,7 @@ func (l location) errorf(line int, format string, a ...any) error {
 type walker struct {
 	checks  Checks
 	regexps map[string]*regexp.Regexp
+	merged  bool
 }
 
 // re compiles a pattern of the spec once per validation.
@@ -132,6 +150,9 @@ func (w *walker) re(pattern string) *regexp.Regexp {
 }
 
 func (w *walker) node(s *Spec, v *strictyaml.Value, loc location) error {
+	if v.Kind == strictyaml.Null && s.Nullable && !w.merged {
+		return nil
+	}
 	if err := w.structure(s, v, loc); err != nil {
 		return err
 	}
@@ -139,6 +160,9 @@ func (w *walker) node(s *Spec, v *strictyaml.Value, loc location) error {
 		return nil
 	}
 	check, ok := w.checks[s.Check]
+	if !ok {
+		check, ok = builtin[s.Check]
+	}
 	if !ok {
 		return fmt.Errorf("spec: check %q is not implemented", s.Check)
 	}
@@ -185,11 +209,11 @@ func (w *walker) object(s *Spec, v *strictyaml.Value, loc location) error {
 	for _, f := range s.Fields {
 		fv, ok := v.Fields[f.Name]
 		switch {
-		case !ok && f.Required && f.Spec.Type == Array:
+		case !ok && w.required(f) && f.Spec.Type == Array:
 			fv = &strictyaml.Value{Kind: strictyaml.Seq, Line: v.Line}
-		case !ok && f.Required && f.Spec.Type == Dict:
+		case !ok && w.required(f) && f.Spec.Type == Dict:
 			fv = &strictyaml.Value{Kind: strictyaml.Map, Line: v.Line}
-		case !ok && f.Required:
+		case !ok && w.required(f):
 			return loc.child(f.Name).errorf(v.Line, "required")
 		case !ok:
 			continue
@@ -200,6 +224,8 @@ func (w *walker) object(s *Spec, v *strictyaml.Value, loc location) error {
 	}
 	return nil
 }
+
+func (w *walker) required(f Field) bool { return f.Required || f.AfterMerge && w.merged }
 
 func (s *Spec) field(name string) *Field {
 	for i := range s.Fields {
@@ -280,13 +306,21 @@ func (w *walker) dict(s *Spec, v *strictyaml.Value, loc location) error {
 		return err
 	}
 	keys := slices.Sorted(slices.Values(v.Keys))
+	noun := s.KeyNoun
+	if noun == "" {
+		noun = "label"
+	}
 	for _, k := range keys {
 		if s.KeyPattern != "" && !w.re(s.KeyPattern).MatchString(k) {
-			return loc.errorf(v.KeyLines[k], "label %q must match %s", k, s.KeyFormat)
+			return loc.errorf(v.KeyLines[k], "%s %q must match %s", noun, k, s.KeyFormat)
 		}
 	}
 	for _, k := range keys {
-		if err := w.node(s.Values, v.Fields[k], loc.child(k)); err != nil {
+		valueLoc := loc.child(k)
+		if s.Named != "" {
+			valueLoc = location{prefix: loc.prefix + s.Named + " " + k + ": "}
+		}
+		if err := w.node(s.Values, v.Fields[k], valueLoc); err != nil {
 			return err
 		}
 	}

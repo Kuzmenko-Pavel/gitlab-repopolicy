@@ -241,6 +241,7 @@ linters:
           allow:
             - $gostd
             - github.com/stretchr/testify
+            - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module$
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
         strictyaml:
           list-mode: strict

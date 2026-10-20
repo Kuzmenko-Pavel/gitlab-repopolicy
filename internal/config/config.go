@@ -9,9 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
@@ -57,16 +56,9 @@ type Config struct {
 }
 
 // Help is where a pusher gets help; both are optional and printed in denials.
-type Help struct {
-	// Contact is who to ask about a problem of the server or a broken policy,
-	// for example "#gitlab-support".
-	Contact string `yaml:"contact"`
-	// DocsURL is the documentation of the rules for developers.
-	DocsURL string `yaml:"docs_url"`
-}
-
-// MaxHelp is the length limit of the help values, in characters.
-const MaxHelp = 200
+// Contact is who to ask about a problem of the server or a broken policy, for
+// example "#gitlab-support"; DocsURL is the documentation of the rules.
+type Help = module.Help
 
 // Audit configures where audit events go.
 type Audit struct {
@@ -259,17 +251,11 @@ func (c *Config) validate() error {
 		}
 	}
 	errs = append(errs, validateDefaultBranch(c.DefaultBranch))
-	for _, h := range []struct{ name, v string }{{"help.contact", c.Help.Contact}, {"help.docs_url", c.Help.DocsURL}} {
-		name, v := h.name, h.v
-		switch {
-		case utf8.RuneCountInString(v) > MaxHelp:
-			errs = append(errs, fmt.Errorf("%s: %d characters, the limit is %d", name, utf8.RuneCountInString(v), MaxHelp))
-		case strings.ContainsFunc(v, unicode.IsControl):
-			errs = append(errs, fmt.Errorf("%s: control characters are not allowed", name))
-		}
+	if err := module.CheckHelpText(c.Help.Contact); err != nil {
+		errs = append(errs, fmt.Errorf("help.contact: %w", err))
 	}
-	if u := c.Help.DocsURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		errs = append(errs, fmt.Errorf("help.docs_url: %q is not an http(s) URL", u))
+	if err := module.CheckHelpURL(c.Help.DocsURL); err != nil {
+		errs = append(errs, fmt.Errorf("help.docs_url: %w", err))
 	}
 	return errors.Join(errs...)
 }

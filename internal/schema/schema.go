@@ -64,9 +64,19 @@ func node(s *spec.Spec) map[string]any {
 		props := map[string]any{}
 		var required []string
 		for _, f := range s.Fields {
-			props[f.Name] = node(f.Spec)
+			p := node(f.Spec)
+			props[f.Name] = p
 			if f.Required {
 				required = append(required, f.Name)
+			}
+			// The schema describes a file, where a rule may override a preset
+			// rule partly; only the result of merging must have the field.
+			if f.AfterMerge {
+				desc := "Required after merging with presets."
+				if d, ok := p["description"].(string); ok {
+					desc += " " + d
+				}
+				p["description"] = desc
 			}
 		}
 		// An Open object is closed for editors too: an unknown key is valid
@@ -116,7 +126,21 @@ func node(s *spec.Spec) map[string]any {
 	if s.Check != "" {
 		out["x-repopolicy-check"] = s.Check
 	}
+	if s.Nullable {
+		nullable(out)
+	}
 	return out
+}
+
+// nullable lets a node be null: a file removes what a preset sets.
+func nullable(out map[string]any) {
+	if t, ok := out["type"].(string); ok {
+		out["type"] = []string{t, "null"}
+		return
+	}
+	if alts, ok := out["oneOf"].([]any); ok {
+		out["oneOf"] = append(alts, map[string]any{"type": "null"})
+	}
 }
 
 func bounds(out map[string]any, minKey string, low int, maxKey string, high int) {

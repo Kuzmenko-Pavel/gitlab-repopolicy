@@ -18,6 +18,7 @@ type fakeChanges struct {
 	changes  []module.PathChange
 	known    map[string][]module.PathState
 	stateErr error
+	knownErr error
 }
 
 func (f *fakeChanges) CandidatePaths(_ context.Context, u module.RefUpdate) ([]string, error) {
@@ -44,6 +45,9 @@ func (f *fakeChanges) NewPathChanges(context.Context, module.RefUpdate) ([]modul
 }
 
 func (f *fakeChanges) KnownStates(context.Context, module.RefUpdate, []string) (map[string][]module.PathState, error) {
+	if f.knownErr != nil {
+		return nil, f.knownErr
+	}
 	return f.known, f.stateErr
 }
 
@@ -292,6 +296,22 @@ func TestEvaluate_KnownContentOnlyInOrdinaryBranches(t *testing.T) {
 		known:   map[string][]module.PathState{"helm/app/values-prod.yaml": {alice}}}
 	res := e.evaluate(t, basePolicy)
 	assert.Equal(t, module.Deny, res.Decision, "a branch of a match list counts every change")
+}
+
+// TestEvaluate_KnownStatesFail: over the commit limit the known states do
+// not exempt anything, and a failure of git is an error.
+func TestEvaluate_KnownStatesFail(t *testing.T) {
+	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
+	changes := []module.PathChange{{Commit: strings.Repeat("c", 40), Path: ".gitlab-ci.yml", State: alice}}
+	e := newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}}, changes: changes, knownErr: module.ErrLimitExceeded}
+	assert.Equal(t, module.Deny, e.evaluate(t, basePolicy).Decision)
+
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}}, changes: changes, knownErr: errors.New("git failed")}
+	p, err := New(nil).Parse([]byte(basePolicy))
+	require.NoError(t, err)
+	_, err = p.Evaluate(context.Background(), e.in)
+	assert.ErrorContains(t, err, "git failed")
 }
 
 func TestEvaluate_KnownContentStateError(t *testing.T) {

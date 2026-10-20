@@ -2,6 +2,7 @@ package changes
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -485,4 +486,151 @@ func TestKnownStates_NoDefaultBranch(t *testing.T) {
 	known, err := s.KnownStates(ctx, update(c2, c2, "refs/heads/feature"), []string{"ci.yml"})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []module.PathState{f.state(c1, "ci.yml"), f.state(c2, "ci.yml")}, known["ci.yml"])
+}
+
+// failing is a repository whose methods fail on demand: by method name, or
+// the n-th call of RevList.
+type failing struct {
+	Git
+	errs        map[string]error
+	revListFail int
+	revLists    int
+}
+
+var errGit = errors.New("git failed")
+
+func (f *failing) Peel(ctx context.Context, rev string) (string, error) {
+	if err := f.errs["Peel "+rev]; err != nil {
+		return "", err
+	}
+	return f.Git.Peel(ctx, rev)
+}
+
+func (f *failing) DiffNames(ctx context.Context, a, b string) ([]string, error) {
+	if err := f.errs["DiffNames"]; err != nil {
+		return nil, err
+	}
+	return f.Git.DiffNames(ctx, a, b)
+}
+
+func (f *failing) CommitPaths(ctx context.Context, commits []string) ([]string, error) {
+	if err := f.errs["CommitPaths"]; err != nil {
+		return nil, err
+	}
+	return f.Git.CommitPaths(ctx, commits)
+}
+
+func (f *failing) RevList(ctx context.Context, o gitx.RevListOptions) ([]string, error) {
+	f.revLists++
+	if f.revLists == f.revListFail {
+		return nil, f.errs["RevList"]
+	}
+	return f.Git.RevList(ctx, o)
+}
+
+func (f *failing) CommitChanges(ctx context.Context, commits []string) ([]gitx.Commit, error) {
+	if err := f.errs["CommitChanges"]; err != nil {
+		return nil, err
+	}
+	return f.Git.CommitChanges(ctx, commits)
+}
+
+func (f *failing) Entries(ctx context.Context, commit string, paths []string) (map[string]gitx.Info, error) {
+	if err := f.errs["Entries "+commit]; err != nil {
+		return nil, err
+	}
+	return f.Git.Entries(ctx, commit, paths)
+}
+
+// sharedFixture is main with ci.yml v1 and a branch with ci.yml v2 on top,
+// pushed again with one more commit.
+func sharedFixture(t *testing.T) (*fixture, string, string, string) {
+	t.Helper()
+	f := newFixture(t)
+	base := f.commit("base", map[string]string{"ci.yml": "v1"})
+	f.git(f.work, "checkout", "-q", "-b", "feature")
+	old := f.commit("v2", map[string]string{"ci.yml": "v2"})
+	f.publish(base+":refs/heads/main", old+":refs/heads/feature")
+	head := f.commit("v3", map[string]string{"ci.yml": "v3"})
+	f.stage(head)
+	return f, base, old, head
+}
+
+func (f *fixture) failingSet(g *failing) *Set {
+	f.t.Helper()
+	repo, err := gitx.Open(gitx.Env{Dir: f.bare, Path: f.path})
+	require.NoError(f.t, err)
+	f.t.Cleanup(func() { assert.NoError(f.t, repo.Close()) })
+	g.Git = repo
+	return New(g, "refs/heads/main")
+}
+
+// TestKnownStates_Errors: a failure of git stops the check instead of
+// leaving out known states, and only a missing default branch means no anchor.
+func TestKnownStates_Errors(t *testing.T) {
+	f, base, old, head := sharedFixture(t)
+	u := update(old, head, "refs/heads/feature")
+	for name, g := range map[string]*failing{
+		"peel of the default branch": {errs: map[string]error{"Peel refs/heads/main": errGit}},
+		"peel of the old tip":        {errs: map[string]error{"Peel " + old: errGit}},
+		"entries of the anchor":      {errs: map[string]error{"Entries " + base: errGit}},
+		"entries of the old tip":     {errs: map[string]error{"Entries " + old: errGit}},
+		"rev-list of the branch":     {errs: map[string]error{"RevList": errGit}, revListFail: 1},
+		"changes of the branch":      {errs: map[string]error{"CommitChanges": errGit}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := f.failingSet(g).KnownStates(ctx, u, []string{"ci.yml"})
+			assert.ErrorIs(t, err, errGit)
+		})
+	}
+	t.Run("missing default branch", func(t *testing.T) {
+		g := &failing{errs: map[string]error{"Peel refs/heads/main": gitx.ErrMissing}}
+		known, err := f.failingSet(g).KnownStates(ctx, u, []string{"ci.yml"})
+		require.NoError(t, err)
+		assert.Contains(t, known["ci.yml"], f.state(old, "ci.yml"), "without an anchor the branch is all history")
+	})
+	t.Run("limit of the branch", func(t *testing.T) {
+		g := &failing{errs: map[string]error{"RevList": gitx.ErrLimit}, revListFail: 1}
+		_, err := f.failingSet(g).KnownStates(ctx, u, []string{"ci.yml"})
+		assert.ErrorIs(t, err, module.ErrLimitExceeded)
+	})
+}
+
+// TestNewPathChanges_ErrorsAndMemo: the changes of the new commits are read
+// once per ref, and a failure of git is returned.
+func TestNewPathChanges_ErrorsAndMemo(t *testing.T) {
+	f, _, old, head := sharedFixture(t)
+	u := update(old, head, "refs/heads/feature")
+	s, c := f.set("refs/heads/main")
+	first, err := s.NewPathChanges(ctx, u)
+	require.NoError(t, err)
+	again, err := s.NewPathChanges(ctx, u)
+	require.NoError(t, err)
+	assert.Equal(t, first, again)
+	assert.Equal(t, 1, c.revLists, "the second call uses the memo")
+
+	_, err = f.failingSet(&failing{errs: map[string]error{"CommitChanges": errGit}}).NewPathChanges(ctx, u)
+	assert.ErrorIs(t, err, errGit)
+}
+
+// TestPaths_DefaultBranchErrors: a failure of git while the paths of an
+// update of the default branch are listed is returned, and more entering
+// commits than the limit is ErrLimitExceeded.
+func TestPaths_DefaultBranchErrors(t *testing.T) {
+	f, base, _, head := sharedFixture(t)
+	u := update(base, head, "refs/heads/main")
+	for name, g := range map[string]*failing{
+		"diff":         {errs: map[string]error{"DiffNames": errGit}},
+		"commit paths": {errs: map[string]error{"CommitPaths": errGit}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := f.failingSet(g).Paths(ctx, u, def)
+			assert.ErrorIs(t, err, errGit)
+		})
+	}
+	t.Run("limit", func(t *testing.T) {
+		g := &failing{errs: map[string]error{"RevList": gitx.ErrLimit}, revListFail: 1}
+		_, err := f.failingSet(g).Paths(ctx, u, def)
+		assert.ErrorIs(t, err, module.ErrLimitExceeded)
+	})
 }

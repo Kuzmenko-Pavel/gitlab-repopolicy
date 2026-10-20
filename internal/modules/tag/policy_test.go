@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
 const oneRule = `  prod:
@@ -272,4 +274,24 @@ func TestAcceptance_ExpiredKey(t *testing.T) {
 	// expiry does not make the policy invalid.
 	assert.False(t, anchor.ValidateVersion(nil, now)[0].Warning)
 	mustParse(t, policyYAML(rules, map[string]string{"lead": valid, "old": expired, "dev": ssh1}))
+}
+
+func TestHelpsAndSources(t *testing.T) {
+	ci := module.Help{Contact: "#release"}
+	rules := []*rule{
+		{help: ci, source: []string{"file"}},
+		{help: ci, source: []string{"preset:b", "file"}},
+		{source: []string{"preset:a"}},
+	}
+	assert.Equal(t, []module.Help{ci}, helps(rules), "the same help once")
+	assert.Equal(t, []string{"preset:b", "preset:a", "file"}, sources(rules), "presets first, then the file")
+	assert.Nil(t, helps(rules[2:]))
+}
+
+// notTag is a policy of another module.
+type notTag struct{ module.Policy }
+
+func TestRulesFor_OtherPolicy(t *testing.T) {
+	_, ok := RulesFor(notTag{}, "v1.0.0")
+	assert.False(t, ok)
 }

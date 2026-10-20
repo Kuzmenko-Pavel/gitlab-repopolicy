@@ -13,7 +13,7 @@
 | pipx | `yamllint` у `make code-lint` |
 | Docker з compose | лише для e2e (`make test-e2e`) |
 
-Інші інструменти (golangci-lint, gitleaks, govulncheck, goreleaser, syft, cosign, actionlint, benchstat) make збирає сам у `bin/tools/` із зафіксованих версій у `tools/`. `gpg` і `ssh-keygen` для тестів не потрібні: тести самі створюють ключі й підписи.
+Інші інструменти (golangci-lint, deadcode, gitleaks, govulncheck, goreleaser, syft, cosign, actionlint, benchstat) make збирає сам у `bin/tools/` із зафіксованих версій у `tools/`. `gpg` і `ssh-keygen` для тестів не потрібні: тести самі створюють ключі й підписи.
 
 ## Make - єдина точка входу
 
@@ -32,13 +32,14 @@ make code-lint test-unit test-integration
 | Target | Що робить |
 | --- | --- |
 | `code-fmt` | форматує Go-код |
-| `code-lint` | golangci-lint з правилами залежностей пакетів, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом |
+| `code-lint` | golangci-lint з правилами залежностей пакетів, `code-deadcode`, tidy всіх модулів, actionlint, yamllint, збіг `schemas/` з кодом |
+| `code-deadcode` | функції, до яких не доходить жоден `main`: hook, тестовий hook і release-notes. Функція, яку викликають лише тести, теж мертва |
 | `code-lint-commits` | повідомлення комітів після `BASE_REF` за `COMMITPOLICY`, взятою з `BASE_REF`, а не з гілки. Коміти й заголовки PR від Dependabot пропускаються: він бере регістр `Bump` з історії й повертає заголовок при кожному rebase. Його PR мержаться з `gh pr merge --squash --subject "<тип>(deps): bump ..."`, і squash-коміт у main перевіряється під час push |
 | `code-generate` | перегенерує `schemas/` і golden-файли виводу push |
 | `code-build` | бінарник у `bin/gitlab-repopolicy` |
 | `test-unit` | unit-тести з race detector |
 | `test-integration` | сценарії на справжньому `git receive-pack` з git із `GIT_BIN`, корпус policy, документація: мовні пари, відносні посилання, цитати `examples/` |
-| `test-coverage` | unit і integration з покриттям у `coverage/`. У CI job `unit` відправляє `coverage/coverage.out` у Codecov: у PR з'являються коментар з різницею покриття проти main і перевірка `codecov/project`, яка падає, якщо покриття проєкту впало більш ніж на 1% |
+| `test-coverage` | unit-тести з покриттям у `coverage/`. Integration-тести проходять широкі шляхи і в покриття не входять. У CI job `unit` відправляє `coverage/coverage.out` у Codecov: у PR з'являються коментар з різницею покриття проти main і перевірка `codecov/project`, яка падає, якщо покриття проєкту впало більш ніж на 1% |
 | `test-fuzz` | кожна fuzz-ціль по `FUZZTIME` |
 | `test-load` | бенчмарки hook |
 | `test-e2e`, `test-e2e-down` | стенд GitLab CE і сценарії на ньому |

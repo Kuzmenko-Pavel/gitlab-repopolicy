@@ -1,12 +1,18 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/branch"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
 )
 
 const goodPolicy = "version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat]}\n"
@@ -210,4 +216,63 @@ func TestValidate_BrokenPreset(t *testing.T) {
 	assert.Equal(t, ExitError, code, "a preset no file extends is still reported")
 	assert.Contains(t, out, "config.yaml: invalid presets\n  error: presets.commitpolicy.org: ")
 	assert.Contains(t, out, "COMMITPOLICY: valid\n")
+}
+
+// fakeUsers answers the user lookups of validate --online.
+type fakeUsers struct {
+	users  map[string]module.User
+	status module.Status
+}
+
+func (f fakeUsers) Users(context.Context, []string) (map[string]module.User, module.Status) {
+	return f.users, f.status
+}
+
+func (fakeUsers) AccessLevels(context.Context, []int64) (map[int64]int, module.Status) {
+	return nil, module.Confirmed()
+}
+
+func (fakeUsers) Known(string) bool { return false }
+
+func TestPrintBranch_UserPrefix(t *testing.T) {
+	p, err := branch.Parse([]byte("version: 1\nrules:\n  work:\n    match: ['/./']\n    priority: 1\n    user_prefix: true\n    message: Work branches start with your username.\n"), nil)
+	require.NoError(t, err)
+	tests := []struct {
+		name, branch string
+		v            module.Validator
+		want         string
+	}{
+		{"no prefix", "fix-login", nil, "  result: denied, the name does not start with a GitLab username and /\n  message: Work branches start with your username.\n"},
+		{"active user", "alice/fix", fakeUsers{users: map[string]module.User{"alice": {ID: 1, Active: true}}, status: module.Confirmed()},
+			"  alice is an active GitLab user\n  result: allowed\n"},
+		{"blocked user", "bob/fix", fakeUsers{users: map[string]module.User{"bob": {ID: 2}}, status: module.Confirmed()},
+			"  result: denied, bob is not an active GitLab user\n"},
+		{"no answer", "carol/fix", fakeUsers{status: module.Unknown("timeout")},
+			"  requires: carol is an active GitLab user (not checked: timeout)\n  result: allowed when the requirements hold\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printBranch(context.Background(), &output{w: &buf}, p, tt.branch, tt.v)
+			assert.Contains(t, buf.String(), tt.want)
+		})
+	}
+}
+
+func TestPrintTag_NoCommonSigner(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE"
+	other := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+	p, err := tag.New(nil).Parse([]byte("version: 1\nkeys:\n  a: " + key + "\n  b: " + other + "\nrules:\n" +
+		"  one: {match: ['/^v/'], signers: [a], message: m}\n  two: {match: ['/-prod$/'], signers: [b], message: m}\n"))
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	printTag(&output{w: &buf}, p, "v1-prod")
+	assert.Contains(t, buf.String(), "  signers: none, the matching rules have no signer in common; every such tag is denied\n")
+}
+
+func TestValidate_OnlineNeedsConfig(t *testing.T) {
+	inDir(t, map[string]string{"COMMITPOLICY": goodPolicy})
+	code, _, errOut := run(t, "validate", "--online")
+	assert.Equal(t, ExitUsage, code)
+	assert.Contains(t, errOut, "--online needs --config with gitlab_url and token_file")
 }

@@ -397,6 +397,26 @@ func TestTagsOnlyOnBranches(t *testing.T) {
 
 	personal := &fakeAPI{users: []gitlab.User{{ID: 2, Username: "alice"}}}
 	assert.True(t, r.run([]module.Module{closed}, enforce, personal, "alice/scratch", tag(c2)).out.Allow, "personal projects are not checked")
+
+	missing := strings.Repeat("e", 40)
+	res = r.run([]module.Module{closed}, enforce, nil, "", tag(missing))
+	assert.False(t, res.out.Allow, "a tag of an object git cannot read fails closed")
+	assert.Equal(t, module.CodeInternalError, events(res.audit, audit.EventInternalError)[0].Code)
+	res = r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: zero40, New: missing, Ref: "refs/heads/broken"}, tag(c1))
+	assert.False(t, res.out.Allow, "rev-list over a tip git cannot read fails closed")
+}
+
+// TestAuditPresets: every event of a module names the presets its file extends.
+func TestAuditPresets(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"TESTPOLICY": "preset org-ci\ndeny\n"})
+	r.publish(c1)
+	c2 := r.commit(map[string]string{"a": "1"})
+	r.stage(c2)
+	res := r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"})
+	ev := events(res.audit, audit.EventDecision)
+	require.NotEmpty(t, ev)
+	assert.Equal(t, []audit.Preset{{Name: "org-ci", SHA256: "sha-org-ci"}}, ev[0].Presets)
 }
 
 func TestDefaultBranch(t *testing.T) {

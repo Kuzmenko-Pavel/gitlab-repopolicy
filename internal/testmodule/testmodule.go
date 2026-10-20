@@ -12,6 +12,7 @@
 //	sign       report a verified signature for every update
 //	bad-new    reject a new version at acceptance
 //	versioned  report the anchor version at acceptance
+//	preset <name>  report the preset as extended, with the digest "sha-<name>"
 //	guard <rule> <path>,... allow <user>,... [refs all|default|protected|<ref>,...]
 //	           a change of the paths needs a user in allow; a path ending
 //	           with "/" is a directory, a ref ending with "*" a prefix
@@ -73,7 +74,14 @@ type Policy struct {
 	instructions []string
 	guards       []guard
 	decision     module.Decision
+	presets      []module.PresetRef
 }
+
+// Presets are the presets of the preset instructions.
+func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// Origins are not tracked: the test module has no rules to merge.
+func (p *Policy) Origins() []module.RuleOrigin { return nil }
 
 type guard struct {
 	name  string
@@ -98,6 +106,11 @@ func (m Module) Parse(blob []byte) (module.Policy, error) {
 		switch f[0] {
 		case "deny", "panic", "slow", "touch", "classify", "bad-new", "sign", "versioned":
 			p.instructions = append(p.instructions, f[0])
+		case "preset":
+			if len(f) != 2 {
+				return nil, errors.New("preset needs a name")
+			}
+			p.presets = append(p.presets, module.PresetRef{Name: f[1], SHA256: "sha-" + f[1]})
 		case "guard":
 			g, err := parseGuard(f)
 			if err != nil {

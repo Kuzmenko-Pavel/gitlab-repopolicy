@@ -340,6 +340,8 @@ func TestOnBranch(t *testing.T) {
 	assert.Error(t, err)
 	_, err = r.OnBranch(ctx, "HEAD", nil, nil)
 	assert.Error(t, err)
+	_, err = r.OnBranch(ctx, c1, []string{"main"}, nil)
+	assert.Error(t, err, "a tip is a commit, not a name")
 }
 
 func TestRevList(t *testing.T) {
@@ -456,4 +458,28 @@ func TestDiscoverAndResolve(t *testing.T) {
 	assert.Error(t, err)
 	_, err = r.ResolveCommit(context.Background(), "nope")
 	assert.ErrorIs(t, err, ErrMissing)
+}
+
+func TestParseCommitChanges_Malformed(t *testing.T) {
+	for name, out := range map[string]string{
+		"empty header":           "/\x00",
+		"record before a commit": ":100644 100644 a b M\x00A\x00",
+		"record without a path":  "/c1 p1\n:100644 100644 a b M",
+		"wrong number of fields": "/c1 p1\n:100644 100644 a M\x00A\x00",
+		"not a record":           "/c1 p1\nM\x00A\x00",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseCommitChanges([]byte(out))
+			assert.Error(t, err)
+		})
+	}
+	commits, err := parseCommitChanges(nil)
+	require.NoError(t, err)
+	assert.Empty(t, commits)
+}
+
+func TestCommitChanges_NoCommits(t *testing.T) {
+	commits, err := newFixture(t).open().CommitChanges(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Nil(t, commits, "no commits run no git")
 }

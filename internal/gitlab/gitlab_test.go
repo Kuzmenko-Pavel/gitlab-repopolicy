@@ -144,6 +144,25 @@ func TestClient_Pagination(t *testing.T) {
 	assert.Equal(t, "v*", got[100])
 }
 
+func TestClient_Branches(t *testing.T) {
+	srv := gitlabtest.NewUnix(t)
+	page := make([]map[string]any, 100)
+	for i := range page {
+		page[i] = map[string]any{"name": fmt.Sprintf("release/v%d", i)}
+	}
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/repository/branches?per_page=100&page=1", gitlabtest.OK(page))
+	srv.Handle(http.MethodGet, "/api/v4/projects/1/repository/branches?per_page=100&page=2", gitlabtest.OK([]map[string]any{{"name": "main"}}))
+	c := newClient(t, srv, writeToken(t, "glpat-1"), 30)
+	got, err := c.Branches(context.Background(), 1)
+	require.NoError(t, err)
+	assert.Len(t, got, 101)
+	assert.Equal(t, "main", got[100])
+
+	srv.Handle(http.MethodGet, "/api/v4/projects/2/repository/branches?per_page=100&page=1", gitlabtest.Status(http.StatusForbidden))
+	_, err = c.Branches(context.Background(), 2)
+	assert.Error(t, err, "a failure is never an empty list")
+}
+
 func TestClient_UsersByUsername(t *testing.T) {
 	srv := gitlabtest.NewUnix(t)
 	srv.Handle(http.MethodGet, "/api/v4/users?username=a%2Bb", gitlabtest.OK([]map[string]any{{"id": 7, "username": "a+b", "state": "active"}}))

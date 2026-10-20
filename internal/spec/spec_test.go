@@ -17,14 +17,14 @@ var sample = &Spec{Type: Object, Fields: []Field{
 	{Name: "admins", Required: true, Spec: &Spec{Type: Array, MinItems: 1, MaxItems: 2, Noun: "usernames", Unique: true,
 		Items: &Spec{Type: String, Check: "lower"}}},
 	{Name: "rules", Spec: &Spec{Type: Array, MaxItems: 2, Noun: "rules", Named: "rule", Items: &Spec{Type: Object, Fields: []Field{
-		{Name: "name", Required: true, Spec: RuleName()},
+		{Name: "name", Required: true, Spec: &Spec{Type: String, Pattern: "^[a-z0-9-]{1,63}$", Format: "[a-z0-9-]{1,63}"}},
 		{Name: "message", Spec: &Spec{Type: String, MaxLength: 3}},
 		{Name: "tags", Spec: &Spec{Type: String, MinLength: 1, MaxLength: 4, Bytes: true}},
 		{Name: "except", Spec: &Spec{Type: Object, Fields: []Field{{Name: "merges", Spec: &Spec{Type: Boolean}}}}},
 	}}}},
 	{Name: "keys", Spec: &Spec{Type: Dict, MaxItems: 1, Noun: "keys", KeyPattern: "^[a-z]+$", KeyFormat: "[a-z]+",
 		Values: &Spec{Type: String}}},
-	{Name: "refs", Spec: Refs("")},
+	{Name: "match", Spec: Match("", true)},
 }}
 
 var lower = Checks{
@@ -34,12 +34,11 @@ var lower = Checks{
 		}
 		return nil
 	},
-	"refs": CheckRefs,
 }
 
 func TestValidate(t *testing.T) {
 	for in, want := range map[string]string{
-		"version: 1\nadmins: [a]\nrules: [{name: r}]\nkeys: {k: x}\nrefs: [refs/heads/*]\n": "",
+		"version: 1\nadmins: [a]\nrules: [{name: r}]\nkeys: {k: x}\nmatch: [main]\n": "",
 		"version: 2\nadmins: [a]\n":                                            "line 1: version: 2 is not supported, use 1",
 		"admins: [a]\n":                                                        "line 1: version: required",
 		"version: 1\n":                                                         "line 1: admins: 1 to 2 usernames are required",
@@ -65,7 +64,7 @@ func TestValidate(t *testing.T) {
 		"version: 1\nadmins: [a]\nkeys: {K: x}\n":                              `line 3: keys: label "K" must match [a-z]+`,
 		"version: 1\nadmins: [a]\nkeys: {a: x, b: y}\n":                        "line 3: keys: 2 keys, the limit is 1",
 		"version: 1\nadmins: [a]\nkeys: {a: 1}\n":                              "line 3: keys.a: expected a string, got a number",
-		"version: 1\nadmins: [a]\nrefs: main\n":                                `line 3: refs: "main" is not one of all, default, protected or a list of refs`,
+		"version: 1\nadmins: [a]\nmatch: protected\n":                          `line 3: match: "protected" is not all, default or a list; write a single name as [protected]`,
 	} {
 		tree, err := strictyaml.DecodeTree([]byte(in), 1<<10)
 		require.NoError(t, err, in)

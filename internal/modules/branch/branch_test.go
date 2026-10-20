@@ -371,3 +371,15 @@ func TestModule(t *testing.T) {
 	assert.False(t, p.MustProtect("kpn/x"))
 	assert.False(t, parse(t, nil, "version: 1\n").ProtectsBranches())
 }
+
+// TestUnusable_NoAnswers: rules that cannot be used answer no rule and no
+// protection, so validate and settings-check do not act on them.
+func TestUnusable_NoAnswers(t *testing.T) {
+	p, err := Parse([]byte("version: 1\nextends: missing\n"), nil)
+	require.NoError(t, err)
+	_, ok := p.RuleFor("release/v1.0.0")
+	assert.False(t, ok)
+	assert.False(t, p.MustProtect("release/v1.0.0"))
+	assert.False(t, p.ProtectsBranches())
+	assert.NotEmpty(t, p.Validate(context.Background(), nil))
+}

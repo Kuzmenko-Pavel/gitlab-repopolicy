@@ -1,7 +1,6 @@
 package tag
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -92,9 +91,6 @@ func parsePolicy(data []byte, s *Settings) (*policy, error) {
 		}
 		p.rules = append(p.rules, &rule{name: name, match: m, signers: y.Signers, protected: y.Protected,
 			message: strings.TrimSpace(y.Message), help: y.Help, source: res.Origin[name]})
-	}
-	if len(p.rules) > 0 && len(p.keys) == 0 {
-		return nil, errors.New("keys: required when there are rules")
 	}
 	return p, nil
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/path"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/refs"
 )
 
 // queryTimeout bounds explain, admins and validate --online.
@@ -102,10 +101,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	}
 	defaultRef := "refs/heads/" + p.DefaultBranch
 	target := fullRef(*ref, defaultRef)
-	rules, st := pol.ExplainPath(ctx, strings.TrimPrefix(*path, "/"), target, *user, refs.New(defaultRef, p.ID, api, nil))
-	if !st.IsConfirmed() {
-		return fail(stdio.Err, "explain", fmt.Errorf("protected branches cannot be read: %s", st.Reason()), ExitError)
-	}
+	rules := pol.ExplainPath(strings.TrimPrefix(*path, "/"), target, defaultRef, *user)
 	out.printf("%s, PATHPOLICY of %s; path %s, ref %s, user %s\n", p.PathWithNamespace, p.DefaultBranch, *path, target, *user)
 	if len(rules) == 0 {
 		out.printf("no path rule matches: anyone who may push to the ref may change it\n")

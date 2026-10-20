@@ -59,12 +59,10 @@ func TestAdminReport(t *testing.T) {
 
 func TestExplainPath(t *testing.T) {
 	p := parsed(t, explainPolicy)
-	ctx := context.Background()
-	refs := &fakeRefs{class: module.ClassOther, status: ok}
+	const main = "refs/heads/main"
 	file := []string{"file"}
 
-	got, st := p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/feature", "alice", refs)
-	require.True(t, st.IsConfirmed())
+	got := p.ExplainPath("ci/release/deploy.yml", "refs/heads/feature", main, "alice")
 	require.NotEmpty(t, got)
 	assert.Equal(t, module.FieldOrigin{Field: "allow", Layers: file}, got[0].Fields[2])
 	for i := range got {
@@ -76,17 +74,16 @@ func TestExplainPath(t *testing.T) {
 		{Name: "listed", Match: `[/^release\//]`, Applies: false, Allow: []string{"alice"}, Allowed: true, Source: file},
 	}, got)
 
-	got, st = p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/main", "alice", refs)
-	require.True(t, st.IsConfirmed())
+	got = p.ExplainPath("ci/release/deploy.yml", main, main, "alice")
 	assert.True(t, got[1].Applies, "default is the default branch")
-	got, _ = p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/release/1", "alice", refs)
+	got = p.ExplainPath("ci/release/deploy.yml", "refs/heads/release/1", main, "alice")
 	assert.True(t, got[2].Applies, "a branch of the list")
-	got, _ = p.ExplainPath(ctx, "ci/x", "refs/tags/v1", "alice", refs)
+	got = p.ExplainPath("ci/x", "refs/tags/v1", main, "alice")
 	assert.False(t, got[0].Applies, "PATHPOLICY does not check tags")
 
-	got, _ = p.ExplainPath(ctx, "README.md", "refs/heads/main", "alice", refs)
+	got = p.ExplainPath("README.md", main, main, "alice")
 	assert.Empty(t, got)
-	got, _ = p.ExplainPath(ctx, File, "refs/heads/main", "Platform-Lead", refs)
+	got = p.ExplainPath(File, main, main, "Platform-Lead")
 	require.Len(t, got, 1)
 	assert.Equal(t, PathRule{Name: "admins of PATHPOLICY", Match: "all", Applies: true,
 		Allow: []string{"platform-lead", "ghost"}, Allowed: true, Source: file}, got[0])

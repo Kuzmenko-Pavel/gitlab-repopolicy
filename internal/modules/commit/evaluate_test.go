@@ -252,6 +252,36 @@ func TestPresetMissing_SkipsModule(t *testing.T) {
 	assert.Empty(t, repo.scopes)
 }
 
+func TestPresetMissing_OnlyTags(t *testing.T) {
+	repo := newRepo()
+	res := evaluate(t, "version: 1\nextends: missing\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/tags/v1"))
+	assert.Equal(t, module.Allow, res.Decision, "a push of tags creates no commits to skip")
+	assert.Empty(t, res.Violations)
+}
+
+// TestWarningLevel: a check of level warn reports the commits without asking
+// to rewrite them, with the types and scopes the rule expects.
+func TestWarningLevel(t *testing.T) {
+	repo := newRepo()
+	repo.entering["refs/heads/main"] = []string{repo.add("c1", "feat(ui): add thing\n", 1)}
+	res := evaluate(t, `version: 1
+rules:
+  r:
+    match: all
+    parser: conventional
+    checks:
+      type-enum: {level: warn, value: [fix]}
+      scope-enum: {level: warn, value: [api]}
+    message: m
+`, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	assert.Equal(t, module.Warn, res.Decision)
+	require.Len(t, res.Violations, 1)
+	v := res.Violations[0]
+	assert.Equal(t, "1 commit message does not follow the format; this is a warning, it does not block the push", v.Title)
+	assert.Equal(t, []string{"required: type(scope): subject, for example feat(api): add refunds", "scopes: api", "types: fix"}, v.Facts)
+	assert.Equal(t, "next time: follow the format; commits that are pushed stay as they are", v.Hint)
+}
+
 func TestTooManyCommits(t *testing.T) {
 	repo := newRepo()
 	repo.limit = true

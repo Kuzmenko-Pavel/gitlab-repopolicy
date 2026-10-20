@@ -257,15 +257,11 @@ test-integration-compat: $(TOOLS_BIN)/cosign
 	echo "test-integration: $(COMPAT_PREV_VERSION) accepts all $$n valid PATHPOLICY and TAGPOLICY files"
 
 .PHONY: test-coverage
-## Run unit and integration tests with coverage into coverage/.
+## Run unit tests with coverage into coverage/; integration tests are not counted.
 test-coverage:
-	if [ -z "$$(go list -tags integration ./tests/integration/... 2>/dev/null)" ]; then \
-		echo "test-coverage: no integration test packages under tests/integration" >&2; exit 1; \
-	fi
-	rm -rf coverage; mkdir -p coverage/unit coverage/integration
+	rm -rf coverage; mkdir -p coverage/unit
 	go test -count=1 -cover -covermode=atomic -coverpkg=./... ./... -args -test.gocoverdir="$(CURDIR)/coverage/unit"
-	GIT_BIN="$(GIT_BIN_ABS)" GOCOVERDIR="$(CURDIR)/coverage/integration" go test -count=1 -tags integration ./tests/integration/...
-	go tool covdata textfmt -i=coverage/unit,coverage/integration -o coverage/coverage.out
+	go tool covdata textfmt -i=coverage/unit -o coverage/coverage.out
 	go tool cover -func=coverage/coverage.out | tail -n 1
 
 .PHONY: test-fuzz

@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -111,6 +112,34 @@ rules:
 
 	_, err = ExtendsNames(tree(t, "[org-ci, org-ci]"))
 	assert.EqualError(t, err, "preset org-ci is listed twice")
+	_, err = ExtendsNames(tree(t, "[]"))
+	assert.EqualError(t, err, "the list is empty")
+	_, err = ExtendsNames(tree(t, "{a: b}"))
+	assert.EqualError(t, err, "expected a preset name or a list of them")
+	_, err = ExtendsNames(tree(t, "[Org_CI]"))
+	assert.EqualError(t, err, "Org_CI is not a preset name such as org-ci")
+}
+
+func TestMerge_NullOfMissingKey(t *testing.T) {
+	doc, origin, err := merged(t, map[string]any{"org-ci": orgCI}, "version: 1\nextends: org-ci\nrules:\n  ci:\n    help: null\n  other: null\n")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"agents", "ci"}, sortedKeys(doc.Fields["rules"]), "null of a key no layer has removes nothing")
+	assert.Equal(t, []string{"preset:org-ci", "file"}, origin["ci"])
+}
+
+func sortedKeys(v *strictyaml.Value) []string {
+	keys := append([]string(nil), v.Keys...)
+	slices.Sort(keys)
+	return keys
+}
+
+func TestResolve_Errors(t *testing.T) {
+	_, err := Resolve([]byte("version: [1"), 1<<16, fileSpec, nil, Presets{})
+	assert.Error(t, err, "YAML that does not parse")
+	_, err = Resolve([]byte("version: 1\nextends: org-ci\n"), 1<<16, fileSpec, nil, Presets{})
+	var pe *PresetError
+	require.ErrorAs(t, err, &pe)
+	assert.ErrorIs(t, err, pe.Err, "a preset error unwraps to its cause")
 }
 
 func TestMerge_EmptyResult(t *testing.T) {

@@ -53,14 +53,17 @@ func TestSchemas(t *testing.T) {
 var sample = &spec.Spec{Type: spec.Object, Fields: []spec.Field{
 	{Name: "version", Required: true, Spec: &spec.Spec{Type: spec.Integer, Const: 1, Desc: "Schema version of the file."}},
 	{Name: "rules", Required: true, Spec: &spec.Spec{Type: spec.Array, MaxItems: 2, Named: "rule", Items: &spec.Spec{Type: spec.Object, Fields: []spec.Field{
-		{Name: "name", Required: true, Spec: spec.RuleName()},
+		{Name: "name", Required: true, Spec: &spec.Spec{Type: spec.String, Pattern: "^[a-z0-9-]{1,63}$", Format: "[a-z0-9-]{1,63}"}},
 		{Name: "level", Spec: &spec.Spec{Type: spec.String, Enum: []string{"error", "warn", "off"}}},
 		{Name: "paths", Spec: &spec.Spec{Type: spec.Array, MinItems: 1, Unique: true, Items: &spec.Spec{Type: spec.String, MaxLength: 256, Check: "path-pattern"}}},
 		{Name: "enabled", Spec: &spec.Spec{Type: spec.Boolean}},
 		{Name: "weight", Spec: &spec.Spec{Type: spec.Integer, Minimum: 1, Maximum: 10}},
 	}}}},
 	{Name: "labels", Spec: &spec.Spec{Type: spec.Dict, MinItems: 1, KeyPattern: "^[a-z]+$", Values: &spec.Spec{Type: spec.String, MinLength: 1}}},
-	{Name: "refs", Spec: spec.Refs("Where the rule applies.")},
+	{Name: "refs", Spec: &spec.Spec{Type: spec.Any, Check: "refs", Desc: "Where the rule applies.", OneOf: []*spec.Spec{
+		{Type: spec.String, Enum: []string{"all", "default", "protected"}},
+		{Type: spec.Array, MinItems: 1, Items: &spec.Spec{Type: spec.String, Pattern: "^refs/"}},
+	}}},
 }}
 
 func TestGolden(t *testing.T) {

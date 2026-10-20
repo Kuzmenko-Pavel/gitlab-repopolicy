@@ -43,8 +43,6 @@ const (
 	levelError
 )
 
-func (l level) String() string { return [...]string{"", "warn", "error"}[l] }
-
 // Policy is a parsed COMMITPOLICY merged with its presets.
 type Policy struct {
 	warnMode bool

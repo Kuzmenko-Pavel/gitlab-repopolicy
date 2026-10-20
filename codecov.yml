@@ -9,8 +9,11 @@ coverage:
     patch:
       default:
         informational: true
+# Test code is not product code: the integration tests and the policy
+# module that only the tests import.
 ignore:
   - "tests/**"
+  - "internal/testmodule/**"
 comment:
   layout: "diff, flags, files"
   # Without it the comment shows only the coverage of the changed lines.

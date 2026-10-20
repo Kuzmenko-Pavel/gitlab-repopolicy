@@ -36,6 +36,9 @@ func (f *fakeAPI) RawFile(_ context.Context, id int64, path, ref string, _ int) 
 	if err := f.fail[fmt.Sprintf("files:%d", id)]; err != nil {
 		return nil, err
 	}
+	if err := f.fail[fmt.Sprintf("file:%d:%s", id, path)]; err != nil {
+		return nil, err
+	}
 	data, ok := f.files[fmt.Sprintf("%d:%s:%s", id, ref, path)]
 	if !ok {
 		return nil, &gitlab.Error{Kind: gitlab.NotFound, Status: 404}
@@ -290,4 +293,30 @@ func TestRun_Presets(t *testing.T) {
 		"the module is skipped on a push")
 	assert.Equal(t, `TAGPOLICY on main cannot be parsed: extends: preset "missing" is not defined in the server config`, d.Drifts[1].Reason,
 		"the file is broken")
+}
+
+// TestRun_Unavailable: a failure of the API while the policy files or the
+// branches are read is reported for the project, never as no drift.
+func TestRun_Unavailable(t *testing.T) {
+	api := healthy()
+	api.fail["file:1:BRANCHPOLICY"] = errors.New("HTTP 502")
+	rep := run(t, api, expected())
+	require.Len(t, rep.Drifted(), 1)
+	assert.Equal(t, []string{CheckUnavailable}, checks(rep.Drifted()[0]))
+	assert.Contains(t, rep.Drifted()[0].Drifts[0].Reason, "read policy files: HTTP 502")
+
+	api = healthy()
+	api.fail["repo:1"] = errors.New("HTTP 502")
+	rep = run(t, api, expected())
+	require.Len(t, rep.Drifted(), 1)
+	assert.Contains(t, rep.Drifted()[0].Drifts[len(rep.Drifted()[0].Drifts)-1].Reason, "protected branches: HTTP 502")
+}
+
+func TestRun_NoDefaultBranch(t *testing.T) {
+	api := healthy()
+	api.files = map[string]string{}
+	api.projects[0].DefaultBranch = ""
+	rep := run(t, api, expected())
+	assert.Empty(t, rep.Checked, "an empty project has no policy files")
+	assert.Equal(t, 1, rep.Skipped)
 }

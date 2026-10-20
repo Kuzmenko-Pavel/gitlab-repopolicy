@@ -1,7 +1,6 @@
 package path
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -219,7 +218,7 @@ type PathRule struct {
 // ExplainPath returns the rules that match the path, for gitlab-repopolicy
 // explain; every applying rule must allow the user (AND). PATHPOLICY itself
 // is changed only by admins.
-func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]PathRule, module.Status) {
+func (p *Policy) ExplainPath(path, ref, defaultRef, username string) []PathRule {
 	var out []PathRule
 	if isPolicyPath(path) {
 		out = append(out, PathRule{Name: "admins of " + File, Match: "all", Applies: true,
@@ -229,11 +228,7 @@ func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		if !r.matches(path) {
 			continue
 		}
-		applies, st := r.appliesTo(ctx, ref, refs)
-		if !st.IsConfirmed() {
-			return nil, st
-		}
-		pr := PathRule{Name: r.name, Match: r.match.String(), Applies: applies, Allow: r.allow,
+		pr := PathRule{Name: r.name, Match: r.match.String(), Applies: r.appliesTo(ref, defaultRef), Allow: r.allow,
 			Allowed: r.allows(username), Source: r.source}
 		for _, o := range p.origins {
 			if o.Rule == r.name {
@@ -242,21 +237,21 @@ func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		}
 		out = append(out, pr)
 	}
-	return out, module.Confirmed()
+	return out
 }
 
 // appliesTo reports whether the rule applies to the ref: match all applies to
 // every branch, default to the default branch, a list to the branches it
 // matches. Tags are checked by TAGPOLICY only.
-func (r *rule) appliesTo(_ context.Context, ref string, refs module.RefClassifier) (bool, module.Status) {
+func (r *rule) appliesTo(ref, defaultRef string) bool {
 	name, ok := strings.CutPrefix(ref, "refs/heads/")
 	switch {
 	case !ok:
-		return false, module.Confirmed()
+		return false
 	case r.match.Default:
-		return ref == refs.Default(), module.Confirmed()
+		return ref == defaultRef
 	case r.match.IsList():
-		return r.match.Matches(name), module.Confirmed()
+		return r.match.Matches(name)
 	}
-	return true, module.Confirmed()
+	return true
 }

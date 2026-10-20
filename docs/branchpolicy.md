@@ -55,44 +55,57 @@ BRANCHPOLICY стежить за порядком, а не за доступом
 # examples/branch-standard/BRANCHPOLICY
 # A branch standard: release and hotfix branches are release/vX.Y.Z and
 # hotfix/vX.Y.Z, epic and demo branches are created by any developer, and all
-# four are protected; work branches are <prefix>/[<issue>/]<name>. A name
-# that fits no class is denied. In an installation this list usually lives in
-# branchpolicy_presets of the server config, and a project only extends it.
+# four are protected; work branches are <prefix>/[<issue>/]<name>. Each family
+# has an exact rule and a deny rule with a higher priority for the names that
+# miss it. A name of no class is not checked. In an installation this list
+# usually lives in the presets of the server config, and a project only
+# extends it.
 version: 1
 
 rules:
-  - name: release
-    match: "release/*"
-    pattern: '^release/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [release/v1.4.0, release/v1.4.0-staging]
-      invalid: [release/foo, release/v1.2, release/v01.2.3]
+  release:
+    match: ['/^release\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+    priority: 100
     protected: true
     message: Release branches look like release/v1.4.0. Protect release/* with "Allowed to push and merge Maintainers".
-  - name: hotfix
-    match: "hotfix/*"
-    pattern: '^hotfix/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [hotfix/v1.4.1]
-      invalid: [hotfix/foo, hotfix/v1.4]
+  release-bad:
+    match: ['/^release\//']
+    priority: 110
+    deny: true
+    message: Release branches look like release/v1.4.0.
+  hotfix:
+    match: ['/^hotfix\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+    priority: 200
     protected: true
-  - name: epic
-    match: "epic/*"
-    pattern: '^epic/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
-    examples:
-      valid: [epic/payments]
-      invalid: [epic/, epic/Payments]
+    message: Hotfix branches look like hotfix/v1.4.1. Protect hotfix/* with "Allowed to push and merge Maintainers".
+  hotfix-bad:
+    match: ['/^hotfix\//']
+    priority: 210
+    deny: true
+    message: Hotfix branches look like hotfix/v1.4.1.
+  epic:
+    match: ['/^epic\/[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/']
+    priority: 300
     protected: true
-  - name: demo
-    match: "demo/*"
-    pattern: '^demo/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
+    message: Epic branches look like epic/payments. Protect epic/* in Protected branches.
+  epic-bad:
+    match: ['/^epic\//']
+    priority: 310
+    deny: true
+    message: Epic branches look like epic/payments.
+  demo:
+    match: ['/^demo\/[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/']
+    priority: 400
     protected: true
-  - name: work
-    match: "*"
-    pattern: '^[a-z0-9][a-z0-9._-]*/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)(/[a-z0-9][a-z0-9._-]*)*|[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*)$'
-    examples:
-      valid: [kpn/disable_auth, gks/INFRA-1719/change_logic, dmitry.mashoshin/123, dmitry.mashoshin/355/change_proce/auth]
-      invalid: [kpn, kpn/, 123-fix-login, Kuzmenko.Pavel-main-patch-48213, revert-1a2b3c4d]
+    message: Demo branches look like demo/client-a. Protect demo/* in Protected branches.
+  demo-bad:
+    match: ['/^demo\//']
+    priority: 410
+    deny: true
+    message: Demo branches look like demo/client-a.
+  work:
+    match: ['/^[a-z0-9][a-z0-9._-]*\/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)(\/[a-z0-9][a-z0-9._-]*)*|[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*)$/']
+    priority: 900
     message: Work branches are <prefix>/[<issue>/]<name>, for example kpn/disable_auth.
 ```
 

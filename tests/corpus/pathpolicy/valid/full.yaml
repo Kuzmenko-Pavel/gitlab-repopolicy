@@ -1,23 +1,31 @@
 version: 1
 admins: [platform-lead, sre-lead]
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths: [".gitlab-ci.yml", ".gitlab/ci/**", "Makefile", "scripts/deploy/**"]
     allow: [platform-lead, sre-lead, ci-maintainer]
     message: >-
       CI/CD configuration is changed by the platform team. Propose a change through a merge request.
-  - name: commit-policy
+    help:
+      contact: "#platform"
+  commit-policy:
+    match: all
     paths: ["COMMITPOLICY"]
     allow: [dev-lead]
-  - name: prod-values
+    message: COMMITPOLICY belongs to dev-lead.
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
     allow: [platform-lead, release-manager]
-  - name: release
+    message: Prod values are changed by release managers.
+  release:
+    match: ['!/^feature\//']
     paths: ["deploy/**"]
-    refs: ["refs/heads/release/*"]
     allow: [release-manager]
-  - name: default-only
+    message: Deploy files are changed by the release manager outside feature branches.
+  default-only:
+    match: default
     paths: ["docs/policy/**"]
-    refs: default
     allow: [platform-lead]
+    message: Policy docs are changed by the platform lead.

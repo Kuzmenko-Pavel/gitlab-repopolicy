@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
 )
 
 // maxTagObject is the largest tag object that is read; a larger one is not a release tag.
@@ -64,7 +66,7 @@ func checkProtected(ctx context.Context, in *module.Input, u module.RefUpdate, r
 	class, st := in.Refs.Class(ctx, u.Ref)
 	switch {
 	case !st.IsConfirmed():
-		v := module.Violation{Code: module.CodeAuthorizationBackend, Rule: ruleNames(with), Ref: u.Ref, Reason: st.Reason(),
+		v := module.Violation{Code: module.CodeAuthorizationBackend, Rule: ruleNames(with), Ref: u.Ref, Reason: st.Reason(), Source: sources(with),
 			Title:   "could not check that the tag is protected: the GitLab API did not answer; the tag is accepted",
 			Summary: "tag " + name + " is accepted, but it could not be checked that the project protects it"}
 		if st.IsLimit() {
@@ -73,7 +75,7 @@ func checkProtected(ctx context.Context, in *module.Input, u module.RefUpdate, r
 		return &v, false
 	case class != module.ClassProtected:
 		return &module.Violation{Code: module.CodeTagNotProtected, Rule: ruleNames(with), Ref: u.Ref, Reason: "not a protected tag",
-			Message: messages(with),
+			Message: messages(with), Help: helps(with), Source: sources(with),
 			Hint:    "how to fix: a Maintainer protects tags like " + name + " in Settings > Repository > Protected tags, then push the tag again",
 			Summary: "tag " + name + " must be protected (TAGPOLICY rule " + ruleNames(with) + "): a Maintainer protects it in Settings > Repository > Protected tags, then push again"}, true
 	}
@@ -84,7 +86,7 @@ func checkProtected(ctx context.Context, in *module.Input, u module.RefUpdate, r
 func (p *policy) check(ctx context.Context, in *module.Input, u module.RefUpdate, rules []*rule, push time.Time, res *module.Result) error {
 	name := tagName(u.Ref)
 	deny := func(v module.Violation, reason string) {
-		v.Rule, v.Ref, v.Reason = ruleNames(rules), u.Ref, reason
+		v.Rule, v.Ref, v.Reason, v.Help, v.Source = ruleNames(rules), u.Ref, reason, helps(rules), sources(rules)
 		res.Violations = append(res.Violations, v)
 	}
 	obj, err := in.Objects.Read(ctx, u.New, maxTagObject)
@@ -248,3 +250,37 @@ func ruleList(rules []*rule) []string {
 }
 
 func ruleNames(rules []*rule) string { return strings.Join(ruleList(rules), ", ") }
+
+// helps is the help of the rules of a violation without repeats.
+func helps(rules []*rule) []module.Help {
+	var out []module.Help
+	for _, r := range rules {
+		if r.help != (module.Help{}) && !slices.Contains(out, r.help) {
+			out = append(out, r.help)
+		}
+	}
+	return out
+}
+
+// sources are the layers of the rules of a violation in merge order: the
+// presets first, then the file.
+func sources(rules []*rule) []string {
+	var out []string
+	for _, r := range rules {
+		for _, l := range r.source {
+			if !slices.Contains(out, l) {
+				out = append(out, l)
+			}
+		}
+	}
+	slices.SortStableFunc(out, func(a, b string) int {
+		switch {
+		case a == spec.FileLayer && b != spec.FileLayer:
+			return 1
+		case b == spec.FileLayer && a != spec.FileLayer:
+			return -1
+		}
+		return 0
+	})
+	return out
+}

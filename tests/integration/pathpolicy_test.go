@@ -18,30 +18,39 @@ const (
 	pathPolicy = `version: 1
 admins: [alice]
 rules:
-  - name: ci
+  ci:
+    match: all
     paths: [ci.yml, "deploy/**"]
     allow: [alice]
-  - name: commit-policy
+    message: CI and deploy belong to alice.
+  commit-policy:
+    match: all
     paths: [COMMITPOLICY]
     allow: [dev-lead]
+    message: COMMITPOLICY belongs to dev-lead.
 `
 	pathRelease = `version: 1
 admins: [alice]
 rules:
-  - name: release-ci
+  release-ci:
+    match: ['/^release\//']
     paths: [ci.yml]
-    refs: ["refs/heads/release/*"]
     allow: [alice]
+    message: CI of release branches belongs to alice.
 `
 	pathBroad = `version: 1
 admins: [alice]
 rules:
-  - name: everything
+  everything:
+    match: all
     paths: ["**"]
     allow: [alice, dev-lead]
-  - name: commit-policy
+    message: m
+  commit-policy:
+    match: all
     paths: [COMMITPOLICY]
     allow: [dev-lead]
+    message: COMMITPOLICY belongs to dev-lead.
 `
 )
 
@@ -119,7 +128,7 @@ func TestDelegation_NonOwnerDenied(t *testing.T) {
 
 func TestDelegation_DelegateCannotChangePathPolicy(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
-	s.Commit("chore: delegate more", map[string]string{"PATHPOLICY": pathPolicy + "  - name: tags\n    paths: [TAGPOLICY]\n    allow: [dev-lead]\n"})
+	s.Commit("chore: delegate more", map[string]string{"PATHPOLICY": pathPolicy + "  tags:\n    match: all\n    paths: [TAGPOLICY]\n    allow: [dev-lead]\n    message: m\n"})
 	r := s.Push(devLead, "HEAD:refs/heads/feature")
 	assertDenied(t, r, "PATHPOLICY, branch feature: only PATHPOLICY admins may change PATHPOLICY", "admins: alice")
 	ev := Events(s.Audit(), "decision")
@@ -189,7 +198,7 @@ func TestBootstrap_NoEffectiveAdmin(t *testing.T) {
 }
 
 func TestPaths_NestedRulesAnd(t *testing.T) {
-	policy := "version: 1\nadmins: [alice]\nrules:\n  - {name: deploy, paths: [\"deploy/**\"], allow: [alice, bob]}\n  - {name: prod, paths: [\"deploy/prod/**\"], allow: [alice]}\n"
+	policy := "version: 1\nadmins: [alice]\nrules:\n  deploy: {match: all, paths: [\"deploy/**\"], allow: [alice, bob], message: m}\n  prod: {match: all, paths: [\"deploy/prod/**\"], allow: [alice], message: m}\n"
 	s, _ := pathStand(t, policy, nil)
 	s.Commit("feat: stage", map[string]string{"deploy/stage/x": "1"})
 	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))

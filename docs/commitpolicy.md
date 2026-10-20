@@ -96,20 +96,20 @@ Conventional Commits у захищених гілках:
 
 ```yaml
 # examples/conventional-commits/COMMITPOLICY
-# Conventional Commits in protected branches; a stricter type list in
-# release branches. Feature branches are not checked.
+# Conventional Commits in main and release branches; a stricter type list in
+# release branches. Other branches are not checked.
 version: 1
 mode: enforce
 
-rulesets:
-  - name: protected
-    refs: protected
-    format: conventional
+rules:
+  conventional:
+    match: [main, '/^release\//']
+    parser: conventional
     except:
-      merge_commits: true
+      merge_commit: true
       git_reverts: true
       users: [release-bot]
-    rules:
+    checks:
       type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
       scope:             { level: error, value: optional }
       breaking-bang:     { level: error, value: allow }
@@ -117,17 +117,18 @@ rulesets:
       subject-case:      { level: error, value: lower-first }
       subject-full-stop: { level: error, value: forbid }
       body-required:     { level: error, types: [feat, fix] }
-      reference:         { level: warn,  location: any, pattern: "[A-Za-z0-9_./-]*#[0-9]+", types: [feat, fix] }
+      pattern:           { level: warn,  location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
       trailer-required:  { level: error, value: [Signed-off-by] }
     message: >-
-      Commits in protected branches follow Conventional Commits.
+      Commits in main and release branches follow Conventional Commits.
       Reword them with git rebase -i or squash the merge request.
 
-  - name: release
-    refs: ["refs/heads/release/*"]
-    format: conventional
-    rules:
+  release:
+    match: ['/^release\//']
+    parser: conventional
+    checks:
       type-enum: { level: error, value: [fix, docs, chore] }
+    message: Release branches take only fix, docs and chore commits.
 ```
 
 Вільний формат із ключем issue на початку заголовка:
@@ -137,21 +138,16 @@ rulesets:
 # A free-form header that starts with an issue key, on the default branch only.
 version: 1
 
-rulesets:
-  - name: issue-key
-    refs: default
-    format: free
+rules:
+  issue-key:
+    match: default
+    parser: free
     except:
-      merge_commits: true
-    rules:
+      merge_commit: true
+    checks:
       header-max-length: { level: error, value: 72 }
       subject-full-stop: { level: error, value: forbid }
-      pattern:
-        level: error
-        value: '[A-Z][A-Z0-9]+-[0-9]+ \S'
-        examples:
-          valid: ["PAY-123 Round refunds to cents"]
-          invalid: ["Round refunds to cents", "pay-123 Round refunds"]
+      pattern:           { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
     message: Start the header with the issue key, for example PAY-123.
 ```
 

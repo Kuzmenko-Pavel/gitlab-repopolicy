@@ -79,11 +79,12 @@ func tagPolicyFor(lead, dev tagSigner) string {
 	}
 	return fmt.Sprintf(`version: 1
 rules:
-  - name: staging
-    tags: 'v\d+\.\d+\.\d+-staging'
+  staging:
+    match: ['/^v\d+\.\d+\.\d+-staging$/']
     signers: [lead, dev]
-  - name: prod
-    tags: 'v\d+\.\d+\.\d+-prod'
+    message: Staging releases are signed by lead or dev.
+  prod:
+    match: ['/^v\d+\.\d+\.\d+-prod$/']
     signers: [lead]
     message: Prod releases are signed by lead.
 keys:
@@ -214,9 +215,9 @@ func TestTagPolicy_SHA256(t *testing.T) {
 
 func TestTagPolicy_InvalidAnchor(t *testing.T) {
 	lead := sshSigner(t)
-	s, base := mainWith(t, map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + lead.key + "\nrules:\n  - name: prod\n    tags: 'v.*'\n    signers: [nobody]\n"})
+	s, base := mainWith(t, map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + lead.key + "\nrules:\n  prod:\n    match: all\n    signers: [nobody]\n    message: m\n"})
 	s.makeTag("v1.0.0", "v1.0.0", base, "commit", &lead)
-	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0"), "TAGPOLICY, tag v1.0.0: TAGPOLICY in main is broken", `"nobody" is not a label in keys`)
+	assertDenied(t, s.Push(alice, "refs/tags/v1.0.0"), "TAGPOLICY, tag v1.0.0: TAGPOLICY in main is broken", `"nobody" is not a label in keys of the file`)
 	require.NotEmpty(t, Events(s.Audit(), "invalid_policy"))
 
 	// Branches and tag deletions pass.
@@ -228,8 +229,8 @@ func TestTagPolicy_InvalidAnchor(t *testing.T) {
 
 func TestTagPolicy_InvalidNewVersionOnFeatureBranch(t *testing.T) {
 	s, _, _, _ := tagStand(t)
-	s.Commit("break the policy", map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + strings.TrimSpace(sshSigner(t).key) + "\nrules:\n  - name: prod\n    tags: 'v('\n    signers: [lead]\n"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "TAGPOLICY, branch feature: the changed TAGPOLICY is invalid", "tags:")
+	s.Commit("break the policy", map[string]string{"TAGPOLICY": "version: 1\nkeys:\n  lead: " + strings.TrimSpace(sshSigner(t).key) + "\nrules:\n  prod:\n    match: ['/v(/']\n    signers: [lead]\n    message: m\n"})
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "TAGPOLICY, branch feature: the changed TAGPOLICY is invalid", "not a valid RE2 regex")
 
 	private := "version: 1\nkeys:\n  lead: |\n    -----BEGIN OPENSSH PRIVATE KEY-----\n    b3BlbnNzaC1rZXktdjEAAAAA\n    -----END OPENSSH PRIVATE KEY-----\n"
 	s.Commit("leak a key", map[string]string{"TAGPOLICY": private})

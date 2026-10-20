@@ -11,7 +11,6 @@ import (
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
 // Limits of a PATHPOLICY file.
@@ -25,57 +24,81 @@ const (
 	maxMessage      = 1000
 )
 
-// fileYAML is what Parse decodes once Spec accepts the file.
-type fileYAML struct {
-	Version int        `yaml:"version"`
-	Admins  []string   `yaml:"admins"`
-	Rules   []ruleYAML `yaml:"rules"`
-}
-
 type ruleYAML struct {
-	Name    string   `yaml:"name"`
-	Paths   []string `yaml:"paths"`
-	Refs    any      `yaml:"refs"`
-	Allow   []string `yaml:"allow"`
-	Message string   `yaml:"message"`
+	Match   any         `yaml:"match"`
+	Paths   []string    `yaml:"paths"`
+	Allow   []string    `yaml:"allow"`
+	Message string      `yaml:"message"`
+	Help    module.Help `yaml:"help"`
 }
 
-// Policy is a parsed PATHPOLICY.
+// Policy is a parsed PATHPOLICY merged with its presets.
 type Policy struct {
-	admins []string
-	rules  []*rule
+	admins  []string
+	rules   []*rule
+	presets []module.PresetRef
 }
 
 type rule struct {
 	name    string
+	match   module.Match
 	paths   []string
-	refs    module.RefScope
 	allow   []string
 	message string
+	help    module.Help
+	// source lists the layers of the rule, "preset:<name>" or "file".
+	source []string
 }
 
-// Parse decodes a PATHPOLICY file offline.
-func Parse(data []byte) (*Policy, error) {
-	tree, err := strictyaml.DecodeTree(data, module.DefaultMaxPolicySize)
+// Settings come from the server config.
+type Settings struct {
+	presets spec.Presets
+}
+
+// NewSettings decodes the presets of the module in the server config.
+func NewSettings(rawPresets map[string]any) *Settings {
+	return &Settings{presets: spec.NewPresets(rawPresets, presetSpec, checks, module.DefaultMaxPolicySize)}
+}
+
+// Parse decodes a PATHPOLICY file offline and merges the presets it extends;
+// s may be nil when there is no server config. A missing or broken preset
+// makes the file unusable, like a broken file.
+func Parse(data []byte, s *Settings) (*Policy, error) {
+	if s == nil {
+		s = &Settings{}
+	}
+	res, err := spec.Resolve(data, module.DefaultMaxPolicySize, Spec, checks, s.presets)
 	if err != nil {
 		return nil, err
 	}
-	if err := spec.Validate(Spec, tree, checks); err != nil {
-		return nil, err
+	p := &Policy{presets: res.Refs(s.presets)}
+	for _, a := range res.Doc.Fields["admins"].Items {
+		p.admins = append(p.admins, a.Str)
 	}
-	var f fileYAML
-	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
-		return nil, err
-	}
-	p := &Policy{admins: f.Admins}
-	for _, y := range f.Rules {
-		refs, err := module.ParseRefScope(y.Refs)
-		if err != nil {
-			return nil, fmt.Errorf("rule %s: refs: %w", y.Name, err)
+	for _, name := range res.Rules() {
+		var y ruleYAML
+		if err := res.DecodeRule(name, &y); err != nil {
+			return nil, err
 		}
-		p.rules = append(p.rules, &rule{name: y.Name, paths: y.Paths, refs: refs, allow: y.Allow, message: strings.TrimSpace(y.Message)})
+		m, err := module.ParseMatch(y.Match, true)
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: match: %w", name, err)
+		}
+		p.rules = append(p.rules, &rule{name: name, match: m, paths: y.Paths, allow: y.Allow,
+			message: strings.TrimSpace(y.Message), help: y.Help, source: res.Origin[name]})
 	}
 	return p, nil
+}
+
+// Presets are the presets the file extends, for the audit log.
+func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// helpOf is the help of a rule for its violation, nil without one.
+func (r *rule) helpOf() []module.Help {
+	if r.help == (module.Help{}) {
+		return nil
+	}
+	return []module.Help{r.help}
 }
 
 // validatePattern checks a path pattern: relative, no "\", no ".", ".."
@@ -176,13 +199,15 @@ func (p *Policy) Usernames() []string {
 // PathRule is a rule that matches a path, for gitlab-repopolicy explain.
 type PathRule struct {
 	Name string
-	// Refs is the ref scope as written in the policy.
-	Refs string
-	// Applies is false when the scope excludes the ref.
+	// Match is the match field as written in the policy.
+	Match string
+	// Applies is false when the rule does not apply to the ref.
 	Applies bool
 	Allow   []string
 	// Allowed reports whether the user is in allow.
 	Allowed bool
+	// Source lists the layers of the rule: "preset:<name>" or "file".
+	Source []string
 }
 
 // ExplainPath returns the rules that match the path, for gitlab-repopolicy
@@ -191,8 +216,8 @@ type PathRule struct {
 func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, refs module.RefClassifier) ([]PathRule, module.Status) {
 	var out []PathRule
 	if isPolicyPath(path) {
-		out = append(out, PathRule{Name: "admins of " + File, Refs: "all", Applies: true,
-			Allow: p.admins, Allowed: p.isAdmin(username)})
+		out = append(out, PathRule{Name: "admins of " + File, Match: "all", Applies: true,
+			Allow: p.admins, Allowed: p.isAdmin(username), Source: []string{spec.FileLayer}})
 	}
 	for _, r := range p.rules {
 		if !r.matches(path) {
@@ -202,24 +227,24 @@ func (p *Policy) ExplainPath(ctx context.Context, path, ref, username string, re
 		if !st.IsConfirmed() {
 			return nil, st
 		}
-		out = append(out, PathRule{Name: r.name, Refs: r.refs.String(), Applies: applies, Allow: r.allow, Allowed: r.allows(username)})
+		out = append(out, PathRule{Name: r.name, Match: r.match.String(), Applies: applies, Allow: r.allow,
+			Allowed: r.allows(username), Source: r.source})
 	}
 	return out, module.Confirmed()
 }
 
-// appliesTo reports whether the ref scope of the rule includes the ref.
-func (r *rule) appliesTo(ctx context.Context, ref string, refs module.RefClassifier) (bool, module.Status) {
-	switch r.refs.Kind {
-	case module.RefsList:
-		return r.refs.MatchList(ref), module.Confirmed()
-	case module.RefsDefault:
+// appliesTo reports whether the rule applies to the ref: match all applies to
+// every branch, default to the default branch, a list to the branches it
+// matches. Tags are checked by TAGPOLICY only.
+func (r *rule) appliesTo(_ context.Context, ref string, refs module.RefClassifier) (bool, module.Status) {
+	name, ok := strings.CutPrefix(ref, "refs/heads/")
+	switch {
+	case !ok:
+		return false, module.Confirmed()
+	case r.match.Default:
 		return ref == refs.Default(), module.Confirmed()
-	case module.RefsProtected:
-		if ref == refs.Default() {
-			return true, module.Confirmed()
-		}
-		class, st := refs.Class(ctx, ref)
-		return class != module.ClassOther, st
+	case r.match.IsList():
+		return r.match.Matches(name), module.Confirmed()
 	}
 	return true, module.Confirmed()
 }

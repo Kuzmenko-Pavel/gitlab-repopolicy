@@ -1,4 +1,4 @@
 version: 1
 admins: [a]
 rules:
-  - {name: r, paths: ["{a,b}"], allow: [a]}
+  r: {match: all, paths: ["{a,b}"], allow: [a], message: m}

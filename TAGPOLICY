@@ -1,8 +1,8 @@
 version: 1
 
 rules:
-  - name: release
-    tags: 'v.+'
+  release:
+    match: ['/^v.+$/']
     signers: [kuzmenko-pavel]
     message: Release tags are signed by a maintainer key from this file.
 

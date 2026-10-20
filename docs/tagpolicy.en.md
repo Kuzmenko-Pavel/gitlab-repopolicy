@@ -105,11 +105,12 @@ Who may change TAGPOLICY itself is set by a PATHPOLICY rule ([pathpolicy.en.md](
 version: 1
 
 rules:
-  - name: staging
-    tags: 'v\d+\.\d+\.\d+-staging'
+  staging:
+    match: ['/^v\d+\.\d+\.\d+-staging$/']
     signers: [release-lead, dev-lead]
-  - name: prod
-    tags: 'v\d+\.\d+\.\d+-prod'
+    message: Staging releases are signed by release-lead or dev-lead.
+  prod:
+    match: ['/^v\d+\.\d+\.\d+-prod$/']
     signers: [release-lead]
     protected: true
     message: >-

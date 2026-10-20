@@ -6,6 +6,8 @@ PATHPOLICY rule "ci-config", branch petro/s01: you may not change these files
     Makefile
   CI and deploy logic belong to the platform team (#platform).
   this rule applies to every branch: ask one of them to push the change
+  who can help with this rule: #platform
+  docs of this rule: https://wiki.example/ci
 
 PATHPOLICY, branch petro/s01: only PATHPOLICY admins may change PATHPOLICY
   admins: olena.platform, ivan.sre

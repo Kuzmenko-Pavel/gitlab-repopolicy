@@ -15,13 +15,32 @@
       "uniqueItems": true,
       "x-repopolicy-check": "usernames"
     },
+    "extends": {
+      "description": "Presets of the server config, merged in this order before the file.",
+      "oneOf": [
+        {
+          "pattern": "^[a-z0-9-]{1,63}$",
+          "type": "string"
+        },
+        {
+          "items": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      ],
+      "x-repopolicy-check": "extends"
+    },
     "rules": {
-      "description": "Path rules; every rule that matches a path must be satisfied (AND).",
-      "items": {
+      "additionalProperties": {
         "additionalProperties": false,
+        "description": "Every rule that matches a path must be satisfied (AND).",
         "properties": {
           "allow": {
-            "description": "1 to 50 usernames that may change the paths; no groups or roles.",
+            "description": "Required after merging with presets. 1 to 50 usernames that may change the paths; no groups or roles.",
             "items": {
               "pattern": "^(?:[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9_-]|[a-zA-Z0-9_])$",
               "type": "string",
@@ -29,21 +48,77 @@
             },
             "maxItems": 50,
             "minItems": 1,
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "uniqueItems": true,
             "x-repopolicy-check": "usernames"
           },
-          "message": {
-            "description": "Text shown when a change is denied, up to 1000 characters.",
-            "maxLength": 1000,
-            "type": "string"
+          "help": {
+            "additionalProperties": false,
+            "description": "Help printed in the denial of this rule.",
+            "properties": {
+              "contact": {
+                "description": "Who to ask, for example #gitlab-support.",
+                "maxLength": 200,
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-text"
+              },
+              "docs_url": {
+                "description": "Documentation of the rule, an http(s) URL.",
+                "maxLength": 200,
+                "pattern": "^https?://",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-url"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           },
-          "name": {
-            "pattern": "^[a-z0-9-]{1,63}$",
-            "type": "string"
+          "match": {
+            "description": "Required after merging with presets. all, default or a list of branch names and /regexes/: the branches the rule applies to.",
+            "oneOf": [
+              {
+                "enum": [
+                  "all",
+                  "default"
+                ],
+                "type": "string"
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-repopolicy-check": "match-default"
+          },
+          "message": {
+            "description": "Required after merging with presets. What the pusher reads when the rule denies a push.",
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "paths": {
-            "description": "1 to 50 doublestar patterns anchored at the repository root.",
+            "description": "Required after merging with presets. 1 to 50 doublestar patterns anchored at the repository root.",
             "items": {
               "maxLength": 256,
               "minLength": 1,
@@ -53,45 +128,27 @@
             },
             "maxItems": 50,
             "minItems": 1,
-            "type": "array"
-          },
-          "refs": {
-            "description": "all (default), protected, default or a list of ref patterns such as refs/heads/release/*.",
-            "oneOf": [
-              {
-                "enum": [
-                  "all",
-                  "default",
-                  "protected"
-                ],
-                "type": "string"
-              },
-              {
-                "items": {
-                  "pattern": "^refs/",
-                  "type": "string"
-                },
-                "minItems": 1,
-                "type": "array"
-              }
-            ],
-            "x-repopolicy-check": "refs"
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
-        "required": [
-          "name",
-          "paths",
-          "allow"
-        ],
-        "type": "object"
+        "type": [
+          "object",
+          "null"
+        ]
       },
-      "maxItems": 100,
-      "type": "array",
-      "x-repopolicy-check": "unique-names"
+      "description": "Rules by name. A rule of the file with the name of a preset rule overrides its fields; null removes it.",
+      "maxProperties": 100,
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]{1,63}$"
+      },
+      "type": "object"
     },
     "version": {
       "const": 1,
-      "description": "Schema version; version 1 is frozen.",
+      "description": "Schema version.",
       "type": "integer"
     }
   },

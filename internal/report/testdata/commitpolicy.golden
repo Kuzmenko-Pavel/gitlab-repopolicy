@@ -1,6 +1,6 @@
 gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
 
-COMMITPOLICY ruleset "conventional", branch main: 2 commit messages do not follow the format
+COMMITPOLICY rule "conventional", branch main: 2 commit messages do not follow the format
   required: type(scope): subject, for example feat(api): add refunds
   types: feat, fix
   commits:
@@ -14,4 +14,4 @@ COMMITPOLICY ruleset "conventional", branch main: 2 commit messages do not follo
 
 rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
 checked as: alice (HTTPS)
-GL-HOOK-ERR: gitlab-repopolicy: 2 commit messages do not follow the format (COMMITPOLICY ruleset "conventional", branch main)
+GL-HOOK-ERR: gitlab-repopolicy: 2 commit messages do not follow the format (COMMITPOLICY rule "conventional", branch main)

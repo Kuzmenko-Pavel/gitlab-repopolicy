@@ -1,38 +1,28 @@
 package tag
 
 import (
+	"errors"
 	"fmt"
-	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
 // Limits of a TAGPOLICY file.
 const (
-	maxRules        = 50
-	maxKeys         = 32
-	maxPatternBytes = 256
-	maxMessage      = 1000
+	maxRules = 50
+	maxKeys  = 32
 )
 
-// fileYAML is what parsePolicy decodes once Spec accepts the file.
-type fileYAML struct {
-	Version int               `yaml:"version"`
-	Rules   []ruleYAML        `yaml:"rules"`
-	Keys    map[string]string `yaml:"keys"`
-}
-
 type ruleYAML struct {
-	Name      string   `yaml:"name"`
-	Tags      string   `yaml:"tags"`
-	Signers   []string `yaml:"signers"`
-	Protected bool     `yaml:"protected"`
-	Message   string   `yaml:"message"`
+	Match     any         `yaml:"match"`
+	Signers   []string    `yaml:"signers"`
+	Protected bool        `yaml:"protected"`
+	Message   string      `yaml:"message"`
+	Help      module.Help `yaml:"help"`
 }
 
 type policy struct {
@@ -40,52 +30,76 @@ type policy struct {
 	// keys are sorted by label.
 	keys    []*key
 	byLabel map[string]*key
+	presets []module.PresetRef
 }
 
 type rule struct {
 	name    string
-	tags    *regexp.Regexp
+	match   module.Match
 	signers []string
 	// protected requires the tag to be protected in GitLab when it is created.
 	protected bool
 	message   string
+	help      module.Help
+	source    []string
 }
 
-func parsePolicy(data []byte) (*policy, error) {
-	tree, err := strictyaml.DecodeTree(data, maxPolicySize)
+// Settings come from the server config.
+type Settings struct {
+	presets spec.Presets
+}
+
+// NewSettings decodes the presets of the module in the server config.
+func NewSettings(rawPresets map[string]any) *Settings {
+	return &Settings{presets: spec.NewPresets(rawPresets, presetSpec, checks, maxPolicySize)}
+}
+
+// parsePolicy decodes a TAGPOLICY file and merges the presets it extends; a
+// missing or broken preset makes the file unusable, like a broken file.
+func parsePolicy(data []byte, s *Settings) (*policy, error) {
+	if s == nil {
+		s = &Settings{}
+	}
+	res, err := spec.Resolve(data, maxPolicySize, Spec, checks, s.presets)
 	if err != nil {
 		return nil, err
 	}
-	if err := spec.Validate(Spec, tree, checks(tree)); err != nil {
-		return nil, err
-	}
-	var f fileYAML
-	if err := strictyaml.Decode(data, &f, maxPolicySize); err != nil {
-		return nil, err
-	}
-	p := &policy{byLabel: map[string]*key{}}
-	labels := make([]string, 0, len(f.Keys))
-	for label := range f.Keys {
-		labels = append(labels, label)
-	}
-	sort.Strings(labels)
-	for _, label := range labels {
-		k, err := parseKey(label, f.Keys[label])
-		if err != nil {
-			return nil, fmt.Errorf("keys.%s: %w", label, err)
+	p := &policy{byLabel: map[string]*key{}, presets: res.Refs(s.presets)}
+	if keys := res.Doc.Fields["keys"]; keys != nil {
+		for _, label := range slices.Sorted(slices.Values(keys.Keys)) {
+			k, err := parseKey(label, keys.Fields[label].Str)
+			if err != nil {
+				return nil, fmt.Errorf("keys.%s: %w", label, err)
+			}
+			p.keys = append(p.keys, k)
+			p.byLabel[label] = k
 		}
-		p.keys = append(p.keys, k)
-		p.byLabel[label] = k
 	}
-	for _, y := range f.Rules {
-		re, err := compileTags(y.Tags)
-		if err != nil {
-			return nil, fmt.Errorf("rule %s: tags: %w", y.Name, err)
+	for _, name := range res.Rules() {
+		var y ruleYAML
+		if err := res.DecodeRule(name, &y); err != nil {
+			return nil, err
 		}
-		p.rules = append(p.rules, &rule{name: y.Name, tags: re, signers: y.Signers, protected: y.Protected, message: strings.TrimSpace(y.Message)})
+		m, err := module.ParseMatch(y.Match, false)
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: match: %w", name, err)
+		}
+		for _, label := range y.Signers {
+			if _, ok := p.byLabel[label]; !ok {
+				return nil, fmt.Errorf("rule %s: signers: %q is not a label in keys of the file", name, label)
+			}
+		}
+		p.rules = append(p.rules, &rule{name: name, match: m, signers: y.Signers, protected: y.Protected,
+			message: strings.TrimSpace(y.Message), help: y.Help, source: res.Origin[name]})
+	}
+	if len(p.rules) > 0 && len(p.keys) == 0 {
+		return nil, errors.New("keys: required when there are rules")
 	}
 	return p, nil
 }
+
+// Presets are the presets the file extends, for the audit log.
+func (p *policy) Presets() []module.PresetRef { return p.presets }
 
 func (r *rule) allows(label string) bool {
 	for _, s := range r.signers {
@@ -96,11 +110,11 @@ func (r *rule) allows(label string) bool {
 	return false
 }
 
-// matching are the rules whose pattern matches the tag name.
+// matching are the rules whose match has the tag name.
 func (p *policy) matching(name string) []*rule {
 	var out []*rule
 	for _, r := range p.rules {
-		if r.tags.MatchString(name) {
+		if r.match.All || r.match.Matches(name) {
 			out = append(out, r)
 		}
 	}

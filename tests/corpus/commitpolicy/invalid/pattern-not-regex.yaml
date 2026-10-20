@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    parser: free
+    checks:
+      pattern: { level: error, location: header, value: 'PAY-1' }
+    message: m

@@ -20,7 +20,8 @@ version: 1
 admins: [platform-lead, sre-lead]
 
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -31,10 +32,13 @@ rules:
       The platform team changes the CI/CD configuration and the deploy logic.
       Ask platform-lead, sre-lead or ci-maintainer to make this change.
 
-  - name: prod-values
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
     allow: [platform-lead, release-manager]
+    message: >-
+      Production values are changed in main and release branches by
+      platform-lead or release-manager; propose a change in your branch.
 ```
 
 What it says:
@@ -67,17 +71,23 @@ version: 1
 admins: [platform-lead]
 
 rules:
-  - name: commit-policy
+  commit-policy:
+    match: all
     paths: ["COMMITPOLICY"]
     allow: [dev-lead, platform-lead]
+    message: COMMITPOLICY is changed by dev-lead or platform-lead.
 
-  - name: tag-policy
+  tag-policy:
+    match: all
     paths: ["TAGPOLICY"]
     allow: [release-lead, platform-lead]
+    message: TAGPOLICY is changed by release-lead or platform-lead.
 
-  - name: kubernetes-agents
+  kubernetes-agents:
+    match: default
     paths: [".gitlab/agents/**"]
     allow: [cluster-owner]
+    message: The agent configuration is read only from the default branch; cluster-owner merges it.
 ```
 
 Without such a rule anyone with push access may change a policy file. The hook accepts such a version but warns about it.

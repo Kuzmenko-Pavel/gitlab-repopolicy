@@ -1,107 +1,43 @@
 package commit
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
-// finding is one broken rule of one message.
+// finding is one broken check of one message.
 type finding struct {
 	level  level
 	reason string
-	// timeout marks a pattern that ran out of time: commit_check_timeout.
-	timeout bool
 }
 
-// budget is the time left for pattern over the whole receive.
-type budget struct {
-	left  time.Duration
-	clock func() time.Time
-}
-
-// defaultPatternTimeout bounds a match without a configured timeout, such as
-// the examples of a policy.
-const defaultPatternTimeout = 100 * time.Millisecond
-
-// errBudget is returned when the pattern budget of the receive is spent.
-var errBudget = errors.New("the pattern time budget of the push is spent")
-
-// check applies the ruleset to a parsed message.
-func (rs *ruleset) check(m Message, b *budget, perMessage time.Duration) []finding {
+// apply applies the checks of the rule to a parsed message. A message that
+// the parser cannot read is always an error, whatever the checks.
+func (r *rule) apply(m Message) []finding {
 	var out []finding
 	for _, g := range m.Grammar {
 		out = append(out, finding{level: levelError, reason: g})
 	}
-	typeKnown := !rs.conventional || m.Type != ""
-	for _, r := range rs.rules {
-		if catalogue[r.name].conventional && !typeKnown {
+	typeKnown := !r.conventional || m.Type != ""
+	for _, c := range r.checks {
+		if catalogue[c.name].conventional && !typeKnown {
 			continue
 		}
-		if len(r.types) > 0 && !slices.Contains(r.types, m.Type) {
+		if len(c.types) > 0 && !slices.Contains(c.types, m.Type) {
 			continue
 		}
-		if r.pattern != nil {
-			if f, ok := r.checkPattern(m, b, perMessage); ok {
-				out = append(out, f)
-			}
-			continue
-		}
-		if reason := r.checkStructural(m); reason != "" {
-			out = append(out, finding{level: r.level, reason: reason})
+		if reason := c.verify(m); reason != "" {
+			out = append(out, finding{level: c.level, reason: reason})
 		}
 	}
 	return out
 }
 
-func (r *rule) checkPattern(m Message, b *budget, perMessage time.Duration) (finding, bool) {
-	limit := perMessage
-	if b != nil {
-		if b.left <= 0 {
-			return finding{level: r.level, reason: "pattern: not checked, " + errBudget.Error(), timeout: true}, true
-		}
-		limit = min(limit, b.left)
-	}
-	var start time.Time
-	if b != nil {
-		start = b.clock()
-	}
-	ok, err := r.matchPattern(m.Text, limit)
-	if b != nil {
-		b.left -= b.clock().Sub(start)
-	}
-	if err != nil {
-		return finding{level: r.level, reason: "pattern: not checked in time (" + err.Error() + ")", timeout: true}, true
-	}
-	if !ok {
-		return finding{level: r.level, reason: "pattern: the message does not match the required format"}, true
-	}
-	return finding{}, false
-}
-
-// matchPattern reports whether the pattern matches at the start of text, like
-// Python re.match; "$" in RE2 mode matches only at the end of the text, and
-// Normalise has removed the trailing newline. A zero timeout means no limit.
-func (r *rule) matchPattern(text string, timeout time.Duration) (bool, error) {
-	// A policy serves one receive or one lint run at a time, so the timeout
-	// is set on the compiled pattern before each match.
-	r.pattern.MatchTimeout = timeout
-	if timeout <= 0 {
-		r.pattern.MatchTimeout = defaultPatternTimeout
-	}
-	m, err := r.pattern.FindStringMatch(text)
-	if err != nil {
-		return false, err
-	}
-	return m != nil && m.RuneIndex == 0, nil
-}
-
-// checkStructural returns the reason the rule is broken, or "".
-func (r *rule) checkStructural(m Message) string {
+// verify returns the reason the check is broken, or "".
+func (r *check) verify(m Message) string {
 	switch r.name {
 	case "type-enum":
 		if !slices.Contains(r.list, m.Type) {
@@ -147,8 +83,8 @@ func (r *rule) checkStructural(m Message) string {
 		}
 	case "body-max-line-length":
 		return checkBodyLines(m.Body, r.number)
-	case "reference":
-		return r.checkReference(m)
+	case "pattern":
+		return r.checkPattern(m)
 	case "trailer-required":
 		var missing []string
 		for _, key := range r.list {
@@ -205,34 +141,35 @@ func checkBodyLines(body string, limit int) string {
 	return ""
 }
 
-func (r *rule) checkReference(m Message) string {
+// checkPattern searches the regex where location says: a regex is found
+// when it is found once, and an exclusion passes when it is found nowhere.
+func (r *check) checkPattern(m Message) string {
+	var texts []string
+	where := "the " + r.location
 	switch r.location {
+	case "header":
+		texts = []string{m.Header}
+	case "body":
+		texts = []string{m.Body}
+	case "message":
+		texts = []string{m.Text}
 	case "trailer":
-		for _, t := range m.Trailers {
-			if (len(r.keys) == 0 || slices.ContainsFunc(r.keys, func(k string) bool { return strings.EqualFold(k, t.Key) })) &&
-				r.re.MatchString(t.Value) {
-				return ""
-			}
-		}
-		where := "the trailer block"
+		where = "the trailer block"
 		if len(r.keys) > 0 {
 			where = "a trailer " + strings.Join(r.keys, ", ")
 		}
-		return fmt.Sprintf("reference: no reference matching %s in %s", r.re, where)
-	case "body":
-		if r.re.MatchString(m.Body) {
-			return ""
+		for _, t := range m.Trailers {
+			if len(r.keys) == 0 || slices.ContainsFunc(r.keys, func(k string) bool { return strings.EqualFold(k, t.Key) }) {
+				texts = append(texts, t.Value)
+			}
 		}
-		return fmt.Sprintf("reference: no reference matching %s in the body", r.re)
-	default:
-		if r.re.MatchString(m.Text) {
-			return ""
-		}
-		return fmt.Sprintf("reference: no reference matching %s in the message", r.re)
 	}
-}
-
-func firstLine(s string) string {
-	line, _, _ := strings.Cut(Normalise(s), "\n")
-	return line
+	found := slices.ContainsFunc(texts, r.pattern.Found)
+	switch {
+	case r.pattern.Negated() && found:
+		return fmt.Sprintf("pattern: %s must not be in %s", strings.TrimPrefix(r.pattern.String(), "!"), where)
+	case !r.pattern.Negated() && !found:
+		return fmt.Sprintf("pattern: no match of %s in %s", r.pattern, where)
+	}
+	return ""
 }

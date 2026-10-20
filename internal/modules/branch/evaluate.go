@@ -23,11 +23,13 @@ func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 		}
 		name := strings.TrimPrefix(u.Ref, "refs/heads/")
 		r := first(p.rules, name)
+		if r == nil {
+			// A name of no class is not checked: a strict project has a rule
+			// with match: all and deny.
+			continue
+		}
 		for _, v := range p.check(ctx, in, r, name) {
-			v.Ref = u.Ref
-			if r != nil {
-				v.Rule = r.name
-			}
+			v.Ref, v.Rule, v.Help, v.Source = u.Ref, r.name, r.helpOf(), r.source
 			res.Touched = true
 			res.Violations = append(res.Violations, v.Violation)
 			switch {
@@ -47,21 +49,13 @@ type finding struct {
 	warn bool
 }
 
-// check applies the rule of the class of a new branch: deny, pattern,
-// user_prefix, then protected; a name that breaks the class stops there.
+// check applies the rule of the class of a new branch: deny, user_prefix,
+// then protected; a name that breaks the class stops there.
 func (p *Policy) check(ctx context.Context, in *module.Input, r *rule, name string) []finding {
-	switch {
-	case r == nil:
-		return []finding{{Violation: module.Violation{Code: module.CodeBranchName, Reason: "no rule matches",
-			Title:   "no rule of BRANCHPOLICY allows this name",
-			Hint:    "how to fix: rename the branch locally (git branch -m) to a name the rules of this project allow, and push again",
-			Summary: "branch " + name + " fits no BRANCHPOLICY rule; rename it (git branch -m) and push again"}}}
-	case r.deny:
+	if r.deny {
 		return []finding{{Violation: module.Violation{Code: module.CodeBranchName, Reason: "deny", Message: r.message,
 			Title:   "creating this branch is forbidden",
 			Summary: "branch " + name + " is forbidden by BRANCHPOLICY rule " + r.name}}}
-	case r.pattern != nil && !r.pattern.MatchString(name):
-		return []finding{nameViolation(r, name, "pattern")}
 	}
 	if r.userPrefix {
 		if f := userPrefix(ctx, in, r, name); f != nil {
@@ -118,8 +112,8 @@ func protected(ctx context.Context, in *module.Input, r *rule, name string) *fin
 	case class == module.ClassOther:
 		return &finding{Violation: module.Violation{Code: module.CodeBranchNotProtected, Reason: "not a protected branch", Message: r.message,
 			Title:   "the branch must be protected, but the project does not protect it",
-			Hint:    "how to fix: a Maintainer adds " + r.match + " in Settings > Repository > Protected branches, then push again",
-			Summary: "branch " + name + " must be protected: a Maintainer adds " + r.match + " in Settings > Repository > Protected branches, then push again"}}
+			Hint:    "how to fix: a Maintainer protects " + name + " in Settings > Repository > Protected branches, then push again",
+			Summary: "branch " + name + " must be protected: a Maintainer protects it in Settings > Repository > Protected branches, then push again"}}
 	}
 	return nil
 }

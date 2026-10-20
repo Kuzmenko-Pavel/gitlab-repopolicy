@@ -12,23 +12,36 @@ import (
 const branchPolicy = `version: 1
 extends: team
 rules:
-  - name: no-master
-    match: "master"
+  no-master:
+    match: [master]
+    priority: 10
     deny: true
     message: This project uses main; master must not be created.
 `
 
-const branchPresets = `branchpolicy_presets:
-  team:
-    rules:
-      - name: release
-        match: "release/*"
-        pattern: 'release/v[0-9]+\.[0-9]+\.[0-9]+'
-        protected: true
-        message: Release branches look like release/v1.4.0. Protect release/* in Protected branches.
-      - name: work
-        match: "*"
-        pattern: '[a-z0-9.]+/[a-z0-9._/-]+'
+const branchPresets = `presets:
+  branchpolicy:
+    team:
+      rules:
+        release:
+          match: ['/^release\/v[0-9]+\.[0-9]+\.[0-9]+$/']
+          priority: 100
+          protected: true
+          message: Release branches look like release/v1.4.0. Protect release/* in Protected branches.
+        release-bad:
+          match: ['/^release\//']
+          priority: 110
+          deny: true
+          message: Release branches look like release/v1.4.0.
+        work:
+          match: ['/^[a-z0-9.]+\/[a-z0-9._\/-]+$/']
+          priority: 900
+          message: Work branches are <prefix>/<name>.
+        other:
+          match: all
+          priority: 1000
+          deny: true
+          message: Use a name of the branch standard, for example kpn/disable_auth.
 `
 
 func branchStand(t *testing.T) (*Stand, string) {
@@ -43,9 +56,10 @@ func TestBranchPolicy_Names(t *testing.T) {
 	s.Protected([]string{"main", "release/*"}, nil)
 	s.Commit("feat: x", map[string]string{"a": "1"})
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/kpn/disable_auth"))
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/Fix_Login"), "the name does not follow the branch standard",
-		"GL-HOOK-ERR: gitlab-repopolicy: branch Fix_Login breaks BRANCHPOLICY rule work; rename it (git branch -m) and push again")
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/foo"), "BRANCHPOLICY rule \"release\", branch release/foo",
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/Fix_Login"), "creating this branch is forbidden",
+		"Use a name of the branch standard",
+		"GL-HOOK-ERR: gitlab-repopolicy: branch Fix_Login is forbidden by BRANCHPOLICY rule other")
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/foo"), "BRANCHPOLICY rule \"release-bad\", branch release/foo",
 		"Release branches look like release/v1.4.0")
 	assertDenied(t, s.Push(alice, "HEAD:refs/heads/master"), "creating this branch is forbidden",
 		"GL-HOOK-ERR: gitlab-repopolicy: branch master is forbidden by BRANCHPOLICY rule no-master")
@@ -60,7 +74,8 @@ func TestBranchPolicy_Protected(t *testing.T) {
 	s.Protected([]string{"main"}, nil)
 	s.Commit("feat: x", map[string]string{"a": "1"})
 	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/v1.4.0"), "the branch must be protected, but the project does not protect it",
-		"GL-HOOK-ERR: gitlab-repopolicy: branch release/v1.4.0 must be protected: a Maintainer adds release/* in Settings > Repository > Protected branches")
+		"Release branches look like release/v1.4.0. Protect release/* in Protected branches.",
+		"GL-HOOK-ERR: gitlab-repopolicy: branch release/v1.4.0 must be protected: a Maintainer protects it in Settings > Repository > Protected branches")
 	s.Protected([]string{"main", "release/*"}, nil)
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/release/v1.4.0"))
 }

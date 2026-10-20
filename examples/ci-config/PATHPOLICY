@@ -5,7 +5,8 @@ version: 1
 admins: [platform-lead, sre-lead]
 
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -16,7 +17,10 @@ rules:
       The platform team changes the CI/CD configuration and the deploy logic.
       Ask platform-lead, sre-lead or ci-maintainer to make this change.
 
-  - name: prod-values
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
     allow: [platform-lead, release-manager]
+    message: >-
+      Production values are changed in main and release branches by
+      platform-lead or release-manager; propose a change in your branch.

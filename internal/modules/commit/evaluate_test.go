@@ -121,24 +121,34 @@ func evaluate(t *testing.T, policyText string, in *module.Input) *module.Result 
 
 func confirmed() module.Status { return module.Confirmed() }
 
-func TestRulesets_And(t *testing.T) {
+func TestRules_And(t *testing.T) {
 	repo := newRepo()
 	repo.entering["refs/heads/main"] = []string{repo.add("c1", "feat: Add thing.\n", 1)}
 	policyText := `version: 1
-rulesets:
-  - name: case
-    rules: {subject-case: {level: error, value: lower-first}}
-  - name: stop
-    refs: default
-    rules: {subject-full-stop: {level: error, value: forbid}}
-  - name: release
-    refs: [refs/heads/release/*]
-    rules: {type-enum: {level: error, value: [fix]}}
+rules:
+  case:
+    match: all
+    parser: conventional
+    checks: {subject-case: {level: error, value: lower-first}}
+    message: m
+    help: {contact: "#commits"}
+  stop:
+    match: default
+    parser: conventional
+    checks: {subject-full-stop: {level: error, value: forbid}}
+    message: m
+  release:
+    match: ['/^release\//']
+    parser: conventional
+    checks: {type-enum: {level: error, value: [fix]}}
+    message: m
 `
 	res := evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Deny, res.Decision)
-	require.Len(t, res.Violations, 2, "every matching ruleset applies")
+	require.Len(t, res.Violations, 2, "every matching rule applies")
 	assert.Equal(t, "case", res.Violations[0].Rule)
+	assert.Equal(t, []module.Help{{Contact: "#commits"}}, res.Violations[0].Help)
+	assert.Equal(t, []string{"file"}, res.Violations[0].Source)
 	assert.Equal(t, "stop", res.Violations[1].Rule)
 	assert.Equal(t, module.CodeCommitFormat, res.Violations[0].Code)
 	assert.Equal(t, `c1 "feat: Add thing."`, res.Violations[0].Items[0].Name)
@@ -147,16 +157,19 @@ rulesets:
 
 	repo.entering["refs/heads/release/1"] = repo.entering["refs/heads/main"]
 	res = evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/release/1"))
-	require.Len(t, res.Violations, 2, "default does not match release/1, the listed ruleset does")
+	require.Len(t, res.Violations, 2, "default does not match release/1, the listed rule does")
 	assert.Equal(t, "release", res.Violations[1].Rule)
 	assert.Equal(t, "commitpolicy/release", repo.scopes[len(repo.scopes)-1].Key)
 }
 
 const exceptPolicy = `version: 1
-rulesets:
-  - name: r
+rules:
+  r:
+    match: all
+    parser: conventional
     except: {users: [release-bot]}
-    rules: {type-enum: {level: error, value: [feat]}}
+    checks: {type-enum: {level: error, value: [feat]}}
+    message: m
 `
 
 func TestExcept_UsersHTTPS(t *testing.T) {
@@ -181,7 +194,7 @@ func TestExcept_UsersSSH(t *testing.T) {
 		"a deploy key is not a person: except.users does not apply")
 	failed := &fakePrincipal{status: module.Unknown("timeout")}
 	res := evaluate(t, exceptPolicy, input(repo, &fakeRefs{}, failed, "refs/heads/main"))
-	assert.Equal(t, module.Warn, res.Decision, "a failed resolution skips the ruleset with a warning (FailOpen)")
+	assert.Equal(t, module.Warn, res.Decision, "a failed resolution skips the rule with a warning (FailOpen)")
 	assert.Equal(t, module.CodeAuthorizationBackend, res.Violations[0].Code)
 }
 
@@ -191,58 +204,66 @@ func TestMergedCommits(t *testing.T) {
 	bad := repo.add("b", "wip\n", 1)
 	repo.entering["refs/heads/main"] = []string{merge, bad}
 	repo.firstPar["refs/heads/main"] = []string{merge}
-	policyText := "version: 1\nrulesets:\n  - name: r\n    except: {merge_commits: true, merged_commits: true}\n    rules: {}\n"
+	policyText := "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, except: {merge_commit: true, merged_commits: true}}\n"
 	assert.Equal(t, module.Allow, evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main")).Decision)
 	assert.True(t, repo.scopes[0].FirstParent)
-	policyText = "version: 1\nrulesets:\n  - name: r\n    except: {merge_commits: true}\n    rules: {}\n"
+	policyText = "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, except: {merge_commit: true}}\n"
 	assert.Equal(t, module.Deny, evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main")).Decision,
 		"without merged_commits the branch commit is checked")
 }
 
-func TestProtectedRuleset(t *testing.T) {
-	policyText := "version: 1\nrulesets:\n  - name: p\n    refs: protected\n    rules: {type-enum: {level: error, value: [feat]}}\n"
+func TestMatchList(t *testing.T) {
+	policyText := "version: 1\nrules:\n  p: {match: [main, '/^release\\//'], parser: conventional, message: m, checks: {type-enum: {level: error, value: [feat]}}}\n"
 	repo := newRepo()
-	good := repo.add("g", "feat: ok\n", 1)
-	repo.entering["refs/heads/x"] = []string{good}
-	refs := &fakeRefs{class: module.ClassProtected, status: confirmed()}
-	evaluate(t, policyText, input(repo, refs, &fakePrincipal{}, "refs/heads/x"))
-	assert.Zero(t, refs.asked, "no violation in the candidates: no API")
-
 	repo.entering["refs/heads/x"] = []string{repo.add("b", "wip\n", 1)}
-	refs = &fakeRefs{class: module.ClassOther, status: confirmed()}
+	refs := &fakeRefs{class: module.ClassProtected, status: confirmed()}
 	assert.Equal(t, module.Allow, evaluate(t, policyText, input(repo, refs, &fakePrincipal{}, "refs/heads/x")).Decision,
-		"a feature branch is free under refs: protected")
-	assert.Equal(t, 1, refs.asked)
+		"a branch outside the list is free, whatever GitLab protects")
+	assert.Zero(t, refs.asked, "a list needs no API")
 
-	refs = &fakeRefs{class: module.ClassProtected, status: confirmed()}
-	assert.Equal(t, module.Deny, evaluate(t, policyText, input(repo, refs, &fakePrincipal{}, "refs/heads/x")).Decision)
+	repo.entering["refs/heads/release/1"] = repo.entering["refs/heads/x"]
+	assert.Equal(t, module.Deny, evaluate(t, policyText, input(repo, refs, &fakePrincipal{}, "refs/heads/release/1")).Decision)
+	assert.Equal(t, module.ClassProtected, repo.scopes[len(repo.scopes)-1].Class)
+}
 
-	refs = &fakeRefs{status: module.Unknown("503")}
-	res := evaluate(t, policyText, input(repo, refs, &fakePrincipal{}, "refs/heads/x"))
-	assert.Equal(t, module.Warn, res.Decision, "API failure skips refs: protected with a warning")
-	assert.Equal(t, "p", res.Violations[0].Rule)
+func TestTagsNotChecked(t *testing.T) {
+	repo := newRepo()
+	repo.entering["refs/tags/v1"] = []string{repo.add("b", "wip\n", 1)}
+	res := evaluate(t, exceptPolicy, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/tags/v1"))
+	assert.Equal(t, module.Allow, res.Decision)
+	assert.Empty(t, repo.scopes, "the commit of a tag is checked as part of its branch")
+}
+
+func TestPresetMissing_SkipsModule(t *testing.T) {
+	repo := newRepo()
+	repo.entering["refs/heads/main"] = []string{repo.add("b", "wip\n", 1)}
+	res := evaluate(t, "version: 1\nmode: enforce\nextends: missing\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	assert.Equal(t, module.Warn, res.Decision, "whatever the mode")
+	require.Len(t, res.Violations, 1)
+	assert.Equal(t, "COMMITPOLICY cannot be used, so commit messages are not checked until it is fixed", res.Violations[0].Title)
+	assert.Empty(t, repo.scopes)
 }
 
 func TestTooManyCommits(t *testing.T) {
 	repo := newRepo()
 	repo.limit = true
-	res := evaluate(t, "version: 1\nrulesets: [{name: r}]\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, parser: free, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Deny, res.Decision)
 	assert.Equal(t, module.CodeLimitExceeded, res.Violations[0].Code)
-	res = evaluate(t, "version: 1\nmode: warn\nrulesets: [{name: r}]\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res = evaluate(t, "version: 1\nmode: warn\nrules:\n  r: {match: all, parser: free, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Warn, res.Decision)
 }
 
-func TestUnknownRule_Anchor(t *testing.T) {
+func TestUnknownCheck_Anchor(t *testing.T) {
 	repo := newRepo()
 	repo.entering["refs/heads/main"] = []string{repo.add("c", "feat: ok\n", 1)}
-	res := evaluate(t, "version: 1\nrulesets: [{name: r, rules: {future-rule: {level: error}}}]\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {future-check: {level: error}}}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Warn, res.Decision)
-	assert.Contains(t, res.Violations[0].Title, "future-rule")
+	assert.Contains(t, res.Violations[0].Title, "future-check")
 }
 
-func TestUnknownRule_NewVersion(t *testing.T) {
-	p, err := New(testSettings()).Parse([]byte("version: 1\nrulesets: [{name: r, rules: {typo-enum: {level: error}}}]\n"))
+func TestUnknownCheck_NewVersion(t *testing.T) {
+	p, err := New(testSettings()).Parse([]byte("version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {typo-enum: {level: error}}}\n"))
 	require.NoError(t, err)
 	got := p.Validate(context.Background(), nil)
 	require.Len(t, got, 1)

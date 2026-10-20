@@ -1,15 +1,15 @@
 version: 1
 mode: warn
-rulesets:
-  - name: commits
-    refs: ["refs/heads/*", "refs/heads/*/*"]
-    format: conventional
+rules:
+  commits:
+    match: [main, '/^feature\//', '!feature/legacy']
+    parser: conventional
     except:
-      merge_commits: true
+      merge_commit: true
       git_reverts: true
       merged_commits: true
       users: [release-bot]
-    rules:
+    checks:
       type-enum:            { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
       scope:                { level: error, value: optional }
       scope-enum:           { level: warn,  value: [api, ui] }
@@ -19,22 +19,28 @@ rulesets:
       subject-full-stop:    { level: error, value: forbid }
       body-required:        { level: error, types: [feat, fix] }
       body-max-line-length: { level: warn,  value: 120 }
-      reference:            { level: error, location: trailer, keys: [Issue, Refs], pattern: "[A-Za-z0-9_./-]*#[0-9]+", types: [feat, fix] }
       trailer-required:     { level: error, value: [Signed-off-by] }
-      pattern:
-        level: warn
-        value: '(?P<type>[a-z]+)(\(.+\))?!?: .+'
-        examples:
-          valid: ["feat(api): add x"]
-          invalid: ["Add x"]
+      pattern:              { level: error, location: trailer, keys: [Issue, Refs], value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits follow Conventional Commits.
-  - name: release
-    refs: ["refs/heads/release/*"]
-    rules:
+    help:
+      contact: "#dev"
+      docs_url: https://wiki.example/commits
+  release:
+    match: ['/^release\//']
+    parser: conventional
+    checks:
       type-enum: { level: error, value: [fix, docs, chore] }
-  - name: protected
-    refs: protected
-    format: free
-    rules:
+    message: Release branches take only fix, docs and chore.
+  no-wip:
+    match: all
+    parser: free
+    checks:
+      pattern: { level: warn, location: header, value: '!/^(WIP|fixup!)/i' }
+    message: Squash WIP and fixup commits before the merge.
+  default-only:
+    match: default
+    parser: free
+    checks:
       subject-full-stop: { level: warn, value: forbid }
+    message: m

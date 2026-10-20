@@ -34,8 +34,6 @@ breakglass_dir: /etc/gitlab-repopolicy/breakglass
 timeouts:
   total: 10s            # one hook invocation
   http: 3s              # one API request
-  pattern: 100ms        # the COMMITPOLICY pattern rule, per message
-  pattern_budget: 2s    # the same, per push
 
 # API calls per push; more is limit_exceeded.
 max_api_calls: 30
@@ -71,7 +69,10 @@ help:
   contact: ""
   docs_url: ""
 
-# Presets for "extends:" in COMMITPOLICY and in BRANCHPOLICY; examples are in
-# docs/configuration.md.
-commitpolicy_presets: {}
-branchpolicy_presets: {}
+# Presets for "extends:" in the policy files, by module. A preset holds only
+# rules; examples are in docs/configuration.md.
+presets:
+  pathpolicy: {}
+  commitpolicy: {}
+  branchpolicy: {}
+  tagpolicy: {}

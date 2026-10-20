@@ -27,8 +27,7 @@ const queryTimeout = time.Minute
 
 // settingsOf are the module settings of the server config.
 func settingsOf(cfg *config.Config) modules.Settings {
-	return modules.Settings{CommitPresets: cfg.CommitPolicyPresets, BranchPresets: cfg.BranchPolicyPresets,
-		PatternTimeout: cfg.Timeouts.Pattern.Std(), PatternBudget: cfg.Timeouts.PatternBudget.Std(), Clock: time.Now}
+	return modules.Settings{Presets: cfg.Presets}
 }
 
 // enabledModules builds the modules that the server config enables.
@@ -43,7 +42,8 @@ func anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.Client, p
 	if err != nil {
 		return p, nil, fmt.Errorf("project %s: %w", project, err)
 	}
-	guard := path.New()
+	settings := path.NewSettings(cfg.Presets["pathpolicy"])
+	guard := path.New(settings)
 	if !cfg.ModuleEnabled(guard.Name()) {
 		return p, nil, errors.New("the PATHPOLICY module is disabled in the server config")
 	}
@@ -57,7 +57,7 @@ func anchorPolicy(ctx context.Context, cfg *config.Config, api *gitlab.Client, p
 	if err != nil {
 		return p, nil, err
 	}
-	pol, err := path.Parse(data)
+	pol, err := path.Parse(data, settings)
 	if err != nil {
 		return p, nil, fmt.Errorf("%s on %s is invalid: %w", guard.File(), p.DefaultBranch, err)
 	}
@@ -112,15 +112,16 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	}
 	allowed := true
 	for _, r := range rules {
+		head := fmt.Sprintf("  %s (match: %s; from %s)", r.Name, r.Match, strings.Join(r.Source, ", "))
 		switch {
 		case !r.Applies:
-			out.printf("  %s (refs: %s): does not apply to %s\n", r.Name, r.Refs, target)
+			out.printf("%s: does not apply to %s\n", head, target)
 			continue
 		case r.Allowed:
-			out.printf("  %s (refs: %s): allowed; allow: %s\n", r.Name, r.Refs, strings.Join(r.Allow, ", "))
+			out.printf("%s: allowed; allow: %s\n", head, strings.Join(r.Allow, ", "))
 		default:
 			allowed = false
-			out.printf("  %s (refs: %s): NOT allowed; allow: %s\n", r.Name, r.Refs, strings.Join(r.Allow, ", "))
+			out.printf("%s: NOT allowed; allow: %s\n", head, strings.Join(r.Allow, ", "))
 		}
 	}
 	if allowed {

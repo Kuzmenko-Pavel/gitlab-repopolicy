@@ -118,7 +118,7 @@ func newEnv(user string, paths map[string][]string) *env {
 
 func (e *env) evaluate(t *testing.T, text string) *module.Result {
 	t.Helper()
-	p, err := New().Parse([]byte(text))
+	p, err := New(nil).Parse([]byte(text))
 	require.NoError(t, err)
 	res, err := p.Evaluate(context.Background(), e.in)
 	require.NoError(t, err)
@@ -162,7 +162,7 @@ func TestEvaluate_UnmatchedPathAllowed(t *testing.T) {
 }
 
 func TestEvaluate_BotByUsername(t *testing.T) {
-	policy := "version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [deploy/**], allow: [project_1_bot_e42782]}\n"
+	policy := "version: 1\nadmins: [a]\nrules:\n  r: {match: all, paths: [deploy/**], allow: [project_1_bot_e42782], message: m}\n"
 	e := newEnv("project_1_bot_e42782", map[string][]string{"refs/heads/main": {"deploy/x"}})
 	assert.Equal(t, module.Allow, e.evaluate(t, policy).Decision)
 }
@@ -171,8 +171,8 @@ func TestMatch_NestedRulesAnd(t *testing.T) {
 	policy := `version: 1
 admins: [a]
 rules:
-  - {name: helm, paths: ["helm/**"], allow: [alice, bob]}
-  - {name: prod, paths: ["helm/**/values-prod.yaml"], allow: [bob]}
+  helm: {match: all, paths: ["helm/**"], allow: [alice, bob], message: m}
+  prod: {match: all, paths: ["helm/**/values-prod.yaml"], allow: [bob], message: m}
 `
 	e := newEnv("alice", map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}})
 	res := e.evaluate(t, policy)
@@ -195,25 +195,34 @@ func TestEvaluate_UnknownPrincipal(t *testing.T) {
 	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "unprotected paths do not need a person")
 }
 
-func TestEvaluate_ProtectedRefsRule(t *testing.T) {
+func TestEvaluate_MatchList(t *testing.T) {
 	e := newEnv("bob", map[string][]string{"refs/heads/feature": {"helm/x/values-prod.yaml"}})
-	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "refs: protected does not apply to a feature branch")
+	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "the list of prod-values does not have the feature branch")
 	e.in.Refs = &fakeRefs{class: module.ClassProtected, status: ok}
-	assert.Equal(t, []string{module.CodeProtectedPath}, codes(e.evaluate(t, basePolicy)))
+	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "a list does not follow the protected branches of GitLab")
+
+	e = newEnv("bob", map[string][]string{"refs/heads/release/1.0": {"helm/x/values-prod.yaml"}})
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, []string{module.CodeProtectedPath}, codes(res), "a branch of the list, without asking GitLab")
+	assert.Equal(t, []module.Help{{Contact: "#release"}}, res.Violations[0].Help)
+	assert.Equal(t, []string{"file"}, res.Violations[0].Source)
+
+	e = newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
 	e.in.Refs = &fakeRefs{status: module.Unknown("503")}
-	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(e.evaluate(t, basePolicy)), "unknown class: fail closed")
+	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(e.evaluate(t, basePolicy)), "match all needs the class: fail closed")
 }
 
-func TestEvaluate_NotCommitTag(t *testing.T) {
-	e := newEnv("bob", map[string][]string{"refs/tags/v1": nil})
-	e.in.Changes = &fakeChanges{err: module.ErrNotCommit}
-	assert.Equal(t, []string{module.CodeTagObjectInvalid}, codes(e.evaluate(t, basePolicy)))
+func TestEvaluate_TagsNotChecked(t *testing.T) {
+	e := newEnv("bob", map[string][]string{"refs/tags/v1": {".gitlab-ci.yml"}})
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, module.Allow, res.Decision, "the commit of a tag is checked as part of its branch")
+	assert.False(t, res.Touched)
 }
 
 func TestEvaluate_LimitIsAnError(t *testing.T) {
 	e := newEnv("bob", map[string][]string{"refs/heads/main": nil})
 	e.in.Changes = &fakeChanges{err: module.ErrLimitExceeded}
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	_, err = p.Evaluate(context.Background(), e.in)
 	assert.ErrorIs(t, err, module.ErrLimitExceeded, "the core turns it into limit_exceeded, fail closed")
@@ -317,7 +326,7 @@ func TestRecovery_APIFailures(t *testing.T) {
 }
 
 func TestRecovery_InvalidAnchorOwner(t *testing.T) {
-	m := New()
+	m := New(nil)
 	e := newEnv("owner", map[string][]string{"refs/heads/main": {"PATHPOLICY"}})
 	e.authz.pusher = 50
 	res, err := m.EvaluateInvalid(context.Background(), e.in, errors.New("line 2: bad"))
@@ -346,7 +355,7 @@ func TestRecovery_InvalidAnchorOwner(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	m := New()
+	m := New(nil)
 	for _, tc := range []struct {
 		access int
 		want   module.Decision
@@ -381,7 +390,7 @@ func TestDeletionWarning(t *testing.T) {
 }
 
 func TestAcceptance_LockoutPrevented(t *testing.T) {
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	a := team()
 	a.known = map[string]bool{"platform-lead": true, "sre-lead": true, "ci-maintainer": true, "dev-lead": true, "release-manager": true}
@@ -404,7 +413,7 @@ func TestAcceptance_LockoutPrevented(t *testing.T) {
 }
 
 func TestAcceptance_AddedPrincipalsSingleGraphQL(t *testing.T) {
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	a := team()
 	a.known = map[string]bool{"platform-lead": true, "sre-lead": true}

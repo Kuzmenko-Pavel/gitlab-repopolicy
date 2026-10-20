@@ -305,16 +305,16 @@ func TestCLI_Explain(t *testing.T) {
 		return r
 	}
 	r := explain("bob", "ci.yml", "release/1", 1)
-	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): NOT allowed; allow: alice")
+	assert.Contains(t, r.Stdout, `release-ci (match: [/^release\//]; from file): NOT allowed; allow: alice`)
 	assert.Contains(t, r.Stdout, "result: bob may not change ci.yml on refs/heads/release/1")
 	r = explain("alice", "ci.yml", "refs/heads/release/1", 0)
 	assert.Contains(t, r.Stdout, "result: alice may change ci.yml")
 	r = explain("bob", "ci.yml", "", 0)
-	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): does not apply to refs/heads/main")
+	assert.Contains(t, r.Stdout, `release-ci (match: [/^release\//]; from file): does not apply to refs/heads/main`)
 	r = explain("bob", "README.md", "", 0)
 	assert.Contains(t, r.Stdout, "no path rule matches")
 	r = explain("bob", "PATHPOLICY", "", 1)
-	assert.Contains(t, r.Stdout, "admins of PATHPOLICY (refs: all): NOT allowed; allow: alice")
+	assert.Contains(t, r.Stdout, "admins of PATHPOLICY (match: all; from file): NOT allowed; allow: alice")
 
 	r = s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app")
 	assert.Equal(t, 2, r.Code)

@@ -32,7 +32,7 @@ func moduleSettings(configPath string) (modules.Settings, error) {
 		if err != nil {
 			return modules.Settings{}, err
 		}
-		if cfg.CommitPolicyPresets, cfg.BranchPolicyPresets, err = config.Presets(data); err != nil {
+		if cfg.Presets, err = config.Presets(data); err != nil {
 			return modules.Settings{}, err
 		}
 	}
@@ -64,7 +64,7 @@ func (a App) runValidate(ctx context.Context, args []string, _ []string, stdio S
 	fs.SetOutput(stdio.Err)
 	file := fs.String("f", "", "policy file; default: every policy file in the current directory")
 	name := fs.String("module", "", "module of the file when its name is not a policy file name")
-	configPath := fs.String("config", "", "server config: commitpolicy_presets; with --online also gitlab_url and token_file")
+	configPath := fs.String("config", "", "server config: presets; with --online also gitlab_url and token_file")
 	online := fs.Bool("online", false, "also check that principals exist, through the GitLab API of --config")
 	project := fs.String("project", "", "with --online: project ID or path, to check the access of admins")
 	if err := fs.Parse(args); err != nil {
@@ -225,17 +225,17 @@ func moduleNames(mods []module.Module) string {
 }
 
 // runLintCommit implements "lint-commit [-m MSG | --range A..B [--skip-author EMAIL]...]
-// [-f COMMITPOLICY] [--ruleset NAME]...": the server implementation applied locally. There is no
-// ref, so every ruleset applies unless --ruleset names the ones of a branch.
+// [-f COMMITPOLICY] [--rule NAME]...": the server implementation applied locally. There is no
+// branch, so every rule applies unless --rule names the ones of a branch.
 func (a App) runLintCommit(ctx context.Context, args []string, env []string, stdio Stdio) int {
 	fs := flag.NewFlagSet("lint-commit", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
 	message := fs.String("m", "", "commit message to check")
 	revRange := fs.String("range", "", "commits to check: A..B or a single revision for its whole history")
 	file := fs.String("f", "COMMITPOLICY", "COMMITPOLICY file")
-	configPath := fs.String("config", "", "server config with commitpolicy_presets; other keys are not read")
-	var rulesets, skipAuthors names
-	fs.Var(&rulesets, "ruleset", "check only this ruleset; repeat for several")
+	configPath := fs.String("config", "", "server config with presets; other keys are not read")
+	var rules, skipAuthors names
+	fs.Var(&rules, "rule", "check only this rule; repeat for several")
 	fs.Var(&skipAuthors, "skip-author", "with --range: skip commits of this author email; repeat for several")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
@@ -254,14 +254,17 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 		errOut.printf("gitlab-repopolicy lint-commit: %v\n", err)
 		return withOutput(errOut.err, ExitError)
 	}
-	settings := commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)
+	settings := commit.NewSettings(s.Presets["commitpolicy"])
 	data, err := readPolicyFile(*file, commit.New(settings))
 	var linter *commit.Policy
 	if err == nil {
 		linter, err = commit.Parse(data, settings)
 	}
-	if err == nil && len(rulesets) > 0 {
-		linter, err = linter.Select(rulesets)
+	if err == nil {
+		err = linter.Unusable()
+	}
+	if err == nil && len(rules) > 0 {
+		linter, err = linter.Select(rules)
 	}
 	if err != nil {
 		errOut.printf("gitlab-repopolicy lint-commit: %s: %v\n", *file, err)
@@ -275,7 +278,7 @@ func (a App) runLintCommit(ctx context.Context, args []string, env []string, std
 			if f.Error {
 				lv, failed = "error", true
 			}
-			out.printf("%s: [%s] %s: %s\n", label, f.Ruleset, lv, f.Reason)
+			out.printf("%s: [%s] %s: %s\n", label, f.Rule, lv, f.Reason)
 		}
 	}
 	if *message != "" {

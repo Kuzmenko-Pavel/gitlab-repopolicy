@@ -1,55 +1,21 @@
 // Package branch is the BRANCHPOLICY module: a new branch gets a class by the
-// first rule whose match it fits; the class may forbid it, require a name
-// format, a GitLab username before the first / or a protected branch. It is
+// rule with the lowest priority whose match it fits; the class may forbid it,
+// require a GitLab username before the first / or a protected branch, and a
+// name that fits no class is not checked. It is
 // hygiene, not access, so it is FailOpen: a broken policy or a failure of the
 // API skips the check with a warning. Existing branches are not checked.
 package branch
 
 import (
 	"context"
-	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
-	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
 // File is the policy file of the module.
 const File = "BRANCHPOLICY"
-
-// Settings come from the server config.
-type Settings struct {
-	presets      map[string][]*rule
-	presetErrors map[string]error
-}
-
-// NewSettings decodes the raw branchpolicy_presets of the server config.
-func NewSettings(rawPresets map[string]any) *Settings {
-	s := &Settings{presets: map[string][]*rule{}, presetErrors: map[string]error{}}
-	for name, raw := range rawPresets {
-		var p presetYAML
-		tree, err := strictyaml.DecodeValueTree(raw, module.DefaultMaxPolicySize)
-		if err == nil {
-			err = spec.Validate(presetSpec, tree, checks)
-		}
-		if err == nil {
-			err = strictyaml.DecodeValue(raw, &p, module.DefaultMaxPolicySize)
-		}
-		var rules []*rule
-		if err == nil {
-			rules, err = newRules(p.Rules)
-		}
-		if err != nil {
-			s.presetErrors[name] = err
-			continue
-		}
-		s.presets[name] = rules
-	}
-	return s
-}
 
 // Module is BRANCHPOLICY.
 type Module struct {
@@ -69,12 +35,14 @@ func (*Module) Needs() module.Needs { return module.Needs{Identity: true} }
 
 // PresetErrors lists presets of the server config that cannot be used.
 func (m *Module) PresetErrors() []string {
-	out := make([]string, 0, len(m.settings.presetErrors))
-	for name, err := range m.settings.presetErrors {
-		out = append(out, fmt.Sprintf("branchpolicy_presets.%s: %v", name, err))
+	if m.settings == nil {
+		return nil
 	}
-	sort.Strings(out)
-	return out
+	errs := m.settings.presets.Errors()
+	for i, e := range errs {
+		errs[i] = "presets.branchpolicy." + e
+	}
+	return errs
 }
 
 // Parse decodes a BRANCHPOLICY file offline.

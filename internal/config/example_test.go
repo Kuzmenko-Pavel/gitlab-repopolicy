@@ -23,9 +23,10 @@ func TestExampleConfig(t *testing.T) {
 	no := false
 	want.DefaultBranch = []string{"main"}
 	want.SettingsCheck = SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: &no}
-	assert.Empty(t, cfg.CommitPolicyPresets, "presets are values of an installation, the example has none")
-	assert.Empty(t, cfg.BranchPolicyPresets)
-	want.CommitPolicyPresets, want.BranchPolicyPresets = cfg.CommitPolicyPresets, cfg.BranchPolicyPresets
+	for module, presets := range cfg.Presets {
+		assert.Empty(t, presets, "presets are values of an installation, the example has none: %s", module)
+	}
+	want.Presets = cfg.Presets
 	assert.Equal(t, &want, cfg, "the example shows the defaults")
 }
 

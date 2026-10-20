@@ -23,11 +23,12 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
-const twoRules = `  - name: staging
-    tags: 'v\d+\.\d+\.\d+-staging'
+const twoRules = `  staging:
+    match: ['/^(?:v\d+\.\d+\.\d+-staging)$/']
+    message: m
     signers: [release-lead, dev-lead]
-  - name: prod
-    tags: 'v\d+\.\d+\.\d+-prod'
+  prod:
+    match: ['/^(?:v\d+\.\d+\.\d+-prod)$/']
     signers: [release-lead]
     message: Prod releases are signed by release-lead.
 `
@@ -333,11 +334,13 @@ func TestVerify_SSH(t *testing.T) {
 
 func TestEvaluate_OverlapAnd(t *testing.T) {
 	a, b := newSSH(t, "ed25519"), newSSH(t, "ed25519")
-	rules := `  - name: all-releases
-    tags: 'v.*'
+	rules := `  all-releases:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [a, b]
-  - name: prod
-    tags: 'v.*-prod'
+  prod:
+    match: ['/^(?:v.*-prod)$/']
+    message: m
     signers: [b]
 `
 	p := mustParse(t, policyYAML(rules, map[string]string{"a": a.line, "b": b.line}))
@@ -361,7 +364,7 @@ func TestEvaluateInvalid(t *testing.T) {
 		{Old: strings.Repeat("a", 40), New: strings.Repeat("b", 40), Ref: "refs/heads/main"},
 		{Old: strings.Repeat("a", 40), New: strings.Repeat("0", 40), Ref: "refs/tags/v0"},
 	}}
-	res, err := New().EvaluateInvalid(context.Background(), in, errors.New("line 2: bad"))
+	res, err := New(nil).EvaluateInvalid(context.Background(), in, errors.New("line 2: bad"))
 	require.NoError(t, err)
 	assert.Equal(t, module.Deny, res.Decision)
 	require.Len(t, res.Violations, 1)
@@ -370,7 +373,7 @@ func TestEvaluateInvalid(t *testing.T) {
 	assert.Equal(t, "deny", res.Events[0].Decision)
 
 	in.Updates = in.Updates[1:]
-	res, err = New().EvaluateInvalid(context.Background(), in, errors.New("line 2: bad"))
+	res, err = New(nil).EvaluateInvalid(context.Background(), in, errors.New("line 2: bad"))
 	require.NoError(t, err)
 	assert.Equal(t, module.Allow, res.Decision, "branches and tag deletions pass")
 	assert.Len(t, res.Events, 1, "the invalid policy is still audited")
@@ -385,8 +388,9 @@ func TestVerify_RealTools(t *testing.T) {
 		require.NoError(t, err)
 		return string(data)
 	}
-	rules := `  - name: all
-    tags: 'v.*'
+	rules := `  all:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [gpg, ed25519, rsa]
 `
 	p := mustParse(t, policyYAML(rules, map[string]string{"gpg": read("openpgp.pub"), "ed25519": strings.TrimSpace(read("ed25519.pub")),
@@ -419,7 +423,7 @@ func TestVerify_RealTools(t *testing.T) {
 func TestVerify_SSH_SecurityKeys(t *testing.T) {
 	for _, kind := range []string{"sk-ed25519", "sk-ecdsa"} {
 		t.Run(kind, func(t *testing.T) {
-			rules := "  - name: all\n    tags: 'v.*'\n    signers: [lead]\n"
+			rules := "  all:\n    match: ['/^(?:v.*)$/']\n    message: m\n    signers: [lead]\n"
 			p := mustParse(t, policyYAML(rules, map[string]string{"lead": strings.TrimSpace(readTestdata(t, "sk", kind+".pub"))}))
 			name := "v1.0.0-" + kind
 			res := push(t, p, "refs/tags/"+name, "tag", []byte(readTestdata(t, "sk", name+".tag")))
@@ -436,11 +440,13 @@ func TestVerify_SSH_SecurityKeys(t *testing.T) {
 
 func TestEvaluate_OverlapWithoutCommonSigner(t *testing.T) {
 	a, b := newSSH(t, "ed25519"), newSSH(t, "ed25519")
-	rules := `  - name: one
-    tags: 'v.*'
+	rules := `  one:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [a]
-  - name: two
-    tags: 'v1.*'
+  two:
+    match: ['/^(?:v1.*)$/']
+    message: m
     signers: [b]
 `
 	p := mustParse(t, policyYAML(rules, map[string]string{"a": a.line, "b": b.line}))
@@ -455,7 +461,7 @@ func TestEvaluate_OverlapWithoutCommonSigner(t *testing.T) {
 }
 
 func TestModule(t *testing.T) {
-	m := New()
+	m := New(nil)
 	assert.Equal(t, "tagpolicy", m.Name())
 	assert.Equal(t, "TAGPOLICY", m.File())
 	assert.Equal(t, module.FailClosed, m.OnInvalid())
@@ -464,6 +470,8 @@ func TestModule(t *testing.T) {
 	assert.False(t, m.Needs().Identity, "TAGPOLICY does not use the API")
 	assert.Empty(t, p.Validate(context.Background(), nil))
 	_, err = m.Parse([]byte("version: 1\n"))
+	require.NoError(t, err, "keys are needed only with rules")
+	_, err = m.Parse([]byte("version: 2\n"))
 	require.Error(t, err)
 }
 

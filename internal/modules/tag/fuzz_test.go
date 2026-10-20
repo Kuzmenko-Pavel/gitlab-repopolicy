@@ -9,11 +9,11 @@ import (
 )
 
 func FuzzParse(f *testing.F) {
-	f.Add([]byte("version: 1\nrules:\n  - name: prod\n    tags: 'v.*'\n    signers: [lead]\nkeys:\n  lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl lead\n"))
+	f.Add([]byte("version: 1\nrules:\n  prod:\n    match: ['/^(?:v.*)$/']\n    message: m\n    signers: [lead]\nkeys:\n  lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl lead\n"))
 	f.Add([]byte("version: 1\nkeys:\n  lead: |\n    -----BEGIN PGP PUBLIC KEY BLOCK-----\n    -----END PGP PUBLIC KEY BLOCK-----\n"))
 	f.Add([]byte("version: 1\nkeys:\n  a: -----BEGIN OPENSSH PRIVATE KEY-----\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		p, err := parsePolicy(data)
+		p, err := parsePolicy(data, nil)
 		if err != nil {
 			return
 		}

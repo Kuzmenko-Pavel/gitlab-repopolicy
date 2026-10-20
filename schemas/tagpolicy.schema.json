@@ -2,13 +2,32 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "extends": {
+      "description": "Presets of the server config, merged in this order before the file.",
+      "oneOf": [
+        {
+          "pattern": "^[a-z0-9-]{1,63}$",
+          "type": "string"
+        },
+        {
+          "items": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      ],
+      "x-repopolicy-check": "extends"
+    },
     "keys": {
       "additionalProperties": {
         "minLength": 1,
         "type": "string",
         "x-repopolicy-check": "public-key"
       },
-      "description": "1 to 32 public keys by label: an armored OpenPGP public key block or an OpenSSH public key on one line.",
+      "description": "1 to 32 public keys by label: an armored OpenPGP public key block or an OpenSSH public key on one line. Required when there are rules after merging with presets.",
       "maxProperties": 32,
       "minProperties": 1,
       "propertyNames": {
@@ -18,63 +37,113 @@
       "x-repopolicy-check": "distinct-keys"
     },
     "rules": {
-      "description": "Up to 50 tag rules; every rule that matches a tag must be satisfied (AND).",
-      "items": {
+      "additionalProperties": {
         "additionalProperties": false,
+        "description": "Every rule that matches a tag must be satisfied (AND).",
         "properties": {
-          "message": {
-            "description": "Text shown when a tag is denied, up to 1000 characters.",
-            "maxLength": 1000,
-            "type": "string"
+          "help": {
+            "additionalProperties": false,
+            "description": "Help printed in the denial of this rule.",
+            "properties": {
+              "contact": {
+                "description": "Who to ask, for example #gitlab-support.",
+                "maxLength": 200,
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-text"
+              },
+              "docs_url": {
+                "description": "Documentation of the rule, an http(s) URL.",
+                "maxLength": 200,
+                "pattern": "^https?://",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-url"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           },
-          "name": {
-            "pattern": "^[a-z0-9-]{1,63}$",
-            "type": "string"
+          "match": {
+            "description": "Required after merging with presets. all or a list of tag names and /regexes/, such as ['/^v\\d+\\.\\d+\\.\\d+$/'].",
+            "oneOf": [
+              {
+                "enum": [
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-repopolicy-check": "match"
+          },
+          "message": {
+            "description": "Required after merging with presets. What the pusher reads when the rule denies a push.",
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "protected": {
             "description": "true: a tag created under this rule must be a protected tag of the GitLab project, so that its pipeline gets protected variables and runners.",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "signers": {
-            "description": "Labels of keys that may sign the matching tags.",
+            "description": "Required after merging with presets. Labels of keys of the file that may sign the matching tags.",
             "items": {
               "pattern": "^[A-Za-z0-9_.-]{1,255}$",
-              "type": "string",
-              "x-repopolicy-check": "signer"
+              "type": "string"
             },
             "maxItems": 32,
             "minItems": 1,
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "uniqueItems": true
-          },
-          "tags": {
-            "description": "RE2 regular expression that matches the whole tag name without refs/tags/.",
-            "maxLength": 256,
-            "minLength": 1,
-            "type": "string",
-            "x-repopolicy-check": "tag-pattern"
           }
         },
-        "required": [
-          "name",
-          "tags",
-          "signers"
-        ],
-        "type": "object"
+        "type": [
+          "object",
+          "null"
+        ]
       },
-      "maxItems": 50,
-      "type": "array",
-      "x-repopolicy-check": "unique-names"
+      "description": "Rules by name. A rule of the file with the name of a preset rule overrides its fields; null removes it.",
+      "maxProperties": 50,
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]{1,63}$"
+      },
+      "type": "object"
     },
     "version": {
       "const": 1,
-      "description": "Schema version; version 1 is frozen.",
+      "description": "Schema version.",
       "type": "integer"
     }
   },
   "required": [
-    "version",
-    "keys"
+    "version"
   ],
   "title": "TAGPOLICY",
   "type": "object"

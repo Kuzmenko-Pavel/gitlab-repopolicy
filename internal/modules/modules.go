@@ -3,8 +3,6 @@
 package modules
 
 import (
-	"time"
-
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/branch"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/commit"
@@ -14,14 +12,9 @@ import (
 
 // Settings are the parts of the server config that modules need; the CLI fills them in.
 type Settings struct {
-	// CommitPresets is commitpolicy_presets of the server config, undecoded.
-	CommitPresets map[string]any
-	// BranchPresets is branchpolicy_presets of the server config, undecoded.
-	BranchPresets  map[string]any
-	PatternTimeout time.Duration
-	PatternBudget  time.Duration
-	// Clock measures time budgets.
-	Clock func() time.Time
+	// Presets are the presets of the server config by module name and preset
+	// name, undecoded; each module parses its own.
+	Presets map[string]map[string]any
 }
 
 // Set is the module list: the trust root and the other modules in evaluation order.
@@ -56,11 +49,11 @@ func (s Set) Enabled(enabled func(name string) bool) Set {
 // Default returns the modules of gitlab-repopolicy.
 func Default(s Settings) Set {
 	return Set{
-		Root: path.New(),
+		Root: path.New(path.NewSettings(s.Presets["pathpolicy"])),
 		Modules: []module.Module{
-			commit.New(commit.NewSettings(s.CommitPresets, s.PatternTimeout, s.PatternBudget, s.Clock)),
-			tag.New(),
-			branch.New(branch.NewSettings(s.BranchPresets)),
+			commit.New(commit.NewSettings(s.Presets["commitpolicy"])),
+			tag.New(tag.NewSettings(s.Presets["tagpolicy"])),
+			branch.New(branch.NewSettings(s.Presets["branchpolicy"])),
 		},
 	}
 }

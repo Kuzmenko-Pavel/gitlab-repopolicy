@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const goodPolicy = "version: 1\nrulesets:\n  - name: r\n    rules:\n      type-enum: {level: error, value: [feat]}\n"
+const goodPolicy = "version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat]}\n"
 
 func inDir(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -24,10 +24,10 @@ func inDir(t *testing.T, files map[string]string) string {
 func TestValidate(t *testing.T) {
 	dir := inDir(t, map[string]string{
 		"COMMITPOLICY": goodPolicy,
-		"bad.yaml":     "version: 1\nrulesets: [{name: r, rules: {typo: {level: error}}}]\n",
-		"broken.yaml":  "version: 1\nrulesets: []\n",
-		"config.yaml":  "gitlab_url: https://gitlab.example.com\ncommitpolicy_presets: {org: {rules: {type-enum: {level: error, value: [fix]}}}}\n",
-		"extends.yaml": "version: 1\nextends: org\nrulesets: [{name: r}]\n",
+		"bad.yaml":     "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {typo: {level: error}}}\n",
+		"broken.yaml":  "version: 1\nrules:\n  r: {match: all}\n",
+		"config.yaml":  "gitlab_url: https://gitlab.example.com\npresets: {commitpolicy: {org: {rules: {r: {match: all, parser: conventional, message: m, checks: {type-enum: {level: error, value: [fix]}}}}}}}\n",
+		"extends.yaml": "version: 1\nextends: org\n",
 	})
 	code, out, _ := run(t, "validate")
 	assert.Equal(t, ExitOK, code)
@@ -36,11 +36,11 @@ func TestValidate(t *testing.T) {
 	code, out, _ = run(t, "validate", "-f", filepath.Join(dir, "bad.yaml"), "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code)
 	assert.Contains(t, out, `bad.yaml: invalid`)
-	assert.Contains(t, out, `error: ruleset r: unknown rule "typo"`)
+	assert.Contains(t, out, `error: rule r: unknown check "typo"`)
 
 	code, out, _ = run(t, "validate", "-f", "broken.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code)
-	assert.Contains(t, out, "rulesets: 1 to 50 rulesets are required")
+	assert.Contains(t, out, "rule r: parser: required")
 
 	code, out, _ = run(t, "validate", "-f", "extends.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code, "a preset is unknown without the server config")
@@ -93,33 +93,38 @@ func TestLintCommit_Usage(t *testing.T) {
 	code, _, errOut = run(t, "lint-commit", "-m", "feat: ok", "-f", "missing")
 	assert.Equal(t, ExitError, code)
 	assert.Contains(t, errOut, "missing")
+	inDir(t, map[string]string{"COMMITPOLICY": "version: 1\nextends: missing\n"})
+	code, _, errOut = run(t, "lint-commit", "-m", "feat: ok")
+	assert.Equal(t, ExitError, code, "a missing preset is an error, not a silent pass")
+	assert.Contains(t, errOut, `preset "missing" is not defined`)
+	inDir(t, map[string]string{"COMMITPOLICY": goodPolicy})
 	code, _, errOut = run(t, "lint-commit", "--range", "HEAD")
 	assert.Equal(t, ExitError, code, "outside of a repository")
 	assert.Contains(t, errOut, "git")
 }
 
-func TestLintCommit_Ruleset(t *testing.T) {
-	policy := "version: 1\nrulesets:\n  - name: protected\n    refs: protected\n    rules:\n      type-enum: {level: error, value: [feat, fix]}\n" +
-		"  - name: all\n    rules:\n      header-max-length: {level: error, value: 20}\n"
+func TestLintCommit_Rule(t *testing.T) {
+	policy := "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n" +
+		"  all:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      header-max-length: {level: error, value: 20}\n"
 	inDir(t, map[string]string{"COMMITPOLICY": policy})
 	code, out, _ := run(t, "lint-commit", "-m", "chore: a header longer than twenty")
 	assert.Equal(t, ExitError, code)
-	assert.Contains(t, out, "[protected]")
-	assert.Contains(t, out, "[all]", "without --ruleset every ruleset applies")
-	code, out, _ = run(t, "lint-commit", "--ruleset", "all", "-m", "chore: a header longer than twenty")
+	assert.Contains(t, out, "[main]")
+	assert.Contains(t, out, "[all]", "without --rule every rule applies")
+	code, out, _ = run(t, "lint-commit", "--rule", "all", "-m", "chore: a header longer than twenty")
 	assert.Equal(t, ExitError, code)
-	assert.NotContains(t, out, "[protected]")
-	code, out, _ = run(t, "lint-commit", "--ruleset", "protected", "--ruleset", "all", "-m", "fix: short")
+	assert.NotContains(t, out, "[main]")
+	code, out, _ = run(t, "lint-commit", "--rule", "main", "--rule", "all", "-m", "fix: short")
 	assert.Equal(t, ExitOK, code, out)
-	code, _, errOut := run(t, "lint-commit", "--ruleset", "release", "-m", "fix: short")
+	code, _, errOut := run(t, "lint-commit", "--rule", "release", "-m", "fix: short")
 	assert.Equal(t, ExitError, code)
-	assert.Contains(t, errOut, `ruleset "release" is not in the file; it has protected, all`)
+	assert.Contains(t, errOut, `rule "release" is not in the file; it has main, all`)
 }
 
 func TestLintCommit_PresetsOnlyConfig(t *testing.T) {
 	inDir(t, map[string]string{
-		"COMMITPOLICY": "version: 1\nextends: org\nrulesets:\n  - name: r\n",
-		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\ncommitpolicy_presets:\n  org:\n    rules:\n      type-enum: {level: error, value: [feat]}\n",
+		"COMMITPOLICY": "version: 1\nextends: org\n",
+		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\npresets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all, parser: conventional, message: m, checks: {type-enum: {level: error, value: [feat]}}}\n",
 	})
 	code, out, errOut := run(t, "lint-commit", "--config", "config.yaml", "-m", "fix: no")
 	assert.Equal(t, ExitError, code, errOut)

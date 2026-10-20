@@ -17,18 +17,21 @@ import (
 
 const (
 	commitPolicy = `version: 1
-rulesets:
-  - name: conventional
-    except: {merge_commits: true, git_reverts: true}
-    rules:
+rules:
+  conventional:
+    match: all
+    parser: conventional
+    except: {merge_commit: true, git_reverts: true}
+    checks:
       type-enum: {level: error, value: [feat, fix, chore]}
       subject-full-stop: {level: error, value: forbid}
+    message: Commits follow Conventional Commits.
 `
-	commitWarn      = "version: 1\nmode: warn\nrulesets:\n  - name: conventional\n    rules:\n      type-enum: {level: error, value: [feat, fix]}\n"
-	commitWeak      = "version: 1\nrulesets:\n  - name: conventional\n    format: free\n    rules: {}\n"
-	commitProtected = "version: 1\nrulesets:\n  - name: protected\n    refs: protected\n    rules:\n      type-enum: {level: error, value: [feat, fix]}\n"
-	commitMerged    = "version: 1\nrulesets:\n  - name: all\n    refs: [\"refs/heads/*\"]\n    except: {merge_commits: true, merged_commits: true}\n    rules:\n      type-enum: {level: error, value: [feat, fix]}\n"
-	commitRelease   = "version: 1\nrulesets:\n  - name: release\n    refs: [\"refs/heads/release/*\"]\n    rules:\n      type-enum: {level: error, value: [fix]}\n"
+	commitWarn    = "version: 1\nmode: warn\nrules:\n  conventional:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
+	commitWeak    = "version: 1\nrules:\n  conventional:\n    match: all\n    parser: free\n    message: m\n"
+	commitMain    = "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
+	commitMerged  = "version: 1\nrules:\n  all:\n    match: ['/.*/']\n    parser: conventional\n    message: m\n    except: {merge_commit: true, merged_commits: true}\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
+	commitRelease = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [fix]}\n"
 )
 
 func TestCommitPolicy_Enforce(t *testing.T) {
@@ -37,7 +40,7 @@ func TestCommitPolicy_Enforce(t *testing.T) {
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 	s.Commit("WIP stuff.", map[string]string{"a": "2"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
-	assertDenied(t, r, "COMMITPOLICY ruleset \"conventional\", branch main: 1 commit message does not follow the format", `"WIP stuff."`,
+	assertDenied(t, r, "COMMITPOLICY rule \"conventional\", branch main: 1 commit message does not follow the format", `"WIP stuff."`,
 		`header: expected "type(scope): subject"`, "how to fix: reword the commit")
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
@@ -50,7 +53,7 @@ func TestCommitPolicy_InvalidNewVersionOnFeatureBranch(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitPolicy})
 	s.Commit("feat: typo in the policy", map[string]string{"COMMITPOLICY": strings.Replace(commitPolicy, "type-enum", "type-enun", 1)})
 	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "COMMITPOLICY, branch feature: the changed COMMITPOLICY is invalid",
-		`unknown rule "type-enun"`)
+		`unknown check "type-enun"`)
 }
 
 func TestCommitPolicy_WeakenedInSamePush(t *testing.T) {
@@ -121,7 +124,7 @@ func TestCommitPolicy_CreateProtectedFromFeature(t *testing.T) {
 	s.Commit("feat: not allowed on release", map[string]string{"a": "1"})
 	s.Seed("HEAD:refs/heads/feature")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature2"))
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY ruleset \"release\", branch release/1", `type-enum: "feat"`)
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY rule \"release\", branch release/1", `type-enum: "feat"`)
 }
 
 func TestCommitPolicy_WarnVsEnforce(t *testing.T) {
@@ -152,7 +155,7 @@ func TestCommitPolicy_TooManyCommits(t *testing.T) {
 }
 
 func TestCommitPolicy_InvalidAnchorSkipped(t *testing.T) {
-	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": "version: 1\nrulesets: []\n"})
+	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": "version: 1\nrules:\n  r: {match: all}\n"})
 	s.Commit("anything", map[string]string{"a": "1"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
@@ -160,18 +163,10 @@ func TestCommitPolicy_InvalidAnchorSkipped(t *testing.T) {
 	assert.Len(t, Events(s.Audit(), "invalid_commit_policy"), 1)
 }
 
-func TestCommitPolicy_ProtectedClassAPIFailure(t *testing.T) {
-	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitProtected})
-	s.Commit("bad", map[string]string{"a": "1"})
-	r := s.Push(alice, "HEAD:refs/heads/feature")
-	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "COMMITPOLICY ruleset \"protected\", branch feature: commit messages were not checked by this ruleset: the GitLab API did not answer")
-	assert.Contains(t, r.Output, "push accepted with 1 warning")
-}
-
+// TestCommitPolicy_FeatureBranchFree: a rule for a list of branches does not
+// check other branches and needs no API.
 func TestCommitPolicy_FeatureBranchFree(t *testing.T) {
-	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitProtected})
-	s.Protected([]string{"main"}, nil)
+	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitMain})
 	s.Commit("wip", map[string]string{"a": "1"})
 	r := s.Push(alice, "HEAD:refs/heads/feature")
 	assertAllowed(t, r)

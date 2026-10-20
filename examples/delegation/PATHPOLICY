@@ -5,14 +5,20 @@ version: 1
 admins: [platform-lead]
 
 rules:
-  - name: commit-policy
+  commit-policy:
+    match: all
     paths: ["COMMITPOLICY"]
     allow: [dev-lead, platform-lead]
+    message: COMMITPOLICY is changed by dev-lead or platform-lead.
 
-  - name: tag-policy
+  tag-policy:
+    match: all
     paths: ["TAGPOLICY"]
     allow: [release-lead, platform-lead]
+    message: TAGPOLICY is changed by release-lead or platform-lead.
 
-  - name: kubernetes-agents
+  kubernetes-agents:
+    match: default
     paths: [".gitlab/agents/**"]
     allow: [cluster-owner]
+    message: The agent configuration is read only from the default branch; cluster-owner merges it.

@@ -32,7 +32,7 @@ func TestParse_Full(t *testing.T) {
 	assert.Equal(t, ModeAudit, cfg.Mode)
 	assert.Equal(t, 30*24*time.Hour, cfg.TokenLifetime.Std())
 	assert.Equal(t, 8*time.Second, cfg.Timeouts.Total.Std())
-	assert.Equal(t, 50*time.Millisecond, cfg.Timeouts.Pattern.Std())
+	assert.Equal(t, 2*time.Second, cfg.Timeouts.HTTP.Std())
 	assert.Equal(t, 20, cfg.MaxAPICalls)
 	assert.True(t, cfg.Audit.Stdout)
 	assert.True(t, cfg.ModuleEnabled("pathpolicy"))
@@ -41,7 +41,7 @@ func TestParse_Full(t *testing.T) {
 	assert.Equal(t, []string{"main", "master"}, cfg.DefaultBranch)
 	require.NotNil(t, cfg.SettingsCheck.JobTokenPush)
 	assert.False(t, *cfg.SettingsCheck.JobTokenPush)
-	assert.Contains(t, cfg.CommitPolicyPresets, "org-conventional")
+	assert.Contains(t, cfg.Presets["commitpolicy"], "org-conventional")
 	ep, err := cfg.Endpoint()
 	require.NoError(t, err)
 	assert.Equal(t, Endpoint{BaseURL: "https://gitlab.example.com"}, ep)
@@ -64,7 +64,7 @@ func TestParse_Invalid(t *testing.T) {
 		{"negative days", "gitlab_url: " + socketURL + "\ntoken_lifetime: -1d\n", "invalid duration"},
 		{"short token lifetime", "gitlab_url: " + socketURL + "\ntoken_lifetime: 1h\n", "token_lifetime: must be at least 1d"},
 		{"http over total", "gitlab_url: " + socketURL + "\ntimeouts: {total: 1s, http: 3s}\n", "timeouts.http: must not exceed timeouts.total"},
-		{"zero timeout", "gitlab_url: " + socketURL + "\ntimeouts: {pattern: 0s}\n", "timeouts.pattern: must be positive"},
+		{"zero timeout", "gitlab_url: " + socketURL + "\ntimeouts: {http: 0s}\n", "timeouts.http: must be positive"},
 		{"no api calls", "gitlab_url: " + socketURL + "\nmax_api_calls: 0\n", "max_api_calls: must be at least 1"},
 		{"module state", "gitlab_url: " + socketURL + "\nmodules: {pathpolicy: on}\n", `modules.pathpolicy: "on" is not one of enabled, disabled`},
 		{"empty default branch", "gitlab_url: " + socketURL + "\ndefault_branch: [\"\"]\n", "default_branch: an empty name"},
@@ -103,21 +103,20 @@ func FuzzParse(f *testing.F) {
 }
 
 func TestPresets(t *testing.T) {
-	commit, branch, err := Presets([]byte("mode: strict\ncommitpolicy_presets:\n  org:\n    rules: {}\nbranchpolicy_presets:\n  std:\n    rules: []\n"))
+	presets, err := Presets([]byte("mode: strict\npresets:\n  commitpolicy:\n    org:\n      rules: {}\n  branchpolicy:\n    std:\n      rules: []\n"))
 	require.NoError(t, err, "other keys are not checked")
-	assert.Equal(t, map[string]any{"org": map[string]any{"rules": map[string]any{}}}, commit)
-	assert.Equal(t, map[string]any{"std": map[string]any{"rules": []any{}}}, branch)
-	commit, branch, err = Presets([]byte("gitlab_url: x\n"))
+	assert.Equal(t, map[string]any{"org": map[string]any{"rules": map[string]any{}}}, presets["commitpolicy"])
+	assert.Equal(t, map[string]any{"std": map[string]any{"rules": []any{}}}, presets["branchpolicy"])
+	presets, err = Presets([]byte("gitlab_url: x\n"))
 	require.NoError(t, err)
-	assert.Nil(t, commit)
-	assert.Nil(t, branch)
-	_, _, err = Presets([]byte("commitpolicy_presets: [a]\n"))
-	assert.ErrorContains(t, err, "commitpolicy_presets: expected a mapping")
-	_, _, err = Presets([]byte("branchpolicy_presets: [a]\n"))
-	assert.ErrorContains(t, err, "branchpolicy_presets: expected a mapping")
-	_, _, err = Presets([]byte("- a\n"))
+	assert.Nil(t, presets)
+	_, err = Presets([]byte("presets: [a]\n"))
+	assert.ErrorContains(t, err, "presets: expected a mapping")
+	_, err = Presets([]byte("presets:\n  branchpolicy: [a]\n"))
+	assert.ErrorContains(t, err, "presets.branchpolicy: expected a mapping")
+	_, err = Presets([]byte("- a\n"))
 	assert.ErrorContains(t, err, "expected a mapping")
-	_, _, err = Presets([]byte("commitpolicy_presets: &a {}\n"))
+	_, err = Presets([]byte("presets: &a {}\n"))
 	assert.ErrorContains(t, err, "anchors are not allowed")
 }
 

@@ -1,19 +1,14 @@
 # A free-form header that starts with an issue key, on the default branch only.
 version: 1
 
-rulesets:
-  - name: issue-key
-    refs: default
-    format: free
+rules:
+  issue-key:
+    match: default
+    parser: free
     except:
-      merge_commits: true
-    rules:
+      merge_commit: true
+    checks:
       header-max-length: { level: error, value: 72 }
       subject-full-stop: { level: error, value: forbid }
-      pattern:
-        level: error
-        value: '[A-Z][A-Z0-9]+-[0-9]+ \S'
-        examples:
-          valid: ["PAY-123 Round refunds to cents"]
-          invalid: ["Round refunds to cents", "pay-123 Round refunds"]
+      pattern:           { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
     message: Start the header with the issue key, for example PAY-123.

@@ -119,7 +119,7 @@ func largePathPolicy() string {
 	var b strings.Builder
 	b.WriteString("version: 1\nadmins: [alice]\nrules:\n")
 	for i := range 100 {
-		fmt.Fprintf(&b, "  - name: service-%03d\n    paths: [\"services/svc-%03d/deploy/**\", \"services/svc-%03d/ci/*.yml\"]\n    allow: [alice, ops-lead-%03d]\n", i, i, i, i)
+		fmt.Fprintf(&b, "  service-%03d:\n    match: all\n    paths: [\"services/svc-%03d/deploy/**\", \"services/svc-%03d/ci/*.yml\"]\n    allow: [alice, ops-lead-%03d]\n    message: m\n", i, i, i, i)
 	}
 	return b.String()
 }

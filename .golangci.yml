@@ -128,7 +128,6 @@ linters:
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec
             - github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit
-            - github.com/dlclark/regexp2/v2
         modules-tag:
           list-mode: strict
           files:

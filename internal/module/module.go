@@ -193,9 +193,7 @@ type Signature struct {
 type Violation struct {
 	Code string
 	Rule string
-	// RuleKind names the rule in the output: "ruleset" for COMMITPOLICY, empty for a rule.
-	RuleKind string
-	Ref      string
+	Ref  string
 	// Title replaces the title of the code when the code alone does not tell
 	// what happened, for example which check of a signature failed.
 	Title string
@@ -212,6 +210,22 @@ type Violation struct {
 	Summary string
 	// Reason may hold API results; it goes only to audit.
 	Reason string
+	// Help of the rules of the violation, printed in its block.
+	Help []Help
+	// Source lists the layers the rules of the violation come from, in merge
+	// order: "preset:<name>" or "file"; it goes to audit.
+	Source []string
+}
+
+// PresetRef is a preset that a policy file extends, for the audit log.
+type PresetRef struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+}
+
+// PresetUser is a policy that extends presets of the server config.
+type PresetUser interface {
+	Presets() []PresetRef
 }
 
 // Item is a file or a commit with optional details.
@@ -232,7 +246,6 @@ const (
 	CodeAuthorizationBackend    = "authorization_backend_failure"
 	CodeUnknownPrincipal        = "unknown_principal"
 	CodeCommitFormat            = "commit_format_violation"
-	CodeCommitCheckTimeout      = "commit_check_timeout"
 	CodeTagNotSigned            = "tag_not_signed"
 	CodeTagObjectInvalid        = "tag_object_invalid"
 	CodeTagSignerNotAllowed     = "tag_signer_not_allowed"
@@ -297,11 +310,13 @@ type UsernameLister interface {
 	Usernames() []string
 }
 
-// ProtectedBranchLister is implemented by policies that require new branches
-// of some classes to be protected; settings-check checks that the project
-// protects these patterns.
-type ProtectedBranchLister interface {
-	ProtectedBranches() []string
+// BranchProtector is implemented by policies that require branches of some
+// classes to be protected; settings-check checks the existing branches.
+type BranchProtector interface {
+	// MustProtect reports whether a branch must be a protected branch of the project.
+	MustProtect(branch string) bool
+	// ProtectsBranches reports whether any branch must be protected.
+	ProtectsBranches() bool
 }
 
 // PresetReporter is implemented by modules with presets in the server config;

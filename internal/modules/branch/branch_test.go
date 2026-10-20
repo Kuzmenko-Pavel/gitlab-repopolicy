@@ -12,41 +12,42 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
-// standard is a branch standard as an installation would put it into
-// branchpolicy_presets.
+// standard is a branch standard as an installation would put it into the
+// presets of the server config: an exact rule and a deny rule per family.
 const standard = `rules:
-  - name: release
-    match: "release/*"
-    pattern: '^release/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [release/v1.4.0, release/v1.4.0-staging]
-      invalid: [release/foo, release/v1.2, release/v01.2.3]
+  release:
+    match: ['/^release\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+    priority: 100
     protected: true
     message: Release branches look like release/v1.4.0. Protect release/* with "Allowed to push and merge Maintainers".
-  - name: hotfix
-    match: "hotfix/*"
-    pattern: '^hotfix/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [hotfix/v1.4.1]
-      invalid: [hotfix/foo, hotfix/v1.4]
+  release-bad:
+    match: ['/^release\//']
+    priority: 110
+    deny: true
+    message: Release branches look like release/v1.4.0.
+  hotfix:
+    match: ['/^hotfix\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$/']
+    priority: 200
     protected: true
-  - name: epic
-    match: "epic/*"
-    pattern: '^epic/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
-    examples:
-      valid: [epic/payments]
-      invalid: [epic/, epic/Payments]
+    message: Hotfix branches look like hotfix/v1.4.1.
+  hotfix-bad:
+    match: ['/^hotfix\//']
+    priority: 210
+    deny: true
+    message: Hotfix branches look like hotfix/v1.4.1.
+  epic:
+    match: ['/^epic\/[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/']
+    priority: 300
     protected: true
-  - name: demo
-    match: "demo/*"
-    pattern: '^demo/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
+    message: Epic branches look like epic/payments.
+  demo:
+    match: ['/^demo\/[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/']
+    priority: 400
     protected: true
-  - name: work
-    match: "*"
-    pattern: '^[a-z0-9][a-z0-9._-]*/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)(/[a-z0-9][a-z0-9._-]*)*|[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*)$'
-    examples:
-      valid: [kpn/disable_auth, gks/INFRA-1719/change_logic, dmitry.mashoshin/123, dmitry.mashoshin/355/change_proce/auth]
-      invalid: [kpn, kpn/, 123-fix-login, Kuzmenko.Pavel-main-patch-48213, revert-1a2b3c4d]
+    message: Demo branches look like demo/client-a.
+  work:
+    match: ['/^[a-z0-9][a-z0-9._-]*\/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)(\/[a-z0-9][a-z0-9._-]*)*|[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*)$/']
+    priority: 900
     message: Work branches are <prefix>/[<issue>/]<name>, for example kpn/disable_auth.
 `
 
@@ -57,7 +58,7 @@ func settings(t *testing.T) *Settings {
 	raw, ok := tree.Interface().(map[string]any)
 	require.True(t, ok)
 	s := NewSettings(raw)
-	require.Empty(t, s.presetErrors)
+	require.Empty(t, s.presets.Errors())
 	return s
 }
 
@@ -152,26 +153,26 @@ func TestStandard_Names(t *testing.T) {
 	p := parse(t, settings(t), "version: 1\nextends: org-branches\n")
 	require.NoError(t, p.unusable)
 	for _, name := range []string{"kpn/disable_auth", "gks/INFRA-1719/change_logic", "dmitry.mashoshin/123",
-		"dmitry.mashoshin/355/change_proce/auth", "kpn/bump-1.2.3", "release/v1.2.3", "release/v10.0.12-staging", "epic/payments"} {
+		"dmitry.mashoshin/355/change_proce/auth", "kpn/bump-1.2.3", "release/v1.2.3", "release/v10.0.12-staging", "epic/payments",
+		"master", "kpn", "123-fix-login", "Release/v1.0.0"} {
 		res := protectedEnv().create(t, p, name)
 		assert.Equal(t, module.Allow, res.Decision, name)
 		assert.False(t, res.Touched, "an accepted branch writes no audit event: %s", name)
 	}
-	for _, name := range []string{"release/foo", "release/v1.2", "release/v01.2.3", "master", "kpn", "123-fix-login",
-		"Kuzmenko.Pavel-main-patch-48213", "revert-1a2b3c4d", "Release/v1.0.0"} {
+	for name, rule := range map[string]string{"release/foo": "release-bad", "release/v1.2": "release-bad",
+		"release/v01.2.3": "release-bad", "hotfix/foo": "hotfix-bad"} {
 		res := protectedEnv().create(t, p, name)
 		assert.Equal(t, module.Deny, res.Decision, name)
 		assert.Equal(t, []string{module.CodeBranchName}, codes(res), name)
+		assert.Equal(t, rule, res.Violations[0].Rule, "the deny rule of the family: %s", name)
 	}
 	res := protectedEnv().create(t, p, "release/foo")
-	assert.Equal(t, "release", res.Violations[0].Rule, "a release/ name is judged by the release rule only")
-	assert.Contains(t, res.Violations[0].Message, "Release branches look like release/v1.4.0")
-	assert.Contains(t, res.Violations[0].Summary, "branch release/foo breaks BRANCHPOLICY rule release")
-	assert.NotContains(t, res.Violations[0].Summary, "^release", "the regex is not shown")
+	assert.Equal(t, "Release branches look like release/v1.4.0.", res.Violations[0].Message)
+	assert.Equal(t, []string{"preset:org-branches"}, res.Violations[0].Source)
 }
 
 func TestDefaultUpdateDelete(t *testing.T) {
-	p := parse(t, settings(t), "version: 1\nextends: org-branches\n")
+	p := parse(t, settings(t), "version: 1\nrules:\n  all:\n    match: all\n    priority: 1\n    deny: true\n    message: m\n")
 	e := protectedEnv()
 	res := e.create(t, p, "main")
 	assert.Equal(t, module.Allow, res.Decision, "the default branch is the business of the core")
@@ -181,58 +182,87 @@ func TestDefaultUpdateDelete(t *testing.T) {
 	assert.Equal(t, module.Allow, res.Decision, "updates, deletions and tags are not checked")
 }
 
-func TestMerge(t *testing.T) {
+func TestPresetOverride(t *testing.T) {
 	s := settings(t)
 	p := parse(t, s, `version: 1
 extends: org-branches
 rules:
-  - name: no-master
-    match: "master"
+  no-master:
+    match: [master]
+    priority: 10
     deny: true
     message: This project uses main; master must not be created.
-  - name: no-tmp
-    match: "tmp/*"
-    deny: true
-  - name: work
-    match: "*"
-    deny: true
-    message: Only release, hotfix, epic and demo branches here.
+  epic: null
+  release:
+    message: Release branches of this project look like release/v2.0.0.
 `)
 	require.NoError(t, p.unusable)
 	names := make([]string, 0, len(p.rules))
 	for _, r := range p.rules {
 		names = append(names, r.name)
 	}
-	assert.Equal(t, []string{"no-master", "no-tmp", "release", "hotfix", "epic", "demo", "work"}, names,
-		"new rules first, the preset rule replaced in its place")
+	assert.Equal(t, []string{"no-master", "release", "release-bad", "hotfix", "hotfix-bad", "demo", "work"}, names, "in priority order")
 	e := protectedEnv()
 	res := e.create(t, p, "master")
 	require.Equal(t, []string{module.CodeBranchName}, codes(res))
 	assert.Equal(t, "creating this branch is forbidden", res.Violations[0].Title)
 	assert.Contains(t, res.Violations[0].Summary, "branch master is forbidden by BRANCHPOLICY rule no-master")
-	assert.Equal(t, module.Deny, e.create(t, p, "kpn/disable_auth").Decision, "the strict project replaced the catch-all")
-	assert.Equal(t, module.Allow, e.create(t, p, "release/v1.0.0").Decision)
-
-	own := parse(t, s, "version: 1\nrules:\n  - name: feature\n    match: \"feature/*\"\n")
-	assert.Equal(t, module.Allow, e.create(t, own, "feature/x").Decision)
-	res = e.create(t, own, "kpn/x")
-	assert.Equal(t, []string{module.CodeBranchName}, codes(res), "without a catch-all a name of no class is denied")
-	assert.Equal(t, "no rule of BRANCHPOLICY allows this name", res.Violations[0].Title)
+	assert.Equal(t, module.Allow, e.create(t, p, "epic/Payments").Decision, "the epic rule is removed")
+	e.refs.class = module.ClassOther
+	res = e.create(t, p, "release/v1.0.0")
+	require.Equal(t, []string{module.CodeBranchNotProtected}, codes(res))
+	assert.Equal(t, "Release branches of this project look like release/v2.0.0.", res.Violations[0].Message)
+	assert.Equal(t, []string{"preset:org-branches", "file"}, res.Violations[0].Source)
 }
 
-func TestCheckFinalList(t *testing.T) {
+func TestStrictMode(t *testing.T) {
+	p := parse(t, settings(t), `version: 1
+extends: org-branches
+rules:
+  other:
+    match: all
+    priority: 1000
+    deny: true
+    message: Only the branches of the standard are created here.
+`)
+	require.NoError(t, p.unusable)
+	e := protectedEnv()
+	assert.Equal(t, module.Allow, e.create(t, p, "kpn/disable_auth").Decision)
+	res := e.create(t, p, "fix-login")
+	assert.Equal(t, []string{module.CodeBranchName}, codes(res), "match: all with deny catches a name of no class")
+	assert.Equal(t, "other", res.Violations[0].Rule)
+}
+
+func TestNoClassNotChecked(t *testing.T) {
+	p := parse(t, settings(t), `version: 1
+rules:
+  release:
+    match: ['/^release\/v\d+\.\d+\.\d+$/', '!release/v0.0.0']
+    priority: 1
+    protected: true
+    message: m
+`)
+	e := protectedEnv()
+	e.refs.class = module.ClassOther
+	for _, name := range []string{"release/v0.0.0", "release/foo", "feature/x"} {
+		res := e.create(t, p, name)
+		assert.Equal(t, module.Allow, res.Decision, "%s matches no rule: not checked, an exclusion does not deny", name)
+		assert.False(t, res.Touched)
+	}
+	assert.Equal(t, []string{module.CodeBranchNotProtected}, codes(e.create(t, p, "release/v1.0.0")))
+}
+
+func TestCheckMerged(t *testing.T) {
 	s := settings(t)
 	for name, tc := range map[string]struct{ file, want string }{
-		"rule after catch-all": {"version: 1\nrules:\n  - name: all\n    match: \"*\"\n  - name: late\n    match: \"x/*\"\n",
-			`rule late: comes after the rule all with match "*"`},
-		"duplicate match": {"version: 1\nrules:\n  - name: a\n    match: \"x/*\"\n  - name: b\n    match: \"x/*\"\n",
-			`rule b: match "x/*" is already the match of rule a`},
-		"shadowed example": {"version: 1\nextends: org-branches\nrules:\n  - name: two-levels\n    match: \"*/*\"\n",
-			`rule release: the valid example "release/v1.4.0" is taken by the rule two-levels above`},
-		"valid example fails": {"version: 1\nrules:\n  - name: r\n    match: \"r/*\"\n    pattern: 'r/[0-9]+'\n    examples: {valid: [r/x]}\n",
-			`rule r: pattern does not match the valid example "r/x"`},
-		"invalid example passes": {"version: 1\nrules:\n  - name: r\n    match: \"r/*\"\n    pattern: 'r/[0-9]+'\n    examples: {invalid: [r/1]}\n",
-			`rule r: pattern matches the invalid example "r/1"`},
+		"priority twice": {"version: 1\nrules:\n  a: {match: [a], priority: 1, message: m}\n  b: {match: [b], priority: 1, message: m}\n",
+			"rule b: priority 1 is also the priority of rule a"},
+		"rule after match all": {"version: 1\nrules:\n  all: {match: all, priority: 1, message: m}\n  late: {match: [x], priority: 2, message: m}\n",
+			"rule late: comes after rule all with match: all and is never used; give match: all the highest priority"},
+		"same match": {"version: 1\nrules:\n  a: {match: [x, y], priority: 1, message: m}\n  b: {match: [y, x], priority: 2, message: m}\n",
+			"rule b: match [y, x] is the match of rule a with a lower priority, so it is never used"},
+		"preset priority taken": {"version: 1\nextends: org-branches\nrules:\n  own: {match: [own], priority: 100, message: m}\n",
+			"priority 100 is also the priority of rule"},
 		"missing preset": {"version: 1\nextends: nope\n", `extends: preset "nope" is not defined`},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -249,17 +279,20 @@ func TestCheckFinalList(t *testing.T) {
 }
 
 func TestParse_Invalid(t *testing.T) {
-	for name, file := range map[string]string{
-		"deny with pattern":    "version: 1\nrules:\n  - name: r\n    match: x\n    deny: true\n    pattern: x\n",
-		"deny with protected":  "version: 1\nrules:\n  - name: r\n    match: x\n    deny: true\n    protected: true\n",
-		"examples no pattern":  "version: 1\nrules:\n  - name: r\n    match: x\n    examples: {valid: [x]}\n",
-		"unknown field":        "version: 1\nrules:\n  - name: r\n    match: x\n    branches: [x]\n",
-		"bad regex":            "version: 1\nrules:\n  - name: r\n    match: x\n    pattern: '('\n",
-		"no match":             "version: 1\nrules:\n  - name: r\n",
-		"protected not a bool": "version: 1\nrules:\n  - name: r\n    match: x\n    protected: \"yes\"\n",
+	for name, tc := range map[string]struct{ file, want string }{
+		"deny with protected":  {"version: 1\nrules:\n  r: {match: [x], priority: 1, deny: true, protected: true, message: m}\n", "deny: no protected with deny"},
+		"pattern is gone":      {"version: 1\nrules:\n  r: {match: [x], priority: 1, pattern: x, message: m}\n", `unknown field "pattern"`},
+		"examples are gone":    {"version: 1\nrules:\n  r: {match: [x], priority: 1, examples: {valid: [x]}, message: m}\n", `unknown field "examples"`},
+		"no match":             {"version: 1\nrules:\n  r: {priority: 1, message: m}\n", "match: required"},
+		"no priority":          {"version: 1\nrules:\n  r: {match: [x], message: m}\n", "priority: required"},
+		"no message":           {"version: 1\nrules:\n  r: {match: [x], priority: 1}\n", "message: required"},
+		"default":              {"version: 1\nrules:\n  r: {match: default, priority: 1, message: m}\n", "default is not allowed here"},
+		"glob":                 {"version: 1\nrules:\n  r: {match: ['release/*'], priority: 1, message: m}\n", `use a regex such as /^release\//`},
+		"protected not a bool": {"version: 1\nrules:\n  r: {match: [x], priority: 1, protected: \"yes\", message: m}\n", "expected true or false"},
 	} {
-		_, err := Parse([]byte(file), settings(t))
-		assert.Error(t, err, name)
+		_, err := Parse([]byte(tc.file), settings(t))
+		require.Error(t, err, name)
+		assert.Contains(t, err.Error(), tc.want, name)
 	}
 }
 
@@ -278,7 +311,8 @@ func TestProtected(t *testing.T) {
 	res := e.create(t, p, "epic/payments")
 	require.Equal(t, []string{module.CodeBranchNotProtected}, codes(res))
 	assert.Equal(t, module.Deny, res.Decision)
-	assert.Contains(t, res.Violations[0].Summary, "a Maintainer adds epic/* in Settings > Repository > Protected branches")
+	assert.Equal(t, "Epic branches look like epic/payments.", res.Violations[0].Message)
+	assert.Contains(t, res.Violations[0].Hint, "a Maintainer protects epic/payments in Settings > Repository > Protected branches")
 
 	for st, code := range map[module.Status]string{module.Unknown("no answer"): module.CodeAuthorizationBackend, module.UnknownLimit("budget"): module.CodeLimitExceeded} {
 		e := protectedEnv()
@@ -294,7 +328,7 @@ func TestProtected(t *testing.T) {
 }
 
 func TestUserPrefix(t *testing.T) {
-	p := parse(t, settings(t), "version: 1\nrules:\n  - name: work\n    match: \"*\"\n    user_prefix: true\n")
+	p := parse(t, settings(t), "version: 1\nrules:\n  work:\n    match: all\n    priority: 1\n    user_prefix: true\n    message: m\n    help: {contact: \"#branches\"}\n")
 	e := protectedEnv()
 	e.user = "Kuzmenko.Pavel"
 	assert.Equal(t, module.Allow, e.create(t, p, "kuzmenko.pavel/disable_auth").Decision)
@@ -307,18 +341,19 @@ func TestUserPrefix(t *testing.T) {
 		res := e.create(t, p, name)
 		assert.Equal(t, []string{module.CodeBranchName}, codes(res), name)
 	}
-	assert.Contains(t, e.create(t, p, "kpn/x").Violations[0].Facts[0], "kpn is not a GitLab user")
+	res := e.create(t, p, "kpn/x")
+	assert.Contains(t, res.Violations[0].Facts[0], "kpn is not a GitLab user")
+	assert.Equal(t, []module.Help{{Contact: "#branches"}}, res.Violations[0].Help)
 
 	e.authz.status = module.Unknown("no answer")
-	res := e.create(t, p, "olga/x")
+	res = e.create(t, p, "olga/x")
 	assert.Equal(t, module.Warn, res.Decision)
 	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(res))
 }
 
 func TestModule(t *testing.T) {
 	m := New(NewSettings(map[string]any{"broken": "x"}))
-	require.Len(t, m.PresetErrors(), 1)
-	assert.Contains(t, m.PresetErrors()[0], "branchpolicy_presets.broken: ")
+	assert.Equal(t, []string{"presets.branchpolicy.broken: expected a mapping, got a string"}, m.PresetErrors())
 	res, err := m.EvaluateInvalid(context.Background(), &module.Input{Refs: &fakeRefs{}}, assert.AnError)
 	require.NoError(t, err)
 	assert.Equal(t, module.Allow, res.Decision, "no new branch, no warning")
@@ -330,36 +365,9 @@ func TestModule(t *testing.T) {
 	assert.Equal(t, "invalid_branch_policy", res.Events[0].Event)
 
 	p := parse(t, settings(t), "version: 1\nextends: org-branches\n")
-	assert.Equal(t, []string{"release/*", "hotfix/*", "epic/*", "demo/*"}, p.ProtectedBranches())
-}
-
-// TestDenyByDefault is the example of the documentation: without a catch-all
-// a name of no class is denied.
-func TestDenyByDefault(t *testing.T) {
-	p := parse(t, NewSettings(nil), `version: 1
-rules:
-  - name: no-master
-    match: "master"
-    deny: true
-  - name: release
-    match: "release/*"
-    pattern: '^release/v[0-9]+\.[0-9]+\.[0-9]+(-[a-z][a-z0-9]*)?$'
-    protected: true
-  - name: hotfix
-    match: "hotfix/*"
-    pattern: '^hotfix/v[0-9]+\.[0-9]+\.[0-9]+(-[a-z][a-z0-9]*)?$'
-    protected: true
-  - name: user
-    match: "*/*"
-    user_prefix: true
-`)
-	e := protectedEnv()
-	e.user = "jdoe"
-	for name, want := range map[string]module.Decision{
-		"master": module.Deny, "release/v1.4.0": module.Allow, "release/foo": module.Deny,
-		"jdoe/disable_auth": module.Allow, "fix-login": module.Deny, "tmp": module.Deny,
-	} {
-		assert.Equal(t, want, e.create(t, p, name).Decision, name)
-	}
-	assert.Equal(t, "release", e.create(t, p, "release/foo").Violations[0].Rule, "release/foo does not fall through to user")
+	assert.True(t, p.ProtectsBranches())
+	assert.True(t, p.MustProtect("release/v1.0.0"))
+	assert.False(t, p.MustProtect("release/foo"), "the deny rule of the family has no protected")
+	assert.False(t, p.MustProtect("kpn/x"))
+	assert.False(t, parse(t, nil, "version: 1\n").ProtectsBranches())
 }

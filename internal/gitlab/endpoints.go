@@ -30,6 +30,22 @@ func (c *Client) ProtectedTags(ctx context.Context, projectID int64) ([]string, 
 	return c.names(ctx, fmt.Sprintf("/api/v4/projects/%d/protected_tags", projectID))
 }
 
+// maxBranchPages bounds the list of branches of a project: 10 000 branches.
+const maxBranchPages = 100
+
+// Branches returns the names of the branches of the project.
+func (c *Client) Branches(ctx context.Context, projectID int64) ([]string, error) {
+	items, err := pages[named](ctx, c, fmt.Sprintf("/api/v4/projects/%d/repository/branches", projectID), maxBranchPages)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		names = append(names, it.Name)
+	}
+	return names, nil
+}
+
 func (c *Client) names(ctx context.Context, path string) ([]string, error) {
 	items, err := pages[named](ctx, c, path, maxPages)
 	if err != nil {

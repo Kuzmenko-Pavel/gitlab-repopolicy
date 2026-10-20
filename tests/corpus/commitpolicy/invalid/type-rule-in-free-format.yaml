@@ -1,6 +1,0 @@
-version: 1
-rulesets:
-  - name: r
-    format: free
-    rules:
-      type-enum: { level: error, value: [feat] }

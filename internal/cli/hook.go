@@ -111,8 +111,9 @@ func write(w io.Writer, s string) {
 	}
 }
 
-// loadConfig reads and parses the server config. The names under modules:
-// are checked here, against the modules of this binary: config cannot know them.
+// loadConfig reads and parses the server config. The module names under
+// modules: and presets: are checked here, against the modules of this binary:
+// config cannot know them.
 func (a App) loadConfig(path string) (*config.Config, error) {
 	data, err := readConfig(path)
 	if err != nil {
@@ -123,13 +124,18 @@ func (a App) loadConfig(path string) (*config.Config, error) {
 		return nil, err
 	}
 	var known []string
-	for _, m := range a.Modules(modules.Settings{Clock: time.Now}).All() {
+	for _, m := range a.Modules(modules.Settings{}).All() {
 		known = append(known, m.Name())
 	}
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(cfg.Modules)) {
 		if !slices.Contains(known, name) {
 			errs = append(errs, fmt.Errorf("modules.%s: unknown module, known: %s", name, strings.Join(known, ", ")))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Presets)) {
+		if !slices.Contains(known, name) {
+			errs = append(errs, fmt.Errorf("presets.%s: unknown module, known: %s", name, strings.Join(known, ", ")))
 		}
 	}
 	if err := errors.Join(errs...); err != nil {

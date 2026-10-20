@@ -64,7 +64,7 @@ func TestGolden(t *testing.T) {
 				Message: "CI and deploy logic belong to the platform team (#platform).",
 				Hint:    "this rule applies to every branch: ask one of them to push the change",
 				Summary: "you may not change Makefile (PATHPOLICY rule ci-config; may change: olena.platform, ivan.sre)",
-				Reason:  "not in allow: petro.dev"},
+				Reason:  "not in allow: petro.dev", Help: []module.Help{{Contact: "#platform", DocsURL: "https://wiki.example/ci"}}},
 			{Code: module.CodePolicyAdmin, Ref: "refs/heads/petro/s01", Items: []module.Item{{Name: "PATHPOLICY"}},
 				Facts: []string{"admins: olena.platform, ivan.sre"}, Hint: "ask one of them to make this change; this applies to every branch, including yours"},
 			{Code: module.CodeInvalidPolicy, Ref: "refs/heads/petro/s01", Title: "PATHPOLICY in main is broken, so no changes are accepted",
@@ -75,7 +75,7 @@ func TestGolden(t *testing.T) {
 	})
 	t.Run("commitpolicy", func(t *testing.T) {
 		out := Rejection([]Section{{Name: "COMMITPOLICY", Violations: []module.Violation{
-			{Code: module.CodeCommitFormat, Rule: "conventional", RuleKind: "ruleset", Ref: "refs/heads/main", Title: "2 commit messages do not follow the format",
+			{Code: module.CodeCommitFormat, Rule: "conventional", Ref: "refs/heads/main", Title: "2 commit messages do not follow the format",
 				Facts: []string{"required: type(scope): subject, for example feat(api): add refunds", "types: feat, fix"},
 				Items: []module.Item{
 					{Name: `3f2a9c1aa "Fix deploy."`, Commit: true, Details: []string{`type-enum: "Fix" is not one of feat, fix`, "subject-full-stop: the subject must not end with a full stop"}},

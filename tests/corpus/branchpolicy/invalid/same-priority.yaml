@@ -1,0 +1,10 @@
+version: 1
+rules:
+  a:
+    match: [a]
+    priority: 1
+    message: m
+  b:
+    match: [b]
+    priority: 1
+    message: m

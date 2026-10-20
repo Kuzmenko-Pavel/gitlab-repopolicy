@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
@@ -221,5 +222,71 @@ func (p Presets) Errors() []string {
 		out = append(out, fmt.Sprintf("%s: %v", name, err))
 	}
 	sort.Strings(out)
+	return out
+}
+
+// Resolved is a policy file merged with its presets.
+type Resolved struct {
+	// Doc is the file with its rules replaced by the merge result.
+	Doc *strictyaml.Value
+	// Origin tells where every rule and field comes from.
+	Origin Origin
+	// Extends are the preset names of the file in merge order.
+	Extends []string
+}
+
+// PresetError is a problem of a preset that a file extends: missing from the
+// server config or invalid. Each module decides whether the file is broken
+// or the module is skipped.
+type PresetError struct{ Err error }
+
+func (e *PresetError) Error() string { return e.Err.Error() }
+func (e *PresetError) Unwrap() error { return e.Err }
+
+// Resolve validates a policy file, merges the presets it extends and the file
+// as Helm merges values files, and validates the result, where the fields of
+// rules that only the result must have are required.
+func Resolve(data []byte, maxBytes int, s *Spec, checks Checks, presets Presets) (*Resolved, error) {
+	file, err := strictyaml.DecodeTree(data, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := Validate(s, file, checks); err != nil {
+		return nil, err
+	}
+	extends, err := ExtendsNames(file.Fields["extends"])
+	if err != nil {
+		return nil, err
+	}
+	layers, err := presets.Layers(extends, file.Fields["rules"])
+	if err != nil {
+		return nil, &PresetError{Err: err}
+	}
+	rules, origin := MergeRules(layers)
+	doc := WithRules(file, rules)
+	if err := ValidateMerged(s, doc, checks); err != nil {
+		return nil, err
+	}
+	return &Resolved{Doc: doc, Origin: origin, Extends: extends}, nil
+}
+
+// Rules are the merged rules in merge order: preset rules first, then the new
+// rules of the file.
+func (r *Resolved) Rules() []string { return r.Doc.Fields["rules"].Keys }
+
+// Rule is the merged value of a rule.
+func (r *Resolved) Rule(name string) *strictyaml.Value { return r.Doc.Fields["rules"].Fields[name] }
+
+// DecodeRule decodes a merged rule into out, a struct with yaml tags.
+func (r *Resolved) DecodeRule(name string, out any) error {
+	return strictyaml.DecodeValue(r.Rule(name).Interface(), out, 1<<22)
+}
+
+// Refs are the presets the file extends with their digests, for the audit log.
+func (r *Resolved) Refs(presets Presets) []module.PresetRef {
+	out := make([]module.PresetRef, 0, len(r.Extends))
+	for _, name := range r.Extends {
+		out = append(out, module.PresetRef{Name: name, SHA256: presets.Digest(name)})
+	}
 	return out
 }

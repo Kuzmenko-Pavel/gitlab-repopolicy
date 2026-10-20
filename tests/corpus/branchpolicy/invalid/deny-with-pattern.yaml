@@ -1,6 +1,0 @@
-version: 1
-rules:
-  - name: r
-    match: x
-    deny: true
-    pattern: x

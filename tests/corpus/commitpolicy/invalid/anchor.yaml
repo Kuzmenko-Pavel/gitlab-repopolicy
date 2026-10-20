@@ -1,4 +1,6 @@
 version: 1
-rulesets:
-  - name: r
-    refs: &x all
+rules:
+  r:
+    match: &x all
+    parser: free
+    message: m

@@ -357,6 +357,48 @@ func fixtureGit() string {
 	return "git"
 }
 
+func TestTagsOnlyOnBranches(t *testing.T) {
+	r := newRepo(t)
+	c1 := r.commit(map[string]string{"a": "1"})
+	r.publish(c1)
+	r.git(r.work, "push", "-q", r.bare, c1+":refs/heads/old")
+	c2 := r.commit(map[string]string{"a": "2"})
+	r.stage(c2)
+	tag := func(rev string) module.RefUpdate { return module.RefUpdate{Old: zero40, New: rev, Ref: "refs/tags/v1"} }
+	code := func(res run) string {
+		ev := events(res.audit, audit.EventDecision)
+		require.NotEmpty(t, ev)
+		return ev[0].Code
+	}
+
+	assert.True(t, r.run([]module.Module{closed}, enforce, nil, "", tag(c1)).out.Allow, "a commit of main")
+	res := r.run([]module.Module{closed}, enforce, nil, "", tag(c2))
+	assert.False(t, res.out.Allow)
+	assert.Equal(t, module.CodeTagNotOnBranch, code(res))
+	assert.Contains(t, res.out.Stderr, "git push origin <branch> v1")
+	assert.True(t, r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: zero40, New: c2, Ref: "refs/heads/feature"}, tag(c2)).out.Allow,
+		"the branch comes in the same push")
+	assert.False(t, r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: zero40, Ref: "refs/heads/main"},
+		module.RefUpdate{Old: c1, New: zero40, Ref: "refs/heads/old"}, tag(c1)).out.Allow, "the branches are deleted in the same push")
+	assert.True(t, r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/old"},
+		module.RefUpdate{Old: c1, New: c2, Ref: "refs/heads/main"}, tag(c1)).out.Allow, "the new tips still hold the commit")
+	side := r.git(r.work, "commit-tree", "-p", c1, "-m", "side", c1+"^{tree}")
+	r.git(r.work, "push", "-q", r.bare, side+":refs/heads/side")
+	assert.False(t, r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: side, New: c1, Ref: "refs/heads/side"}, tag(side)).out.Allow,
+		"the old tip of a branch moved away does not count")
+	assert.True(t, r.run([]module.Module{closed}, enforce, nil, "", module.RefUpdate{Old: c1, New: zero40, Ref: "refs/tags/v0"}).out.Allow,
+		"a deletion is not checked")
+	assert.True(t, r.run([]module.Module{closed}, Settings{Mode: config.ModeAudit, Total: 10 * time.Second}, nil, "", tag(c2)).out.Allow)
+
+	tree := r.git(r.work, "rev-parse", c1+"^{tree}")
+	res = r.run([]module.Module{closed}, enforce, nil, "", tag(tree))
+	assert.False(t, res.out.Allow)
+	assert.Equal(t, module.CodeTagObjectInvalid, code(res))
+
+	personal := &fakeAPI{users: []gitlab.User{{ID: 2, Username: "alice"}}}
+	assert.True(t, r.run([]module.Module{closed}, enforce, personal, "alice/scratch", tag(c2)).out.Allow, "personal projects are not checked")
+}
+
 func TestDefaultBranch(t *testing.T) {
 	r := newRepo(t)
 	c1 := r.commit(map[string]string{"a": "1"})
@@ -408,7 +450,9 @@ func TestDefaultBranch_EmptyRepository(t *testing.T) {
 	assert.False(t, res.out.Allow, "GitLab would make dev the default branch")
 	assert.Contains(t, res.out.Stderr, "push main first")
 	assert.True(t, r.run([]module.Module{closed}, settings, nil, "", dev, main).out.Allow, "main comes with the push")
-	assert.True(t, r.run([]module.Module{closed}, settings, nil, "", tag).out.Allow, "a tag does not set the default branch")
+	res = r.run([]module.Module{closed}, settings, nil, "", tag)
+	assert.NotContains(t, res.out.Stderr, "push main first", "a tag does not set the default branch")
+	assert.Contains(t, res.out.Stderr, "is in no branch")
 	assert.True(t, r.run([]module.Module{closed}, Settings{Mode: config.ModeEnforce, Total: 10 * time.Second}, nil, "", dev).out.Allow, "without default_branch nothing is checked")
 
 	r.publish(c1)

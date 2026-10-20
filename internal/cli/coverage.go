@@ -52,7 +52,7 @@ func (a App) runCoverage(ctx context.Context, args []string, _ []string, stdio S
 		return fail(stdio.Err, "coverage", fmt.Errorf("--token-file: %s is not an administrator; only an administrator sees every group", me.Username), ExitError)
 	}
 	var files []string
-	for _, m := range a.Modules(modules.Settings{Clock: time.Now}).All() {
+	for _, m := range a.Modules(modules.Settings{}).All() {
 		files = append(files, m.File())
 	}
 	rep, err := coverage.Run(ctx, admin, account.ID, files)

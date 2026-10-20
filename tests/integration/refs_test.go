@@ -11,6 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest"
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 )
 
 // featureStand has GUARDPOLICY on main and a feature branch; no branch is protected in GitLab.
@@ -138,13 +141,15 @@ func TestRefs_BranchFromMergeRequestRef(t *testing.T) {
 	assertDenied(t, s.Push(bob, c+":refs/heads/taken"), "GUARDPOLICY rule \"ci\", branch taken", "ci.yml")
 }
 
+// TestRefs_AnnotatedTag: the commit of a tag is checked as part of its
+// branch, so a tag on a commit of a branch passes whoever pushes it.
 func TestRefs_AnnotatedTag(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	s.Protected(nil, []string{"v*"})
 	s.Commit("ci", map[string]string{"ci.yml": "x"})
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 	s.git(s.Work, "tag", "-a", "-m", "release", "v1")
-	assertDenied(t, s.Push(bob, "refs/tags/v1"), "GUARDPOLICY rule \"ci\", tag v1", "ci.yml")
-	assertAllowed(t, s.Push(alice, "refs/tags/v1"))
+	assertAllowed(t, s.Push(bob, "refs/tags/v1"))
 }
 
 func TestRefs_SignedTag(t *testing.T) {
@@ -157,7 +162,9 @@ func TestRefs_SignedTag(t *testing.T) {
 		"-----BEGIN PGP SIGNATURE-----\n\nAAAA\n-----END PGP SIGNATURE-----\n", c)
 	tag := s.gitStdin(obj, s.Work, "mktag")
 	s.git(s.Work, "update-ref", "refs/tags/v2", tag)
-	assertDenied(t, s.Push(bob, "refs/tags/v2"), "refs/tags/v2", "ci.yml")
+	assertDenied(t, s.Push(bob, "refs/tags/v2"), "tag v2: the tag points to a commit that is in no branch")
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+	assertAllowed(t, s.Push(bob, "refs/tags/v2"))
 }
 
 func TestRefs_ReplaceRefsIgnored(t *testing.T) {
@@ -245,7 +252,55 @@ func TestRefs_TagToNonCommit(t *testing.T) {
 	s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
 	tree := s.Rev("HEAD^{tree}")
 	s.git(s.Work, "tag", "-a", "-m", "tree", "vt", tree)
-	assertDenied(t, s.Push(bob, "refs/tags/vt"), "the tag does not match its ref")
+	assertDenied(t, s.Push(bob, "refs/tags/vt"), "tag vt: the tag does not point to a commit")
+	assert.Equal(t, module.CodeTagObjectInvalid, s.Audit()[0]["code"])
+}
+
+// TestTags_OnlyOnBranches: a created or moved tag points to a commit that a
+// branch holds after the push, in every project of a group, with or without
+// policy files.
+func TestTags_OnlyOnBranches(t *testing.T) {
+	t.Run("tag on a commit of main", func(t *testing.T) {
+		s, base := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
+		assertAllowed(t, s.Push(bob, base+":refs/tags/v1"))
+	})
+	t.Run("tag on a local commit", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
+		c := s.Commit("feat: local", map[string]string{"app.go": "x"})
+		assertDenied(t, s.Push(bob, c+":refs/tags/v1"), "tag v1: the tag points to a commit that is in no branch",
+			"git push origin <branch> v1")
+		ev := s.Audit()
+		require.Len(t, ev, 1)
+		assert.Equal(t, module.CodeTagNotOnBranch, ev[0]["code"])
+	})
+	t.Run("branch and tag in one push", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
+		c := s.Commit("feat: app", map[string]string{"app.go": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature", c+":refs/tags/v1"))
+	})
+	t.Run("branch deleted and tag on its commit in one push", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll})
+		c := s.Commit("feat: app", map[string]string{"app.go": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		assertDenied(t, s.Push(bob, ":refs/heads/feature", c+":refs/tags/v1"), "is in no branch")
+	})
+	t.Run("tag on a new commit that changes ci.yml", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"GUARDPOLICY": guardAll, "ci.yml": "v1"})
+		c := s.Commit("ci: evil", map[string]string{"ci.yml": "evil"})
+		assertDenied(t, s.Push(bob, c+":refs/tags/v1"), "tag v1: the tag points to a commit that is in no branch")
+	})
+	t.Run("group project without policy files", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"app.go": "a"})
+		c := s.Commit("feat: local", map[string]string{"app.go": "x"})
+		assertDenied(t, s.Push(bob, c+":refs/tags/v1"), "is in no branch")
+	})
+	t.Run("personal namespace", func(t *testing.T) {
+		s, _ := mainWith(t, map[string]string{"app.go": "a"})
+		s.Project = "alice/scratch"
+		s.API.Handle("GET", "/api/v4/users?username=alice", gitlabtest.OK([]any{map[string]any{"id": 2, "username": "alice"}}))
+		c := s.Commit("feat: local", map[string]string{"app.go": "x"})
+		assertAllowed(t, s.Push(alice, c+":refs/tags/v1"))
+	})
 }
 
 func TestRefs_OtherNamespacesIgnored(t *testing.T) {

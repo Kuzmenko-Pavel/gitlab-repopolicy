@@ -24,6 +24,8 @@ type Git interface {
 	CommitPaths(ctx context.Context, commits []string) ([]string, error)
 	RevList(ctx context.Context, o gitx.RevListOptions) ([]string, error)
 	Refs(ctx context.Context) ([]string, error)
+	CommitChanges(ctx context.Context, commits []string) ([]gitx.Commit, error)
+	Entries(ctx context.Context, commit string, paths []string) (map[string]gitx.Info, error)
 }
 
 // Set implements module.ChangeSet for one receive. It is not safe for
@@ -32,9 +34,15 @@ type Set struct {
 	git        Git
 	defaultRef string
 
-	memo  map[string]memoEntry
-	peels map[string]string
-	refs  []string
+	memo    map[string]memoEntry
+	changes map[string]changesEntry
+	peels   map[string]string
+	refs    []string
+}
+
+type changesEntry struct {
+	list []gitx.Commit
+	err  error
 }
 
 type memoEntry struct {
@@ -44,7 +52,22 @@ type memoEntry struct {
 
 // New returns a change set; defaultRef is "" when the repository has no default branch.
 func New(git Git, defaultRef string) *Set {
-	return &Set{git: git, defaultRef: defaultRef, memo: map[string]memoEntry{}, peels: map[string]string{}}
+	return &Set{git: git, defaultRef: defaultRef, memo: map[string]memoEntry{}, changes: map[string]changesEntry{}, peels: map[string]string{}}
+}
+
+// commitChanges lists the changes of the commits once per key: every rule
+// of a ref asks for the same commits.
+func (s *Set) commitChanges(ctx context.Context, key string, commits func() ([]string, error)) ([]gitx.Commit, error) {
+	if e, ok := s.changes[key]; ok {
+		return e.list, e.err
+	}
+	list, err := commits()
+	var changes []gitx.Commit
+	if err == nil {
+		changes, err = s.git.CommitChanges(ctx, list)
+	}
+	s.changes[key] = changesEntry{list: changes, err: err}
+	return changes, err
 }
 
 func (s *Set) cached(key string, compute func() ([]string, error)) ([]string, error) {
@@ -119,8 +142,8 @@ func (s *Set) newCommits(ctx context.Context, u module.RefUpdate, firstParent bo
 }
 
 // CandidatePaths is a local superset of Paths for every class of the ref:
-// the net diff and the paths of new commits on update, the paths of commits
-// not in the default branch on create.
+// the net diff and the paths of every commit of old..new on update, the
+// paths of commits not in the default branch on create.
 func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
@@ -144,7 +167,7 @@ func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string,
 		if err != nil {
 			return nil, err
 		}
-		commits, err := s.NewCommits(ctx, u, MaxPathCommits)
+		commits, err := s.CandidateCommits(ctx, u, MaxPathCommits)
 		if err != nil {
 			return nil, err
 		}
@@ -156,8 +179,11 @@ func (s *Set) CandidatePaths(ctx context.Context, u module.RefUpdate) ([]string,
 	})
 }
 
-// Paths are the paths changed by the update under scope: the net diff of the
-// trees for default and protected refs, the paths of new commits for other refs.
+// Paths are the paths changed by the update under scope. For default and
+// protected refs they are the net diff of the trees and the paths of every
+// commit that enters the ref: a change reverted later in the same push still
+// counts, and the net diff keeps a rollback by a force push. For other refs
+// they are the paths of new commits.
 func (s *Set) Paths(ctx context.Context, u module.RefUpdate, scope module.Scope) ([]string, error) {
 	if u.Kind() == module.Delete {
 		return nil, nil
@@ -174,7 +200,19 @@ func (s *Set) Paths(ctx context.Context, u module.RefUpdate, scope module.Scope)
 			// attribute other people's changes to the pusher.
 			commits, err = s.NewCommits(ctx, u, MaxPathCommits)
 		case u.Kind() == module.Update:
-			return s.git.DiffNames(ctx, oldC, newC)
+			diff, err := s.git.DiffNames(ctx, oldC, newC)
+			if err != nil {
+				return nil, err
+			}
+			scope.FirstParent = false
+			if commits, err = s.EnteringCommits(ctx, u, scope, MaxPathCommits); err != nil {
+				return nil, err
+			}
+			paths, err := s.git.CommitPaths(ctx, commits)
+			if err != nil {
+				return nil, err
+			}
+			return union(diff, paths), nil
 		default:
 			scope.FirstParent = false
 			commits, err = s.EnteringCommits(ctx, u, scope, MaxPathCommits)
@@ -235,6 +273,105 @@ func (s *Set) EnteringCommits(ctx context.Context, u module.RefUpdate, scope mod
 		}
 		return s.revList(ctx, o)
 	})
+}
+
+// NewPathChanges are the paths that the new commits change, with their states.
+func (s *Set) NewPathChanges(ctx context.Context, u module.RefUpdate) ([]module.PathChange, error) {
+	commits, err := s.commitChanges(ctx, "new "+u.Ref, func() ([]string, error) { return s.NewCommits(ctx, u, MaxPathCommits) })
+	if err != nil {
+		return nil, err
+	}
+	var out []module.PathChange
+	for _, c := range commits {
+		for _, ch := range c.Changes {
+			out = append(out, module.PathChange{Commit: c.OID, Path: ch.Path, State: module.PathState(ch.To)})
+		}
+	}
+	return out, nil
+}
+
+// KnownStates are the states of paths in the default branch before the push
+// and, for an update, in the old tip and in every commit of anchor..old. A
+// commit that does not change a path has the state of one of its parents: a
+// parent in anchor..old is counted on its own, and a commit with a parent
+// outside the range, or with none, is read as it is. No state comes from a
+// commit outside the branch.
+func (s *Set) KnownStates(ctx context.Context, u module.RefUpdate, paths []string) (map[string][]module.PathState, error) {
+	out := map[string][]module.PathState{}
+	add := func(p string, st module.PathState) {
+		if !slices.Contains(out[p], st) {
+			out[p] = append(out[p], st)
+		}
+	}
+	tip := func(commit string) error {
+		entries, err := s.git.Entries(ctx, commit, paths)
+		if err != nil {
+			return err
+		}
+		for _, p := range paths {
+			e := entries[p]
+			add(p, module.PathState{Mode: e.Mode, OID: e.OID})
+		}
+		return nil
+	}
+	anchor := ""
+	if s.defaultRef != "" {
+		// A repository without a default branch yet has no anchor; any other
+		// error stops the check.
+		c, err := s.git.Peel(ctx, s.defaultRef)
+		switch {
+		case errors.Is(err, gitx.ErrMissing):
+		case err != nil:
+			return nil, err
+		default:
+			anchor = c
+			if err := tip(anchor); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if u.Kind() != module.Update {
+		return out, nil
+	}
+	oldC, err := s.peel(ctx, u.Old)
+	if err != nil {
+		return nil, err
+	}
+	if err := tip(oldC); err != nil {
+		return nil, err
+	}
+	branch, err := s.cached("branch "+u.Ref, func() ([]string, error) {
+		o := gitx.RevListOptions{Include: []string{oldC}, Max: MaxPathCommits}
+		if anchor != "" {
+			o.Exclude = []string{anchor}
+		}
+		return s.revList(ctx, o)
+	})
+	if err != nil {
+		return nil, err
+	}
+	commits, err := s.commitChanges(ctx, "branch "+u.Ref, func() ([]string, error) { return branch, nil })
+	if err != nil {
+		return nil, err
+	}
+	inBranch := make(map[string]bool, len(branch))
+	for _, c := range branch {
+		inBranch[c] = true
+	}
+	for _, c := range commits {
+		for _, ch := range c.Changes {
+			if slices.Contains(paths, ch.Path) {
+				add(ch.Path, module.PathState(ch.To))
+			}
+		}
+		if len(c.Parents) > 0 && !slices.ContainsFunc(c.Parents, func(p string) bool { return !inBranch[p] }) {
+			continue
+		}
+		if err := tip(c.OID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // protectedSet lists the default branch and the existing refs of the protected set.

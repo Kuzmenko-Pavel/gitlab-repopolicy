@@ -1,0 +1,4 @@
+version: 1
+admins: [a]
+rules:
+  r: {match: all, paths: [x], allow: [a]}

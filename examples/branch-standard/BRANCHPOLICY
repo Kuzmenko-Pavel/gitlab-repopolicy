@@ -1,41 +1,16 @@
-# A branch standard: release and hotfix branches are release/vX.Y.Z and
-# hotfix/vX.Y.Z, epic and demo branches are created by any developer, and all
-# four are protected; work branches are <prefix>/[<issue>/]<name>. A name
-# that fits no class is denied. In an installation this list usually lives in
-# branchpolicy_presets of the server config, and a project only extends it.
+# The branch standard of the organization comes from the preset org-branches
+# of the server config. This project also forbids master, has no demo
+# branches and names its own work branches in the message.
 version: 1
+extends: org-branches
 
 rules:
-  - name: release
-    match: "release/*"
-    pattern: '^release/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [release/v1.4.0, release/v1.4.0-staging]
-      invalid: [release/foo, release/v1.2, release/v01.2.3]
-    protected: true
-    message: Release branches look like release/v1.4.0. Protect release/* with "Allowed to push and merge Maintainers".
-  - name: hotfix
-    match: "hotfix/*"
-    pattern: '^hotfix/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z][a-z0-9]*)?$'
-    examples:
-      valid: [hotfix/v1.4.1]
-      invalid: [hotfix/foo, hotfix/v1.4]
-    protected: true
-  - name: epic
-    match: "epic/*"
-    pattern: '^epic/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
-    examples:
-      valid: [epic/payments]
-      invalid: [epic/, epic/Payments]
-    protected: true
-  - name: demo
-    match: "demo/*"
-    pattern: '^demo/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$'
-    protected: true
-  - name: work
-    match: "*"
-    pattern: '^[a-z0-9][a-z0-9._-]*/(([0-9]+|[A-Z][A-Z0-9]+-[0-9]+)(/[a-z0-9][a-z0-9._-]*)*|[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*)$'
-    examples:
-      valid: [kpn/disable_auth, gks/INFRA-1719/change_logic, dmitry.mashoshin/123, dmitry.mashoshin/355/change_proce/auth]
-      invalid: [kpn, kpn/, 123-fix-login, Kuzmenko.Pavel-main-patch-48213, revert-1a2b3c4d]
-    message: Work branches are <prefix>/[<issue>/]<name>, for example kpn/disable_auth.
+  no-master:
+    match: [master]
+    priority: 10
+    deny: true
+    message: This project uses main; master must not be created.
+  demo: null
+  demo-bad: null
+  work:
+    message: Work branches are <username>/[<issue>/]<name>, for example kpn/PAY-12/refunds; PAY is the Jira project of this team.

@@ -18,7 +18,7 @@ Server-side checks of repository rules for GitLab Self-Managed. A global `pre-re
 | Who you are | What you need | Where to look |
 | --- | --- | --- |
 | a developer whose push GitLab rejected | understand the denial and fix the commit, tag or branch | the policy document named in the denial: [COMMITPOLICY](docs/commitpolicy.en.md), [TAGPOLICY](docs/tagpolicy.en.md), [BRANCHPOLICY](docs/branchpolicy.en.md), [PATHPOLICY](docs/pathpolicy.en.md) |
-| a project Maintainer | write a policy file, check it locally and turn it on without stopping the team | the same policy documents, then [integration-guide.en.md](docs/integration-guide.en.md) |
+| a project Maintainer | write a policy file, check it locally and turn it on without stopping the team | the same policy documents, [validate.en.md](docs/validate.en.md), then [integration-guide.en.md](docs/integration-guide.en.md) |
 | a GitLab administrator | install the hook, configure the server, watch the audit | [install.en.md](docs/install.en.md), [configuration.en.md](docs/configuration.en.md), [operations.en.md](docs/operations.en.md), [integration-guide.en.md](docs/integration-guide.en.md) |
 
 ## Policies
@@ -45,31 +45,67 @@ When the hook checks nothing:
 
 With `mode: audit` the hook checks everything, but only writes the decision to the audit log and denies nobody ([configuration.en.md](docs/configuration.en.md#mode)).
 
+An example from the file to the fix. The platform team (alice and sre-lead) wants only themselves to change the CI configuration, in any branch:
+
 ```yaml
 # examples/ci-config/PATHPOLICY
-# The platform team owns the CI configuration, the deploy logic and the
-# production values; everything else is authorized by GitLab as usual.
+# The platform team, alice and sre-lead, owns the CI configuration and the
+# deploy scripts in every branch and the production values in main and
+# release branches. Everything else is authorized by GitLab as usual.
 version: 1
 
-admins: [platform-lead, sre-lead]
+admins: [alice, sre-lead]
 
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
-      - "Makefile"
       - "scripts/deploy/**"
-    allow: [platform-lead, sre-lead, ci-maintainer]
+    allow: [alice, sre-lead]
     message: >-
-      The platform team changes the CI/CD configuration and the deploy logic.
-      Ask platform-lead, sre-lead or ci-maintainer to make this change.
+      The platform team changes the CI/CD configuration and the deploy scripts.
+      Ask alice or sre-lead to push this change.
+    help:
+      contact: "#platform"
 
-  - name: prod-values
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
-    allow: [platform-lead, release-manager]
+    allow: [alice, release-manager]
+    message: >-
+      Production values are changed in main and release branches by alice or
+      release-manager. Propose the change in your branch and ask them to merge it.
 ```
+
+bob, who is not in `allow`, changes `.gitlab-ci.yml` in their branch `feature` and pushes. GitLab rejects the push:
+
+```text
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: alice, sre-lead
+remote:   files:
+remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy scripts. Ask alice or sre-lead to push this change.
+remote:   the content of .gitlab-ci.yml in commit 11e97b832 differs both from this branch and from main; new content is pushed by one of them
+remote:   who can help with this rule: #platform
+remote:
+remote: rules: PATHPOLICY in main (f50c5a0)
+remote: checked as: bob (SSH)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: alice, sre-lead)
+```
+
+What bob does: asks alice to make the change, or removes it from their commits and pushes again:
+
+```sh
+git restore --source=origin/main -- .gitlab-ci.yml
+git commit --amend --no-edit
+git push --force-with-lease origin feature
+```
+
+How to read the denial line by line - [pathpolicy.en.md](docs/pathpolicy.en.md#denials).
 
 ## Prerequisites
 
@@ -114,21 +150,35 @@ The e2e matrix runs on the current and the two previous minor versions of GitLab
 
 ## Editor
 
-Policy files have no extension, so the editor has to be told that they are YAML with a schema. For VS Code with the YAML extension (`yaml-language-server`):
+Policy files have no extension, so the editor has to be told that they are YAML with a schema. The schemas are in the directory `schemas/` of the repository. The links below point to the branch `main`. For the editor to check files against the schema of a given release, replace `main` in the link with the tag of the release, for example `v1.0.0`.
+
+**VS Code** with the YAML extension (`yaml-language-server`), in `settings.json`:
 
 ```json
 {
   "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json": "PATHPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/commitpolicy.schema.json": "COMMITPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
 
-Check a file locally with the same code as the hook with `gitlab-repopolicy validate`, commit messages with `gitlab-repopolicy lint-commit`.
+**PyCharm, GoLand, IntelliJ IDEA** and other JetBrains IDEs check YAML against a schema without plugins. The schemas follow JSON Schema draft 2020-12.
+1. Settings > Editor > File Types > YAML, add `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY` to "File name patterns". This is a setting of the IDE itself, everyone makes it once on their machine
+2. Settings > Languages & Frameworks > Schemas and DTDs > JSON Schema Mappings, the button `+` for every file:
+   - Name: `PATHPOLICY`
+   - Schema file or URL: `https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json`
+   - Schema version: JSON Schema 2020-12
+   - with the button `+` under the list add the File path pattern `PATHPOLICY`
+
+   The same for `COMMITPOLICY`, `TAGPOLICY` and `BRANCHPOLICY`. The IDE keeps these mappings in the project, in `.idea/jsonSchemas.xml`: commit the file, and the schemas connect for the whole team by themselves
+
+After that the IDE highlights unknown keys and wrong values and shows hints from the descriptions of the fields.
+
+Check a file locally with the same code as the hook with `gitlab-repopolicy validate` ([validate.en.md](docs/validate.en.md)), commit messages with `gitlab-repopolicy lint-commit`. The editor knows only the schema, while `validate` also checks the merge with presets, regular expressions, the order of the rules of BRANCHPOLICY and the keys of TAGPOLICY.
 
 ## Documentation
 
@@ -138,6 +188,9 @@ Check a file locally with the same code as the hook with `gitlab-repopolicy vali
 | [configuration.en.md](docs/configuration.en.md) | the server `config.yaml` |
 | [operations.en.md](docs/operations.en.md) | audit and alerts, recovery, break-glass, token rotation, `settings-check`, upgrades, common problems |
 | [pathpolicy.en.md](docs/pathpolicy.en.md), [commitpolicy.en.md](docs/commitpolicy.en.md), [tagpolicy.en.md](docs/tagpolicy.en.md), [branchpolicy.en.md](docs/branchpolicy.en.md) | policy file reference |
+| [match.en.md](docs/match.en.md) | the field `match`: which branches and tags a rule applies to; the notation of the diagrams |
+| [validate.en.md](docs/validate.en.md) | checking policy files without a push, step by step |
+| [cli.en.md](docs/cli.en.md) | all commands and flags |
 | [integration-guide.en.md](docs/integration-guide.en.md) | the order of turning it on in a production instance |
 | [architecture.en.md](docs/architecture.en.md) | how it works |
 | [threat-model.en.md](docs/threat-model.en.md) | what it protects from and what not |

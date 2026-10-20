@@ -80,6 +80,7 @@ sudo dnf install ./gitlab-repopolicy_1.0.0_linux_amd64.rpm      # RHEL, Rocky, A
 /etc/gitlab-repopolicy/config.yaml                 конфігурація, root:<git-user> 0640, conffile
 /etc/gitlab-repopolicy/breakglass/                 root 0755
 /var/log/gitlab-repopolicy/                        <git-user> 0750
+/etc/logrotate.d/gitlab-repopolicy                 ротація audit-логу, 0644, conffile
 /usr/lib/systemd/system/gitlab-repopolicy-*.{service,timer}   вимкнені таймери
 ```
 
@@ -89,7 +90,22 @@ sudo dnf install ./gitlab-repopolicy_1.0.0_linux_amd64.rpm      # RHEL, Rocky, A
 
 У Docker-образ GitLab пакет не ставиться, див. розділ [Docker](#docker).
 
-**Без пакета** (архів, інші дистрибутиви): розпакуйте `gitlab-repopolicy` в `/usr/bin/` і створіть ті самі каталоги й файли з тими самими правами. Зразок `config.yaml` - [config/config.yaml](../config/config.yaml).
+**Без пакета** (архів, інші дистрибутиви, Docker): розпакуйте `gitlab-repopolicy` в `/usr/bin/` і створіть ті самі каталоги й файли з тими самими правами. Зразок `config.yaml` - [config/config.yaml](../config/config.yaml). Ротацію audit-логу налаштуйте самі, наприклад так само, як пакет:
+
+```text
+# /etc/logrotate.d/gitlab-repopolicy
+/var/log/gitlab-repopolicy/audit.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    nocreate
+}
+```
+
+`nocreate`: наступний `audit.log` створюють hook і команди від root з власником каталогу логу, тому logrotate його не створює. `su` не потрібен: каталог `0750` належить користувачу Gitaly. Шлях у файлі - `audit.file` за замовчуванням, якщо ви його змінили, змініть і тут. У Docker цей файл кладуть на хості, для каталогу, змонтованого в `/var/log/gitlab-repopolicy`.
 
 ## 3. Service account і токен
 
@@ -346,7 +362,7 @@ mv /opt/gitlab-repopolicy/bin/.gitlab-repopolicy.new /opt/gitlab-repopolicy/bin/
 
 ## Для розробників
 
-Для локальної перевірки policy-файлів і commit messages (`validate`, `lint-commit`) достатньо зібрати бінарник:
+Для локальної перевірки policy-файлів і commit messages (`validate`, `lint-commit`) достатньо зібрати бінарник. Як користуватися - [validate.md](validate.md), усі команди - [cli.md](cli.md):
 
 ```sh
 go install github.com/Kuzmenko-Pavel/gitlab-repopolicy/cmd/gitlab-repopolicy@v1.0.0
@@ -397,7 +413,7 @@ curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X DELETE "$GITLAB/api/v4/perso
 
 **`selftest` пише `ok`, а проєкти групи не перевіряються.** Service account не доданий у top-level групу. `selftest` показує кількість груп у рядку `groups`, а які саме пропущено, покаже `coverage` (крок 3).
 
-**Commit-msg hook відхиляє `feat:`, хоча в main це дозволено.** `lint-commit` без `--ruleset` застосовує всі rulesets файла, бо локально невідомо, у яку гілку піде коміт. Задайте потрібний ruleset: `lint-commit --ruleset protected` ([commitpolicy.md](commitpolicy.md#локальна-перевірка)).
+**Commit-msg hook відхиляє `feat:`, хоча в main це дозволено.** `lint-commit` без `--rule` застосовує всі правила файлу, бо локально невідомо, у яку гілку піде коміт. Задайте правило гілок, куди йде робота: `lint-commit --rule conventional` ([commitpolicy.md](commitpolicy.md#перевірка-без-push)).
 
 **Очікування `settings_check` одні на весь інстанс, а в infra-проєктів немає тегів.** `protected_tags` перевіряється лише в проєктах з TAGPOLICY у default branch, тож проєкти без релізних тегів у drift не потрапляють. Перевірку `ci_config_path` варто залишити і для проєктів без `.gitlab-ci.yml` ([configuration.md](configuration.md#settings_check)).
 

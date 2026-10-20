@@ -89,7 +89,7 @@ internal/gitlab           REST and GraphQL client, call budget
 internal/report           messages to the user, GL-HOOK-ERR
 internal/audit            JSON events
 internal/strictyaml       strict YAML parsing: no anchors, unknown keys or duplicates
-internal/spec, schema     the format of policy files, its validator and JSON Schema
+internal/spec, schema     the format of policy files, the validator, the merge with presets, JSON Schema
 internal/buildinfo        version and commit of the build
 internal/install, settings, coverage, token, breakglass   helper commands
 internal/testmodule       a test module for checks of the core, only in tests
@@ -109,7 +109,7 @@ A new kind of rules is a new module and a new file; the core, the trust model an
 
 The API is reached through the Workhorse unix socket on the same node or over HTTPS if Gitaly runs on a separate node. One request takes up to 3 s, a push up to 30 calls. There is no cache between calls: revoked rights apply at once.
 
-The Go dependencies of the binary are `go.yaml.in/yaml/v3`, `github.com/bmatcuk/doublestar/v4`, `github.com/dlclark/regexp2/v2` (only `pattern` in COMMITPOLICY), `github.com/ProtonMail/go-crypto` and `golang.org/x/crypto` (only tag signatures). The full list of versions is `go.mod` and the SBOM of the release. The build is static, `CGO_ENABLED=0`.
+The Go dependencies of the binary are `go.yaml.in/yaml/v3`, `github.com/bmatcuk/doublestar/v4`, `github.com/ProtonMail/go-crypto` and `golang.org/x/crypto` (only tag signatures). The full list of versions is `go.mod` and the SBOM of the release. The build is static, `CGO_ENABLED=0`.
 
 ## Data flow
 
@@ -119,10 +119,11 @@ One push:
 2. **Anchor.** The commit the default branch pointed to before the push. Every policy file is read only from here: a push cannot weaken the rules for itself, and a branch with a weaker policy does not authorize itself
 3. **Break-glass.** A valid grant for the project - allowed with a `breakglass` event
 4. **Default branch.** If `default_branch` is set in the config and the default branch of the project has another name, the push is denied with `default_branch_not_allowed`. The modules do not run: policies are not read from such a branch. The check applies to every project of the instance, including those without policies
-5. **Acceptance.** Every changed policy file in any branch is checked as a new version, even if the anchor has no policy yet: an invalid new file is denied with `invalid_policy_update`
-6. **No policy.** If the anchor has no policy files, the modules do not run. A push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
-7. **Modules.** PATHPOLICY first, then COMMITPOLICY, TAGPOLICY and BRANCHPOLICY. Only for branches and tags that touch rules: paths, new and incoming commits. In default and protected branches - the content difference before and after the push, in others - the new commits that no branch or tag has yet (details - [pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)). The API only if the decision depends on it
-8. **Decision.** AND over modules. If the project is in a personal namespace, a denial does not apply: the push is allowed without a log. With `mode: audit` the decision is written to audit with `"enforced": false`, and the push goes through. Otherwise one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
+5. **Tags outside of branches.** A created or moved tag must point to a commit that a branch holds after the push, otherwise it is denied with `tag_not_on_branch`. A tag that does not point to a commit is `tag_object_invalid`. One `rev-list` per tag, in every group project, including those without policies. A push without tags does not reach this step
+6. **Acceptance.** Every changed policy file in any branch is checked as a new version, even if the anchor has no policy yet: an invalid new file is denied with `invalid_policy_update`
+7. **No policy.** If the anchor has no policy files, the modules do not run. A push that adds the first PATHPOLICY to the default branch goes through the bootstrap check (Maintainer+)
+8. **Modules.** PATHPOLICY first, then COMMITPOLICY, TAGPOLICY and BRANCHPOLICY. The rules of every module are the file of the anchor merged with the presets of the server config its `extends` names. Only for branches and tags that touch rules. In the default branch, protected branches and branches of a `match` list - every commit that enters the branch and the content difference before and after the push. In other branches - new content of files in new commits (details - [pathpolicy.en.md](pathpolicy.en.md#what-counts-as-a-change)). PATHPOLICY and COMMITPOLICY do not check tags. The API only if the decision depends on it
+9. **Decision.** AND over modules. If the project is in a personal namespace, a denial does not apply: the push is allowed without a log. With `mode: audit` the decision is written to audit with `"enforced": false`, and the push goes through. Otherwise one message per push on stderr, one problem is one block; an audit event per decision with the `receive_id` of the run. Policy change events (`policy_change`, `policy_bootstrap`, `policy_recovery`) are written only if the push is accepted
 
 The run time of the hook depends on the node, the size of the repository and the push. As a guide, about 10 ms for a project without a policy and 15-50 ms when there is a policy but no rule is touched. Most of it is starting git processes. A call to the API adds 50-300 ms and is rare. You can measure on your own hardware with the benchmarks `tests/integration/bench_test.go` (`make test-load`).
 
@@ -134,9 +135,8 @@ Limits that protect against DoS:
 | path rules / patterns per rule | 100 / 50 | the policy is invalid |
 | time of one hook run | 10 s | `limit_exceeded` |
 | API calls per push | 30 | `limit_exceeded` |
-| new commits (PATHPOLICY) | 50 000 | `limit_exceeded` |
+| commits that enter a branch (PATHPOLICY) | 50 000 | `limit_exceeded` |
 | incoming commits (COMMITPOLICY) | 10 000 | `limit_exceeded` by the `mode` of the file |
-| `pattern` per message / per push | 100 ms / 2 s | `commit_check_timeout` |
 | output to the user | 8 KiB | truncated |
 
 ## Deployment model
@@ -163,8 +163,8 @@ Actors, bypasses and what is out of scope are described in [threat-model.en.md](
 ## Known limitations
 
 - The hook sees only changes of branches and tags. A Maintainer changes project settings (the CI configuration path, the default branch, protected branches, push with `CI_JOB_TOKEN`) around it; `settings-check` only detects them on its schedule. The exception is the default branch: if `default_branch` is set, a push to a project with another default branch is denied at once
-- A merge into an unprotected branch brings no new commits. PATHPOLICY does not check it, COMMITPOLICY checks only the merge commit itself (unless `except.merge_commits` is on), not the merged commits that are already in the repository. A merge into the default branch is checked fully by both modules, into protected branches - by PATHPOLICY by content and by COMMITPOLICY by the `refs` of the ruleset ([commitpolicy.en.md](commitpolicy.en.md#which-commits-are-checked))
-- A new branch or tag on an old commit that is already in a protected branch is not checked by PATHPOLICY and COMMITPOLICY: the content was checked before
+- A merge into an ordinary branch under `match: all` brings only content the repository already has. PATHPOLICY checks only new content, COMMITPOLICY only the merge commit itself (unless `except.merge_commit` is on), not the merged commits. A merge into the default branch and branches of a `match` list is checked fully by both modules ([commitpolicy.en.md](commitpolicy.en.md#which-commits-are-checked))
+- A new branch or tag on an old commit that a branch already holds is not checked by PATHPOLICY and COMMITPOLICY: the content was checked before
 - A username can become free after a rename or deletion of a user and be taken by another person. `settings-check` reports principals that no longer exist
 - The service account token does not see blocked or banned users. A personal project of such a user is treated as a group project (fail closed)
 - Web operations (the merge button) hold a Puma worker while the hook calls back into Rails. Under peak load on one node this can give `authorization_backend_failure` by timeout

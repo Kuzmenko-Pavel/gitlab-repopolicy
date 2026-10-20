@@ -1,0 +1,12 @@
+# The CI rules of the organization come from the preset org-ci. This project
+# lets its own maintainer kpn change the CI configuration too, and drops the
+# rule for deploy scripts, which it does not have.
+version: 1
+extends: org-ci
+
+admins: [platform-lead]
+
+rules:
+  ci-config:
+    allow: [platform-lead, sre-lead, kpn]
+  deploy: null

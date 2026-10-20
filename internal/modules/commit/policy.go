@@ -4,11 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/dlclark/regexp2/v2"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/spec"
@@ -17,71 +14,63 @@ import (
 
 // Limits of a COMMITPOLICY file beyond its size.
 const (
-	maxRulesets    = 50
+	maxRules       = 50
 	maxExceptUsers = 50
 )
 
-// fileYAML is what Parse decodes once Spec accepts the file; rules stay raw
-// so that a rule from a newer version is skipped on the anchor instead of
-// breaking the whole policy.
-type fileYAML struct {
-	Version  int           `yaml:"version"`
-	Mode     string        `yaml:"mode"`
-	Extends  string        `yaml:"extends"`
-	Rulesets []rulesetYAML `yaml:"rulesets"`
-}
-
-type rulesetYAML struct {
-	Name    string                    `yaml:"name"`
-	Refs    any                       `yaml:"refs"`
-	Format  string                    `yaml:"format"`
+// ruleYAML is a merged rule; checks stay raw so that a check of a newer
+// version is skipped on the anchor instead of breaking the whole policy.
+type ruleYAML struct {
+	Match   any                       `yaml:"match"`
+	Parser  string                    `yaml:"parser"`
 	Except  exceptYAML                `yaml:"except"`
-	Rules   map[string]map[string]any `yaml:"rules"`
+	Checks  map[string]map[string]any `yaml:"checks"`
 	Message string                    `yaml:"message"`
+	Help    module.Help               `yaml:"help"`
 }
 
 type exceptYAML struct {
-	MergeCommits  bool     `yaml:"merge_commits"`
-	GitReverts    bool     `yaml:"git_reverts"`
+	MergeCommit   bool     `yaml:"merge_commit"`
 	MergedCommits bool     `yaml:"merged_commits"`
+	GitReverts    bool     `yaml:"git_reverts"`
 	Users         []string `yaml:"users"`
-}
-
-// presetYAML is an entry of commitpolicy_presets in the server config.
-type presetYAML struct {
-	Rules map[string]map[string]any `yaml:"rules"`
 }
 
 type level int
 
 const (
-	levelOff level = iota
-	levelWarn
+	levelWarn level = iota + 1
 	levelError
 )
 
-func (l level) String() string { return [...]string{"off", "warn", "error"}[l] }
+func (l level) String() string { return [...]string{"", "warn", "error"}[l] }
 
-// Policy is a parsed COMMITPOLICY.
+// Policy is a parsed COMMITPOLICY merged with its presets.
 type Policy struct {
 	warnMode bool
-	rulesets []*ruleset
-	// unknownPreset is the extends value that the server config does not define.
-	unknownPreset string
-	settings      *Settings
+	rules    []*rule
+	presets  []module.PresetRef
+	origins  []module.RuleOrigin
+	// unusable says why the rules cannot be used: a preset is missing or
+	// broken. The module is then skipped with a warning.
+	unusable error
 }
 
-type ruleset struct {
+// rule is a rule of the file: the checks for the branches of match.
+type rule struct {
 	name         string
-	refs         module.RefScope
+	match        module.Match
 	conventional bool
 	except       exceptYAML
-	rules        []*rule
+	checks       []*check
 	unknown      []string
 	message      string
+	help         module.Help
+	source       []string
 }
 
-type rule struct {
+// check is a check of the catalogue in a rule.
+type check struct {
 	name     string
 	level    level
 	types    []string
@@ -90,123 +79,124 @@ type rule struct {
 	number   int
 	location string
 	keys     []string
-	re       *regexp.Regexp
-	pattern  *regexp2.Regexp
-	source   string
-	examples examplesYAML
+	pattern  module.Pattern
 }
 
-type examplesYAML struct {
-	Valid   []string `yaml:"valid"`
-	Invalid []string `yaml:"invalid"`
+// Settings come from the server config.
+type Settings struct {
+	presets spec.Presets
 }
 
-// Parse decodes a COMMITPOLICY file offline with the presets of s.
+// NewSettings decodes the presets of the module in the server config.
+func NewSettings(rawPresets map[string]any) *Settings {
+	return &Settings{presets: spec.NewPresets(rawPresets, presetSpec, checks, module.DefaultMaxPolicySize)}
+}
+
+// Parse decodes a COMMITPOLICY file offline and merges the presets it
+// extends; s may be nil when there is no server config. A missing or broken
+// preset does not fail Parse: the policy is unusable and the module skipped.
 func Parse(data []byte, s *Settings) (*Policy, error) {
-	tree, err := strictyaml.DecodeTree(data, module.DefaultMaxPolicySize)
+	if s == nil {
+		s = &Settings{}
+	}
+	res, err := spec.Resolve(data, module.DefaultMaxPolicySize, Spec, checks, s.presets)
+	var pe *spec.PresetError
+	if errors.As(err, &pe) {
+		return &Policy{unusable: pe}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := spec.Validate(Spec, tree, checks); err != nil {
-		return nil, err
-	}
-	var f fileYAML
-	if err := strictyaml.Decode(data, &f, module.DefaultMaxPolicySize); err != nil {
-		return nil, err
-	}
-	p := &Policy{settings: s, warnMode: f.Mode == "warn"}
-	var preset map[string]map[string]any
-	if f.Extends != "" {
-		var ok bool
-		if preset, ok = s.presets[f.Extends]; !ok {
-			p.unknownPreset = f.Extends
+	mode := res.Doc.Fields["mode"]
+	p := &Policy{warnMode: mode != nil && mode.Str == "warn", presets: res.Refs(s.presets), origins: res.RuleOrigins()}
+	for _, name := range res.Rules() {
+		var y ruleYAML
+		if err := res.DecodeRule(name, &y); err != nil {
+			return nil, err
 		}
-	}
-	for _, y := range f.Rulesets {
-		r, err := newRuleset(y, preset)
+		r, err := newRule(name, y, res.Origin[name])
 		if err != nil {
-			return nil, fmt.Errorf("ruleset %s: %w", y.Name, err)
+			return nil, fmt.Errorf("rule %s: %w", name, err)
 		}
-		p.rulesets = append(p.rulesets, r)
+		p.rules = append(p.rules, r)
 	}
 	return p, nil
 }
 
-// newRuleset builds a ruleset that Spec accepted, with the rules of the preset.
-func newRuleset(y rulesetYAML, preset map[string]map[string]any) (*ruleset, error) {
-	r := &ruleset{name: y.Name, except: y.Except, message: strings.TrimSpace(y.Message), conventional: y.Format != "free"}
-	refs, err := module.ParseRefScope(y.Refs)
+// Presets are the presets the file extends, for the audit log.
+func (p *Policy) Presets() []module.PresetRef { return p.presets }
+
+// Origins are the merged rules with their layers, for validate.
+func (p *Policy) Origins() []module.RuleOrigin { return p.origins }
+
+// newRule builds a merged rule that Spec accepted.
+func newRule(name string, y ruleYAML, source []string) (*rule, error) {
+	m, err := module.ParseMatch(y.Match, true)
 	if err != nil {
-		return nil, fmt.Errorf("refs: %w", err)
+		return nil, fmt.Errorf("match: %w", err)
 	}
-	r.refs = refs
-	// Rules of the preset come first; rules of the file override them by name.
-	merged := map[string]map[string]any{}
-	for name, raw := range preset {
-		if r.conventional || !catalogue[name].conventional {
-			merged[name] = raw
-		}
-	}
-	maps.Copy(merged, y.Rules)
-	for _, name := range slices.Sorted(maps.Keys(merged)) {
-		if _, known := catalogue[name]; !known {
-			r.unknown = append(r.unknown, name)
+	r := &rule{name: name, match: m, except: y.Except, message: strings.TrimSpace(y.Message),
+		conventional: y.Parser == "conventional", help: y.Help, source: source}
+	for _, cname := range slices.Sorted(maps.Keys(y.Checks)) {
+		if _, known := catalogue[cname]; !known {
+			r.unknown = append(r.unknown, cname)
 			continue
 		}
-		ru, err := newRule(name, merged[name], r.conventional)
+		c, err := newCheck(cname, y.Checks[cname], r.conventional)
 		if err != nil {
-			return nil, fmt.Errorf("rules.%s: %w", name, err)
+			return nil, fmt.Errorf("checks.%s: %w", cname, err)
 		}
-		if ru.level != levelOff {
-			r.rules = append(r.rules, ru)
-		}
+		r.checks = append(r.checks, c)
 	}
 	return r, nil
 }
 
-var levels = map[string]level{"error": levelError, "warn": levelWarn, "off": levelOff}
+var levels = map[string]level{"error": levelError, "warn": levelWarn}
 
-// ruleYAML holds every key a rule of the catalogue may have; the rule spec
-// decides which ones a rule has.
-type ruleYAML struct {
-	Level    string       `yaml:"level"`
-	Types    []string     `yaml:"types"`
-	Value    any          `yaml:"value"`
-	Location string       `yaml:"location"`
-	Pattern  string       `yaml:"pattern"`
-	Keys     []string     `yaml:"keys"`
-	Examples examplesYAML `yaml:"examples"`
+// checkYAML holds every key a check of the catalogue may have; the check
+// spec decides which ones a check has.
+type checkYAML struct {
+	Level    string   `yaml:"level"`
+	Types    []string `yaml:"types"`
+	Value    any      `yaml:"value"`
+	Location string   `yaml:"location"`
+	Keys     []string `yaml:"keys"`
 }
 
-// newRule builds a rule that the rule spec of the catalogue accepted.
-func newRule(name string, raw map[string]any, conventional bool) (*rule, error) {
-	var y ruleYAML
+// newCheck builds a check that the check spec of the catalogue accepted.
+func newCheck(name string, raw map[string]any, conventional bool) (*check, error) {
+	var y checkYAML
 	if err := strictyaml.DecodeValue(raw, &y, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
 	}
 	if len(y.Types) > 0 && !conventional {
-		return nil, errors.New("types: needs format: conventional")
+		return nil, errors.New("types: needs parser: conventional")
 	}
-	r := &rule{name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys, examples: y.Examples}
+	c := &check{name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys}
 	var err error
 	switch name {
 	case "type-enum", "scope-enum", "trailer-required":
-		err = strictyaml.DecodeValue(y.Value, &r.list, module.DefaultMaxPolicySize)
+		err = strictyaml.DecodeValue(y.Value, &c.list, module.DefaultMaxPolicySize)
 	case "header-max-length", "body-max-line-length":
-		err = strictyaml.DecodeValue(y.Value, &r.number, module.DefaultMaxPolicySize)
+		err = strictyaml.DecodeValue(y.Value, &c.number, module.DefaultMaxPolicySize)
 	case "scope", "breaking-bang", "subject-case", "subject-full-stop":
-		err = strictyaml.DecodeValue(y.Value, &r.enum, module.DefaultMaxPolicySize)
+		err = strictyaml.DecodeValue(y.Value, &c.enum, module.DefaultMaxPolicySize)
 	case "pattern":
 		var src string
 		if err = strictyaml.DecodeValue(y.Value, &src, module.DefaultMaxPolicySize); err == nil {
-			r.pattern, err = regexp2.Compile(src, regexp2.RE2)
-			r.source = src
+			c.pattern, err = module.ParsePattern(src)
 		}
-	case "reference":
-		r.re, err = regexp.Compile(y.Pattern)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return r, nil
+	return c, nil
+}
+
+// helpOf is the help of a rule for its violation, nil without one.
+func (r *rule) helpOf() []module.Help {
+	if r.help == (module.Help{}) {
+		return nil
+	}
+	return []module.Help{r.help}
 }

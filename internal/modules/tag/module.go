@@ -20,10 +20,24 @@ const File = "TAGPOLICY"
 const maxPolicySize = 256 << 10
 
 // Module is TAGPOLICY.
-type Module struct{}
+type Module struct {
+	settings *Settings
+}
 
-// New returns the module.
-func New() *Module { return &Module{} }
+// New returns the module; s may be nil when there is no server config.
+func New(s *Settings) *Module { return &Module{settings: s} }
+
+// PresetErrors lists presets of the server config that cannot be used.
+func (m *Module) PresetErrors() []string {
+	if m.settings == nil {
+		return nil
+	}
+	errs := m.settings.presets.Errors()
+	for i, e := range errs {
+		errs[i] = "presets.tagpolicy." + e
+	}
+	return errs
+}
 
 func (*Module) Name() string               { return "tagpolicy" }
 func (*Module) File() string               { return File }
@@ -36,8 +50,8 @@ func (*Module) MaxPolicySize() int { return maxPolicySize }
 func (*Module) Needs() module.Needs { return module.Needs{} }
 
 // Parse decodes a TAGPOLICY file offline.
-func (*Module) Parse(blob []byte) (module.Policy, error) {
-	p, err := parsePolicy(blob)
+func (m *Module) Parse(blob []byte) (module.Policy, error) {
+	p, err := parsePolicy(blob, m.settings)
 	if err != nil {
 		return nil, err
 	}

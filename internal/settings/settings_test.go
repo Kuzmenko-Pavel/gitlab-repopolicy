@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +17,9 @@ import (
 
 type fakeAPI struct {
 	projects []gitlab.Project
-	files    map[string]string // "id:ref:path"
-	branches map[int64][]string
+	files    map[string]string  // "id:ref:path"
+	branches map[int64][]string // protected branch patterns
+	repo     map[int64][]string // branches of the repository
 	tags     map[int64][]string
 	users    map[string]string // username -> state
 	fail     map[string]error  // "files:id", "branches:id", "users"
@@ -50,6 +50,13 @@ func (f *fakeAPI) ProtectedBranches(_ context.Context, id int64) ([]string, erro
 	return f.branches[id], nil
 }
 
+func (f *fakeAPI) Branches(_ context.Context, id int64) ([]string, error) {
+	if err := f.fail[fmt.Sprintf("repo:%d", id)]; err != nil {
+		return nil, err
+	}
+	return f.repo[id], nil
+}
+
 func (f *fakeAPI) ProtectedTags(_ context.Context, id int64) ([]string, error) {
 	return f.tags[id], nil
 }
@@ -70,20 +77,24 @@ func (f *fakeAPI) UsersByUsernames(_ context.Context, names []string) ([]gitlab.
 const pathPolicy = `version: 1
 admins: [platform-lead]
 rules:
-  - name: ci
+  ci:
+    match: all
     paths: [".gitlab-ci.yml", "ci/**"]
     allow: [platform-lead, alice]
+    message: CI belongs to the platform team.
 `
 
 const commitPolicy = `version: 1
 mode: enforce
-rulesets:
-  - name: all
-    refs: all
+rules:
+  all:
+    match: all
+    parser: conventional
     except:
       users: [release-bot]
-    rules:
+    checks:
       type-enum: { level: error, value: [feat, fix] }
+    message: Commits follow Conventional Commits.
 `
 
 func ptr[T any](v T) *T { return &v }
@@ -100,7 +111,7 @@ func project(id int64, path string) gitlab.Project {
 	return p
 }
 
-const branchPolicyYAML = "version: 1\nrules:\n  - name: release\n    match: \"release/*\"\n    protected: true\n  - name: work\n    match: \"*\"\n"
+const branchPolicyYAML = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    priority: 1\n    protected: true\n    message: m\n"
 
 func expected() config.SettingsCheck {
 	return config.SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
@@ -111,6 +122,7 @@ func healthy() *fakeAPI {
 		projects: []gitlab.Project{project(1, "acme/app")},
 		files:    map[string]string{"1:main:PATHPOLICY": pathPolicy, "1:main:COMMITPOLICY": commitPolicy, "1:main:BRANCHPOLICY": branchPolicyYAML},
 		branches: map[int64][]string{1: {"main", "release/*"}},
+		repo:     map[int64][]string{1: {"main", "release/v1.0.0", "kpn/x"}},
 		tags:     map[int64][]string{1: {"v*"}},
 		users:    map[string]string{"platform-lead": "active", "alice": "active", "release-bot": "active"},
 		fail:     map[string]error{},
@@ -119,7 +131,7 @@ func healthy() *fakeAPI {
 
 func run(t *testing.T, api *fakeAPI, exp config.SettingsCheck) Report {
 	t.Helper()
-	set := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
+	set := modules.Default(modules.Settings{})
 	root, mods := set.Root, set.All()
 	rep, err := Run(context.Background(), api, Options{Expected: exp, DefaultBranches: []string{"main"}, Guard: root, Modules: mods})
 	require.NoError(t, err)
@@ -157,7 +169,7 @@ func TestRun_Drifts(t *testing.T) {
 		}, CheckDefaultBranch, `"old", expected one of main`},
 		"default branch without PATHPOLICY": {func(f *fakeAPI) { f.projects[0].DefaultBranch = "empty" }, CheckDefaultBranch, `"empty"`},
 		"main not protected":                {func(f *fakeAPI) { f.branches[1] = []string{"release/*"} }, CheckProtected, "not protected: main (the default branch)"},
-		"release not protected":             {func(f *fakeAPI) { f.branches[1] = []string{"main", "release/v*"} }, CheckProtected, "not protected: release/* (BRANCHPOLICY)"},
+		"release not protected":             {func(f *fakeAPI) { f.branches[1] = []string{"main", "release/v2*"} }, CheckProtected, "not protected: release/v1.0.0 (BRANCHPOLICY)"},
 		"invalid BRANCHPOLICY":              {func(f *fakeAPI) { f.files["1:main:BRANCHPOLICY"] = "version: 2\n" }, CheckPolicy, "BRANCHPOLICY on main cannot be parsed"},
 		"tags not protected": {func(f *fakeAPI) {
 			f.files["1:main:TAGPOLICY"] = "version: 1\n"
@@ -226,12 +238,12 @@ func TestRun_Scope(t *testing.T) {
 func TestRun_ListFailure(t *testing.T) {
 	api := healthy()
 	api.fail["projects"] = errors.New("HTTP 401")
-	set := modules.Default(modules.Settings{PatternTimeout: time.Second, PatternBudget: time.Second, Clock: time.Now})
+	set := modules.Default(modules.Settings{})
 	root, mods := set.Root, set.All()
 	_, err := Run(context.Background(), api, Options{Guard: root, Modules: mods})
 	assert.ErrorContains(t, err, "HTTP 401")
 	_, err = Run(context.Background(), api, Options{})
-	assert.ErrorContains(t, err, "PATHPOLICY and BRANCHPOLICY modules are disabled")
+	assert.ErrorContains(t, err, "every policy module is disabled")
 }
 
 // TestRun_BranchPolicyOnly: a project with BRANCHPOLICY and without PATHPOLICY
@@ -244,7 +256,7 @@ func TestRun_BranchPolicyOnly(t *testing.T) {
 	api.branches[1] = []string{"*"}
 	rep := run(t, api, expected())
 	require.Len(t, rep.Checked, 1)
-	assert.Empty(t, rep.Checked[0].Drifts, "* covers release/*; no checks of PATHPOLICY")
+	assert.Empty(t, rep.Checked[0].Drifts, "* covers release/v1.0.0; no checks of PATHPOLICY")
 
 	api.branches[1] = nil
 	api.projects[0].DefaultBranch = "trunk"
@@ -252,5 +264,30 @@ func TestRun_BranchPolicyOnly(t *testing.T) {
 	rep = run(t, api, expected())
 	require.Len(t, rep.Drifted(), 1)
 	assert.Equal(t, []string{CheckDefaultBranch, CheckProtected}, checks(rep.Drifted()[0]))
-	assert.Equal(t, "not protected: release/* (BRANCHPOLICY)", rep.Drifted()[0].Drifts[1].Reason, "the default branch itself is not required")
+	assert.Equal(t, "not protected: release/v1.0.0 (BRANCHPOLICY)", rep.Drifted()[0].Drifts[1].Reason, "the default branch itself is not required")
+}
+
+func TestRun_Presets(t *testing.T) {
+	api := healthy()
+	api.projects = append(api.projects, project(2, "acme/lib"))
+	api.files["1:main:COMMITPOLICY"] = "version: 1\nextends: org\n"
+	api.files["2:main:COMMITPOLICY"] = "version: 1\nextends: missing\n"
+	api.files["2:main:TAGPOLICY"] = "version: 1\nextends: missing\n"
+	api.branches[2], api.repo[2], api.tags[2] = []string{"main"}, []string{"main"}, []string{"v*"}
+	presets := map[string]map[string]any{"commitpolicy": {"org": map[string]any{"rules": map[string]any{
+		"all": map[string]any{"match": "all", "parser": "conventional", "message": "m",
+			"checks": map[string]any{"type-enum": map[string]any{"level": "error", "value": []any{"feat"}}}}}}}}
+	set := modules.Default(modules.Settings{Presets: presets})
+	rep, err := Run(context.Background(), api, Options{Expected: expected(), DefaultBranches: []string{"main"}, Guard: set.Root, Modules: set.All()})
+	require.NoError(t, err)
+	require.Len(t, rep.Checked, 2)
+	assert.Empty(t, rep.Checked[0].Drifts, "the preset exists")
+	require.Len(t, rep.Drifted(), 1)
+	d := rep.Drifted()[0]
+	assert.Equal(t, int64(2), d.ID)
+	assert.Equal(t, []string{CheckPolicy, CheckPolicy}, checks(d))
+	assert.Equal(t, `COMMITPOLICY on main: extends: preset "missing" is not defined in the server config`, d.Drifts[0].Reason,
+		"the module is skipped on a push")
+	assert.Equal(t, `TAGPOLICY on main cannot be parsed: extends: preset "missing" is not defined in the server config`, d.Drifts[1].Reason,
+		"the file is broken")
 }

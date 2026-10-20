@@ -1,14 +1,14 @@
 version: 1
 mode: enforce
 
-rulesets:
-  - name: conventional
-    refs: all
-    format: conventional
+rules:
+  conventional:
+    match: all
+    parser: conventional
     except:
-      merge_commits: true
+      merge_commit: true
       git_reverts: true
-    rules:
+    checks:
       type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
       scope:             { level: error, value: optional }
       breaking-bang:     { level: error, value: allow }

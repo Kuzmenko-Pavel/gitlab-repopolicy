@@ -265,20 +265,18 @@ func TestOps_CommitsAPI(t *testing.T) {
 	assert.Equal(t, "web", e.Protocol)
 }
 
-// TestOps_RevertUI: the revert button and the revert API run
-// the same service and reach the hook as a web operation.
+// TestOps_RevertUI: the revert button and the revert API run the same
+// service and reach the hook as a web operation of the user who clicks. A
+// revert in an ordinary branch brings back content the branch already had,
+// so bob may revert a commit of alice there.
 func TestOps_RevertUI(t *testing.T) {
 	t.Parallel()
 	p := withCIPolicy(t, "revert")
 	sha := mustCommit(t, user("alice"), p, "feature", "main", "ci: change the build", create("ci/build.yml", "build"))
-	revert := func(u *standUser) error {
-		return gl.api(t.Context(), u.Token, http.MethodPost, p.api("/repository/commits/"+sha+"/revert"),
-			map[string]any{"branch": "feature"}, nil)
-	}
-	requireHookDenied(t, revert(user("bob")), ciDenied)
-	require.NoError(t, revert(user("alice")))
+	require.NoError(t, gl.api(t.Context(), user("bob").Token, http.MethodPost, p.api("/repository/commits/"+sha+"/revert"),
+		map[string]any{"branch": "feature"}, nil))
 	e := requireEvent(t, p, "allow of the revert", func(e auditEvent) bool {
-		return e.Event == "decision" && e.Ref == "refs/heads/feature" && e.Username == "alice" && e.Decision == "allow"
+		return e.Event == "decision" && e.Ref == "refs/heads/feature" && e.Username == "bob" && e.Decision == "allow"
 	})
 	assert.Equal(t, "web", e.Protocol)
 }
@@ -387,7 +385,7 @@ func tagPolicy(t *testing.T) string {
 	t.Helper()
 	pub, err := os.ReadFile(user("alice").SSHKey + ".pub")
 	require.NoError(t, err)
-	return "version: 1\nrules:\n  - name: release\n    tags: 'v\\d+\\.\\d+\\.\\d+'\n    signers: [alice]\nkeys:\n  alice: " +
+	return "version: 1\nrules:\n  release:\n    match: ['/^v\\d+\\.\\d+\\.\\d+$/']\n    signers: [alice]\n    message: Release tags are signed by alice.\nkeys:\n  alice: " +
 		strings.TrimSpace(string(pub)) + "\n"
 }
 
@@ -556,19 +554,26 @@ func TestOps_BranchPolicy(t *testing.T) {
 	alice := user("alice")
 	mustCommit(t, alice, p, "main", "", "feat: add the branch standard", create("BRANCHPOLICY", `version: 1
 rules:
-  - name: release
-    match: "release/*"
-    pattern: 'release/v[0-9]+\.[0-9]+\.[0-9]+'
+  release:
+    match: ['/^release\/v[0-9]+\.[0-9]+\.[0-9]+$/']
+    priority: 10
     protected: true
-  - name: work
-    match: "*"
-    pattern: '[a-z0-9.]+/[a-z0-9._/-]+'
+    message: Release branches look like release/v1.4.0.
+  work:
+    match: ['/^[a-z0-9.]+\/[a-z0-9._\/-]+$/']
+    priority: 20
+    message: Work branches are <prefix>/<name>.
+  other:
+    match: all
+    priority: 100
+    deny: true
+    message: Use release/vX.Y.Z or <prefix>/<name>.
 `))
 	newBranch := func(name string) error {
 		return gl.api(t.Context(), alice.Token, http.MethodPost,
 			p.api("/repository/branches?branch="+url.QueryEscape(name)+"&ref=main"), nil, nil)
 	}
-	requireHookDenied(t, newBranch("1-fix-login"), "branch 1-fix-login breaks BRANCHPOLICY rule work")
+	requireHookDenied(t, newBranch("1-fix-login"), "branch 1-fix-login is forbidden by BRANCHPOLICY rule other")
 	requireHookDenied(t, newBranch("release/v1.0.0"), "branch release/v1.0.0 must be protected")
 	require.NoError(t, gl.root(t.Context(), http.MethodPost, p.api("/protected_branches"), map[string]any{
 		"name": "release/*", "push_access_level": accessMaintainer, "merge_access_level": accessDeveloper,

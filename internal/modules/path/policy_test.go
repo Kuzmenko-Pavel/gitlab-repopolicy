@@ -15,65 +15,100 @@ import (
 const basePolicy = `version: 1
 admins: [platform-lead, sre-lead]
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths: [".gitlab-ci.yml", ".gitlab/ci/**", "Makefile", "scripts/deploy/**"]
     allow: [platform-lead, sre-lead, ci-maintainer]
     message: >-
       CI/CD configuration is changed by the platform team.
-  - name: commit-policy
+  commit-policy:
+    match: all
     paths: [COMMITPOLICY]
     allow: [dev-lead]
-  - name: prod-values
+    message: COMMITPOLICY belongs to dev-lead.
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
     allow: [platform-lead, release-manager]
+    message: Prod values are changed by release managers.
+    help:
+      contact: "#release"
 `
 
 func TestParse(t *testing.T) {
-	p, err := Parse([]byte(basePolicy))
+	p, err := Parse([]byte(basePolicy), nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"platform-lead", "sre-lead"}, p.admins)
 	require.Len(t, p.rules, 3)
-	assert.Equal(t, module.RefsAll, p.rules[0].refs.Kind)
-	assert.Equal(t, module.RefsProtected, p.rules[2].refs.Kind)
-	assert.True(t, New().Covers(p, "COMMITPOLICY"))
-	assert.False(t, New().Covers(p, "TAGPOLICY"))
+	assert.Equal(t, "ci-config", p.rules[0].name)
+	assert.True(t, p.rules[0].match.All)
+	assert.True(t, p.rules[2].match.Matches("release/1.0"))
+	assert.Equal(t, module.Help{Contact: "#release"}, p.rules[2].help)
+	assert.Equal(t, []string{"file"}, p.rules[2].source)
+	assert.True(t, New(nil).Covers(p, "COMMITPOLICY"))
+	assert.False(t, New(nil).Covers(p, "TAGPOLICY"))
 	assert.Len(t, p.Usernames(), 8)
-	_, err = Parse([]byte("version: 1\nadmins: [a]\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [a]\n"), nil)
 	assert.NoError(t, err, "a policy may only guard itself")
+}
+
+func TestParse_Presets(t *testing.T) {
+	s := NewSettings(map[string]any{"org-ci": map[string]any{"rules": map[string]any{
+		"ci":     map[string]any{"match": "all", "paths": []any{".gitlab-ci.yml"}, "allow": []any{"lead"}, "message": "CI belongs to the platform team."},
+		"agents": map[string]any{"match": "default", "paths": []any{".gitlab/agents/**"}, "allow": []any{"lead"}, "message": "Agents."},
+	}}})
+	p, err := Parse([]byte("version: 1\nadmins: [a]\nextends: org-ci\nrules:\n  ci:\n    allow: [lead, alice]\n  agents: null\n"), s)
+	require.NoError(t, err)
+	require.Len(t, p.rules, 1)
+	assert.Equal(t, []string{"lead", "alice"}, p.rules[0].allow)
+	assert.Equal(t, []string{"preset:org-ci", "file"}, p.rules[0].source)
+	require.Len(t, p.Presets(), 1)
+	assert.Equal(t, "org-ci", p.Presets()[0].Name)
+	assert.Len(t, p.Presets()[0].SHA256, 64)
+
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nextends: org-other\n"), s)
+	assert.EqualError(t, err, `extends: preset "org-other" is not defined in the server config`)
+	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  ci:\n    allow: [alice]\n"), s)
+	assert.EqualError(t, err, "line 5: rule ci: match: required", "a partial rule needs a preset rule of the same name")
+
+	broken := NewSettings(map[string]any{"org-ci": map[string]any{"rules": map[string]any{"ci": map[string]any{"match": "all"}}}})
+	assert.Equal(t, []string{"presets.pathpolicy.org-ci: rule ci: paths: 1 to 50 patterns are required"}, New(broken).PresetErrors())
 }
 
 func TestParse_GroupsAndRolesRejected(t *testing.T) {
 	for _, principal := range []string{"group/subgroup", "@maintainers", "role:maintainer", "@alice"} {
-		_, err := Parse([]byte(fmt.Sprintf("version: 1\nadmins: [a]\nrules:\n  - name: r\n    paths: [x]\n    allow: [%q]\n", principal)))
+		_, err := Parse([]byte(fmt.Sprintf("version: 1\nadmins: [a]\nrules:\n  r:\n    match: all\n    paths: [x]\n    allow: [%q]\n    message: m\n", principal)), nil)
 		require.Error(t, err, principal)
 		assert.Contains(t, err.Error(), "groups and roles are not supported", principal)
 	}
-	_, err := Parse([]byte("version: 1\nadmins: [\"group/admins\"]\n"))
+	_, err := Parse([]byte("version: 1\nadmins: [\"group/admins\"]\n"), nil)
 	assert.ErrorContains(t, err, "groups and roles are not supported")
 }
 
 func TestParse_AdminsLimit(t *testing.T) {
-	_, err := Parse([]byte("version: 1\nadmins: [a, b, c, d, e, f]\n"))
+	_, err := Parse([]byte("version: 1\nadmins: [a, b, c, d, e, f]\n"), nil)
 	assert.ErrorContains(t, err, "admins: 1 to 5 usernames are required")
-	_, err = Parse([]byte("version: 1\nadmins: []\n"))
+	_, err = Parse([]byte("version: 1\nadmins: []\n"), nil)
 	assert.ErrorContains(t, err, "admins: 1 to 5")
-	_, err = Parse([]byte("version: 1\nadmins: [Alice, alice]\n"))
+	_, err = Parse([]byte("version: 1\nadmins: [Alice, alice]\n"), nil)
 	assert.ErrorContains(t, err, "listed twice")
 }
 
 func TestParse_Limits(t *testing.T) {
+	rule := func(name, fields string) string {
+		return "  " + name + ": {match: all, paths: [x], allow: [a], message: m" + fields + "}\n"
+	}
 	rules := func(n int) string {
 		var b strings.Builder
 		b.WriteString("version: 1\nadmins: [a]\nrules:\n")
 		for i := range n {
-			fmt.Fprintf(&b, "  - {name: r%d, paths: [x], allow: [a]}\n", i)
+			b.WriteString(rule(fmt.Sprintf("r%d", i), ""))
 		}
 		return b.String()
 	}
-	_, err := Parse([]byte(rules(100)))
+	_, err := Parse([]byte(rules(100)), nil)
 	require.NoError(t, err)
-	_, err = Parse([]byte(rules(101)))
+	_, err = Parse([]byte(rules(101)), nil)
 	assert.ErrorContains(t, err, "101 rules, the limit is 100")
 
 	list := func(n int, prefix string) string {
@@ -83,27 +118,29 @@ func TestParse_Limits(t *testing.T) {
 		}
 		return "[" + strings.Join(items, ", ") + "]"
 	}
-	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: " + list(51, "p") + ", allow: [a]}\n"))
+	head := "version: 1\nadmins: [a]\nrules:\n"
+	_, err = Parse([]byte(head+"  r: {match: all, paths: "+list(51, "p")+", allow: [a], message: m}\n"), nil)
 	assert.ErrorContains(t, err, "paths: 1 to 50 patterns")
-	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: " + list(51, "u") + "}\n"))
+	_, err = Parse([]byte(head+"  r: {match: all, paths: [x], allow: "+list(51, "u")+", message: m}\n"), nil)
 	assert.ErrorContains(t, err, "allow: 1 to 50 usernames")
-	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: []}\n"))
+	_, err = Parse([]byte(head+"  r: {match: all, paths: [x], allow: [], message: m}\n"), nil)
 	assert.ErrorContains(t, err, "allow: 1 to 50 usernames", "an empty allow would freeze the paths")
-	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a], message: " + strings.Repeat("m", 1001) + "}\n"))
+	_, err = Parse([]byte(head+"  r: {match: all, paths: [x], allow: [a], message: "+strings.Repeat("m", 1001)+"}\n"), nil)
 	assert.ErrorContains(t, err, "message: 1001 characters")
-	_, err = Parse([]byte("version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [x], allow: [a]}\n  - {name: r, paths: [y], allow: [a]}\n"))
-	assert.ErrorContains(t, err, "used twice")
 	for in, want := range map[string]string{
-		"version: 2\nadmins: [a]\n":                                                              "version: 2",
-		"version: 1\nadmins: [a]\ndeny: [x]\n":                                                   `unknown field "deny"`,
-		"version: 1\nadmins: [a]\nrules: [{name: R, paths: [x], allow: [a]}]\n":                  `name: "R" must match`,
-		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], refs: feature}]\n":   `refs: "feature"`,
-		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], refs: [heads/x]}]\n": "not a ref pattern",
-		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [x], allow: [a], help_url: y}]\n":     `rule r: unknown field "help_url"`,
-		"version: 1\nadmins: [a]\nrules: [{name: r, paths: [/abs], allow: [a]}]\n":               "remove the leading /",
-		"version: 1\nadmins: &x [a]\n":                                                           "anchors are not allowed",
+		"version: 2\nadmins: [a]\n":                                                "version: 2",
+		"version: 1\nadmins: [a]\ndeny: [x]\n":                                     `unknown field "deny"`,
+		head + rule("R", ""):                                                       `rule name "R" must match`,
+		head + rule("r", ", refs: protected"):                                      `rule r: unknown field "refs"`,
+		head + "  r: {paths: [x], allow: [a], message: m}\n":                       "rule r: match: required",
+		head + "  r: {match: all, paths: [x], allow: [a]}\n":                       "rule r: message: required",
+		head + "  r: {match: protected, paths: [x], allow: [a], message: m}\n":     `"protected" is not all, default or a list`,
+		head + "  r: {match: ['release/*'], paths: [x], allow: [a], message: m}\n": "a glob is not supported",
+		head + rule("r", ", help: {docs_url: ftp://x}"):                            "is not an http(s) URL",
+		head + "  r: {match: all, paths: [/abs], allow: [a], message: m}\n":        "remove the leading /",
+		"version: 1\nadmins: &x [a]\n":                                             "anchors are not allowed",
 	} {
-		_, err := Parse([]byte(in))
+		_, err := Parse([]byte(in), nil)
 		require.Error(t, err, in)
 		assert.Contains(t, err.Error(), want, in)
 	}
@@ -206,10 +243,10 @@ func FuzzValidatePattern(f *testing.F) {
 }
 
 func FuzzParse(f *testing.F) {
-	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: ci\n    paths: [ci.yml, \"deploy/**\"]\n    refs: [\"refs/heads/release/*\"]\n    allow: [alice]\n"))
-	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  - name: x\n    paths: [\"{a,b}\"]\n    allow: [group/x]\n"))
+	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  ci:\n    match: [main, '/^release\\//']\n    paths: [ci.yml, \"deploy/**\"]\n    allow: [alice]\n    message: m\n"))
+	f.Add([]byte("version: 1\nadmins: [alice]\nrules:\n  x:\n    match: all\n    paths: [\"{a,b}\"]\n    allow: [group/x]\n    message: m\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		p, err := Parse(data)
+		p, err := Parse(data, nil)
 		if err != nil {
 			return
 		}

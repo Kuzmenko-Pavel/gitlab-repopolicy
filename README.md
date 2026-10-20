@@ -18,7 +18,7 @@
 | Хто ви | Що вам потрібно | Куди дивитися |
 | --- | --- | --- |
 | розробник, якому GitLab відхилив push | зрозуміти відмову і виправити коміт, тег чи гілку | документ політики з рядка відмови: [COMMITPOLICY](docs/commitpolicy.md), [TAGPOLICY](docs/tagpolicy.md), [BRANCHPOLICY](docs/branchpolicy.md), [PATHPOLICY](docs/pathpolicy.md) |
-| Maintainer проєкту | написати policy-файл, перевірити його локально і ввімкнути без зупинки роботи команди | ті самі документи політик, потім [integration-guide.md](docs/integration-guide.md) |
+| Maintainer проєкту | написати policy-файл, перевірити його локально і ввімкнути без зупинки роботи команди | ті самі документи політик, [validate.md](docs/validate.md), потім [integration-guide.md](docs/integration-guide.md) |
 | адміністратор GitLab | встановити hook, налаштувати сервер, стежити за audit | [install.md](docs/install.md), [configuration.md](docs/configuration.md), [operations.md](docs/operations.md), [integration-guide.md](docs/integration-guide.md) |
 
 ## Політики
@@ -45,31 +45,67 @@ gitlab-repopolicy перевіряє зміну на сервері, тому б
 
 З `mode: audit` hook перевіряє все, але лише записує рішення в audit і нікому не відмовляє ([configuration.md](docs/configuration.md#mode)).
 
+Приклад від файлу до виправлення. Команда платформи (alice і sre-lead) хоче, щоб CI-конфігурацію змінювала лише вона, у будь-якій гілці:
+
 ```yaml
 # examples/ci-config/PATHPOLICY
-# The platform team owns the CI configuration, the deploy logic and the
-# production values; everything else is authorized by GitLab as usual.
+# The platform team, alice and sre-lead, owns the CI configuration and the
+# deploy scripts in every branch and the production values in main and
+# release branches. Everything else is authorized by GitLab as usual.
 version: 1
 
-admins: [platform-lead, sre-lead]
+admins: [alice, sre-lead]
 
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
-      - "Makefile"
       - "scripts/deploy/**"
-    allow: [platform-lead, sre-lead, ci-maintainer]
+    allow: [alice, sre-lead]
     message: >-
-      The platform team changes the CI/CD configuration and the deploy logic.
-      Ask platform-lead, sre-lead or ci-maintainer to make this change.
+      The platform team changes the CI/CD configuration and the deploy scripts.
+      Ask alice or sre-lead to push this change.
+    help:
+      contact: "#platform"
 
-  - name: prod-values
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
-    allow: [platform-lead, release-manager]
+    allow: [alice, release-manager]
+    message: >-
+      Production values are changed in main and release branches by alice or
+      release-manager. Propose the change in your branch and ask them to merge it.
 ```
+
+bob, якого немає в `allow`, змінює `.gitlab-ci.yml` у своїй гілці `feature` і пушить. GitLab відхиляє push:
+
+```text
+remote: gitlab-repopolicy: push rejected by the rules of this repository (1 problem)
+remote:
+remote: PATHPOLICY rule "ci-config", branch feature: you may not change these files
+remote:   may change them: alice, sre-lead
+remote:   files:
+remote:     .gitlab-ci.yml
+remote:   The platform team changes the CI/CD configuration and the deploy scripts. Ask alice or sre-lead to push this change.
+remote:   the content of .gitlab-ci.yml in commit 11e97b832 differs both from this branch and from main; new content is pushed by one of them
+remote:   who can help with this rule: #platform
+remote:
+remote: rules: PATHPOLICY in main (f50c5a0)
+remote: checked as: bob (SSH)
+remote: GL-HOOK-ERR: gitlab-repopolicy: you may not change .gitlab-ci.yml (PATHPOLICY rule ci-config; may change: alice, sre-lead)
+```
+
+Що робить bob: просить alice внести зміну або прибирає її зі своїх комітів і пушить ще раз:
+
+```sh
+git restore --source=origin/main -- .gitlab-ci.yml
+git commit --amend --no-edit
+git push --force-with-lease origin feature
+```
+
+Як читати відмову рядок за рядком - [pathpolicy.md](docs/pathpolicy.md#відмови).
 
 ## Передумови
 
@@ -114,21 +150,35 @@ sudo -u git gitlab-repopolicy selftest
 
 ## Редактор
 
-Policy-файли не мають розширення, тому редактор треба навчити, що це YAML зі схемою. Для VS Code з розширенням YAML (`yaml-language-server`):
+Policy-файли не мають розширення, тому редактор треба навчити, що це YAML зі схемою. Схеми лежать у каталозі `schemas/` репозиторію. Посилання нижче ведуть на гілку `main`. Щоб редактор перевіряв файли за схемою конкретного релізу, замініть у посиланні `main` на тег релізу, наприклад `v1.0.0`.
+
+**VS Code** з розширенням YAML (`yaml-language-server`), у `settings.json`:
 
 ```json
 {
   "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json": "PATHPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/commitpolicy.schema.json": "COMMITPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
 
-Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate`, повідомлення комітів - `gitlab-repopolicy lint-commit`.
+**PyCharm, GoLand, IntelliJ IDEA** та інші IDE JetBrains перевіряють YAML за схемою без плагінів. Схеми написані за JSON Schema draft 2020-12.
+1. Settings > Editor > File Types > YAML, у "File name patterns" додайте `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY`. Це налаштування самої IDE, його робить кожен у себе один раз
+2. Settings > Languages & Frameworks > Schemas and DTDs > JSON Schema Mappings, кнопка `+` для кожного файлу:
+   - Name: `PATHPOLICY`
+   - Schema file or URL: `https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json`
+   - Schema version: JSON Schema 2020-12
+   - кнопкою `+` під списком додайте File path pattern `PATHPOLICY`
+
+   Так само для `COMMITPOLICY`, `TAGPOLICY` і `BRANCHPOLICY`. Ці прив'язки IDE зберігає в проєкті, у `.idea/jsonSchemas.xml`: закомітьте файл, і в команди схеми підключаться самі
+
+Після цього IDE підсвічує невідомі ключі й неправильні значення і показує підказки з описів полів.
+
+Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate` ([validate.md](docs/validate.md)), повідомлення комітів - `gitlab-repopolicy lint-commit`. Редактор знає лише схему, а `validate` перевіряє ще й злиття з пресетами, регулярні вирази, порядок правил BRANCHPOLICY і ключі TAGPOLICY.
 
 ## Документація
 
@@ -138,6 +188,9 @@ Policy-файли не мають розширення, тому редакто�
 | [configuration.md](docs/configuration.md) | `config.yaml` сервера |
 | [operations.md](docs/operations.md) | audit і алерти, recovery, break-glass, ротація токена, `settings-check`, оновлення, типові проблеми |
 | [pathpolicy.md](docs/pathpolicy.md), [commitpolicy.md](docs/commitpolicy.md), [tagpolicy.md](docs/tagpolicy.md), [branchpolicy.md](docs/branchpolicy.md) | довідник policy-файлів |
+| [match.md](docs/match.md) | поле `match`: для яких гілок і тегів діє правило; позначення діаграм |
+| [validate.md](docs/validate.md) | перевірка файлів політик без push, покроково |
+| [cli.md](docs/cli.md) | усі команди і прапорці |
 | [integration-guide.md](docs/integration-guide.md) | порядок увімкнення на робочому інстансі |
 | [architecture.md](docs/architecture.md) | як влаштовано |
 | [threat-model.md](docs/threat-model.md) | від чого захищає і від чого ні |

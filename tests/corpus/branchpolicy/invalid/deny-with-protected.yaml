@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: [x]
+    priority: 1
+    deny: true
+    protected: true
+    message: m

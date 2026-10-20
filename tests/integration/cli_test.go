@@ -182,7 +182,7 @@ func TestSettingsCheck(t *testing.T) {
 
 	r := s.Run(nil, "settings-check", "--config", s.config)
 	require.Equal(t, 0, r.Code, r.Stdout+r.Stderr)
-	assert.Contains(t, r.Stdout, "1 projects with PATHPOLICY checked, no drift")
+	assert.Contains(t, r.Stdout, "1 projects with policy files checked, no drift")
 	assert.Contains(t, r.Stderr, "level=INFO msg=\"settings-check done\" checked=1 drifted=0")
 	assert.Empty(t, s.Audit())
 
@@ -305,22 +305,35 @@ func TestCLI_Explain(t *testing.T) {
 		return r
 	}
 	r := explain("bob", "ci.yml", "release/1", 1)
-	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): NOT allowed; allow: alice")
+	assert.Contains(t, r.Stdout, `release-ci (match: [/^release\//]; from file): NOT allowed; allow: alice`)
 	assert.Contains(t, r.Stdout, "result: bob may not change ci.yml on refs/heads/release/1")
 	r = explain("alice", "ci.yml", "refs/heads/release/1", 0)
 	assert.Contains(t, r.Stdout, "result: alice may change ci.yml")
 	r = explain("bob", "ci.yml", "", 0)
-	assert.Contains(t, r.Stdout, "release-ci (refs: refs/heads/release/*): does not apply to refs/heads/main")
+	assert.Contains(t, r.Stdout, `release-ci (match: [/^release\//]; from file): does not apply to refs/heads/main`)
 	r = explain("bob", "README.md", "", 0)
 	assert.Contains(t, r.Stdout, "no path rule matches")
 	r = explain("bob", "PATHPOLICY", "", 1)
-	assert.Contains(t, r.Stdout, "admins of PATHPOLICY (refs: all): NOT allowed; allow: alice")
+	assert.Contains(t, r.Stdout, "admins of PATHPOLICY (match: all; from file): NOT allowed; allow: alice")
 
 	r = s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app")
 	assert.Equal(t, 2, r.Code)
 	s.API.Handle("GET", "/api/v4/projects/1/repository/files/PATHPOLICY/raw?ref=main", gitlabtest.Status(404))
 	r = explain("bob", "ci.yml", "", 0)
 	assert.Contains(t, r.Stdout, "has no PATHPOLICY on its default branch")
+}
+
+// TestCLI_ExplainPresets: explain names the layers of a rule and of each of
+// its fields when the rule comes from a preset.
+func TestCLI_ExplainPresets(t *testing.T) {
+	policy := "version: 1\nadmins: [alice]\nextends: org-ci\nrules:\n  ci:\n    allow: [alice, bob]\n"
+	s, _ := pathStand(t, policy, nil)
+	s.AddConfig("presets:\n  pathpolicy:\n    org-ci:\n      rules:\n        ci: {match: all, paths: [ci.yml], allow: [alice], message: CI belongs to alice.}\n")
+	projectAPI(s, policy)
+	r := s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app", "--user", "bob", "--path", "ci.yml")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, "  ci (match: all; from preset:org-ci, file): allowed; allow: alice, bob\n"+
+		"    fields from: allow file; match preset:org-ci; message preset:org-ci; paths preset:org-ci\n")
 }
 
 func TestCLI_Admins(t *testing.T) {
@@ -378,6 +391,25 @@ func TestCLI_ValidateOnline(t *testing.T) {
 	assert.Contains(t, r.Stdout, "PATHPOLICY: valid\n")
 	assert.Contains(t, r.Stdout, `warning: admin "bob" is not an active user with Maintainer or higher in this project`)
 	assert.Contains(t, r.Stdout, "warning: 1 of 2 admins work")
+}
+
+// TestCLI_ValidateBranchOnline: with --online validate --branch asks GitLab
+// whether the user prefix of the name is an active user.
+func TestCLI_ValidateBranchOnline(t *testing.T) {
+	s, _ := mainWith(t, map[string]string{"app.go": "a"})
+	s.Team()
+	file := filepath.Join(s.Work, "BRANCHPOLICY")
+	require.NoError(t, os.WriteFile(file, []byte("version: 1\nrules:\n  personal: {match: ['/^[^/]+\\//'], priority: 1, user_prefix: true, message: m}\n"), 0o600))
+
+	r := s.Run(nil, "validate", "-f", file, "--branch", "alice/fix")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, "requires: alice is an active GitLab user (checked with --online)")
+	r = s.Run(nil, "validate", "-f", file, "--online", "--config", s.config, "--branch", "alice/fix")
+	require.Equal(t, 0, r.Code, r.Stderr)
+	assert.Contains(t, r.Stdout, "  alice is an active GitLab user\n  result: allowed\n")
+	r = s.Run(nil, "validate", "-f", file, "--online", "--config", s.config, "--branch", "ghost/fix")
+	assert.Equal(t, 0, r.Code, "a query, not a check")
+	assert.Contains(t, r.Stdout, "result: denied, ghost is not an active GitLab user")
 }
 
 // TestCLI_Test: gitlab-repopolicy test decides like the hook without a push.

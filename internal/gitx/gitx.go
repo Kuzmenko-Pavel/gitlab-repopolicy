@@ -276,6 +276,112 @@ func parseCommitPaths(out []byte) []string {
 	return paths
 }
 
+// State is the mode and blob OID of a path in a commit; the zero State is a
+// path that the commit does not have.
+type State struct {
+	Mode, OID string
+}
+
+// Commit is a commit with the paths it changes. A merge commit lists only
+// the paths that differ from every parent, as a combined diff does.
+type Commit struct {
+	OID     string
+	Parents []string
+	Changes []Change
+}
+
+// Change is a path that a commit changes: its state in each parent and the
+// state the commit leaves it in.
+type Change struct {
+	Path string
+	// From are the states in the parents, in parent order; a root commit has
+	// one empty state.
+	From []State
+	To   State
+}
+
+// CommitChanges returns every commit, in the order given, with its parents
+// and the states of the paths it changes, from diff-tree --raw in the
+// combined form for merges.
+func (r *Repo) CommitChanges(ctx context.Context, commits []string) ([]Commit, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	var in bytes.Buffer
+	for _, c := range commits {
+		if !IsOID(c) {
+			return nil, fmt.Errorf("gitx: invalid commit %q", c)
+		}
+		in.WriteString(c + "\n")
+	}
+	// The header "/<oid> <parents>" cannot be a raw record: those start with ":".
+	out, err := r.run(ctx, in.Bytes(), "diff-tree", "--stdin", "--always", "-r", "-c", "--root", "--no-renames",
+		"--raw", "--no-abbrev", "-z", "--pretty=format:/%H %P")
+	if err != nil {
+		return nil, err
+	}
+	return parseCommitChanges(out)
+}
+
+func parseCommitChanges(out []byte) ([]Commit, error) {
+	var commits []Commit
+	toks := bytes.Split(out, []byte{0})
+	for i := 0; i < len(toks); i++ {
+		tok := toks[i]
+		if len(tok) == 0 {
+			continue
+		}
+		// An empty commit ends its header with a newline instead of a NUL.
+		for _, line := range bytes.Split(tok, []byte{'\n'}) {
+			if len(line) == 0 || line[0] != '/' {
+				tok = line
+				continue
+			}
+			f := strings.Fields(string(line[1:]))
+			if len(f) == 0 {
+				return nil, fmt.Errorf("gitx: unexpected diff-tree header %q", line)
+			}
+			commits = append(commits, Commit{OID: f[0], Parents: f[1:]})
+			tok = nil
+		}
+		if len(tok) == 0 {
+			continue
+		}
+		if tok[0] != ':' || len(commits) == 0 || i+1 >= len(toks) {
+			return nil, fmt.Errorf("gitx: unexpected diff-tree record %q", tok)
+		}
+		i++
+		c, err := parseRaw(string(tok), string(toks[i]))
+		if err != nil {
+			return nil, err
+		}
+		last := &commits[len(commits)-1]
+		last.Changes = append(last.Changes, c)
+	}
+	return commits, nil
+}
+
+// parseRaw parses ":<modes> <oids> <status>" with one colon per parent: the
+// modes and OIDs of the parents come first, the result last.
+func parseRaw(meta, path string) (Change, error) {
+	n := len(meta) - len(strings.TrimLeft(meta, ":"))
+	f := strings.Fields(meta[n:])
+	if len(f) != 2*(n+1)+1 {
+		return Change{}, fmt.Errorf("gitx: unexpected diff-tree record %q", meta)
+	}
+	state := func(i int) State {
+		if strings.Trim(f[n+1+i], "0") == "" {
+			return State{}
+		}
+		return State{Mode: f[i], OID: f[n+1+i]}
+	}
+	c := Change{Path: path, To: state(n)}
+	for i := range n {
+		c.From = append(c.From, state(i))
+	}
+	return c, nil
+}
+
 // RevListOptions select commits for RevList.
 type RevListOptions struct {
 	// Include and Exclude are object names or full ref names.
@@ -318,6 +424,34 @@ func (r *Repo) RevList(ctx context.Context, o RevListOptions) ([]string, error) 
 		return nil, ErrLimit
 	}
 	return commits, nil
+}
+
+// OnBranch reports whether commit is reachable from tips or from a branch
+// other than the skipped ones, with one rev-list. skip are branch names
+// without refs/heads/: --exclude matches them against the names that
+// --branches lists, and a branch name has no glob characters.
+func (r *Repo) OnBranch(ctx context.Context, commit string, tips, skip []string) (bool, error) {
+	if !IsOID(commit) {
+		return false, fmt.Errorf("gitx: invalid commit %q", commit)
+	}
+	args := []string{"rev-list", "--max-count=1", commit, "--not"}
+	for _, t := range tips {
+		if !IsOID(t) {
+			return false, fmt.Errorf("gitx: invalid commit %q", t)
+		}
+		args = append(args, t)
+	}
+	for _, b := range skip {
+		if err := checkRev("refs/heads/" + b); err != nil {
+			return false, err
+		}
+		args = append(args, "--exclude="+b)
+	}
+	out, err := r.run(ctx, nil, append(args, "--branches")...)
+	if err != nil {
+		return false, err
+	}
+	return len(bytes.TrimSpace(out)) == 0, nil
 }
 
 // ErrLimit is returned when a list is longer than the requested maximum.

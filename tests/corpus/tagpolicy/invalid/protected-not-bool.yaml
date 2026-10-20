@@ -1,7 +1,8 @@
 version: 1
 rules:
-  - name: release
-    tags: 'v.+'
+  release:
+    match: ['/^v.+$/']
+    message: m
     signers: [lead]
     protected: "yes"
 keys:

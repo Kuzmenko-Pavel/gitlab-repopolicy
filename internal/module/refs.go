@@ -91,7 +91,7 @@ type RefClassifier interface {
 	ProtectedScope(ctx context.Context) (Scope, Status)
 }
 
-// ChangeSet gives modules three views of a push, computed lazily.
+// ChangeSet gives modules the views of a push, computed lazily.
 // Lists of commits stop with ErrLimitExceeded when longer than max.
 type ChangeSet interface {
 	// CandidatePaths is a local superset of Paths for any class of the ref.
@@ -104,6 +104,26 @@ type ChangeSet interface {
 	EnteringCommits(ctx context.Context, u RefUpdate, s Scope, max int) ([]string, error)
 	// NewCommits are the commits not reachable from any branch or tag before the push.
 	NewCommits(ctx context.Context, u RefUpdate, max int) ([]string, error)
+	// NewPathChanges are the paths that the new commits change, with the state
+	// each commit leaves a path in; a merge commit counts with its result.
+	NewPathChanges(ctx context.Context, u RefUpdate) ([]PathChange, error)
+	// KnownStates are the states each path already had: in the default branch
+	// before the push and, for an update, in the old tip and in the commits of
+	// the branch that are not in the default branch.
+	KnownStates(ctx context.Context, u RefUpdate, paths []string) (map[string][]PathState, error)
+}
+
+// PathState is the mode and blob OID of a path in a commit; the zero value
+// is a path that the commit does not have.
+type PathState struct {
+	Mode, OID string
+}
+
+// PathChange is a path that a new commit changes, with the state it leaves.
+type PathChange struct {
+	Commit string
+	Path   string
+	State  PathState
 }
 
 // Object is a git object read from the quarantine or the repository.

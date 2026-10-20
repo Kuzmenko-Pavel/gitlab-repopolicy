@@ -1,0 +1,28 @@
+# Every release tag is signed by release-lead or dev-lead; a prod release
+# also matches the prod rule, signed by release-lead or sec-lead. A tag that
+# matches both rules is signed only by a key that both rules list.
+version: 1
+
+rules:
+  releases:
+    match: ['/^v\d+\.\d+\.\d+/']
+    signers: [release-lead, dev-lead]
+    message: Release tags are signed by release-lead or dev-lead.
+  prod:
+    match: ['/^v\d+\.\d+\.\d+-prod$/']
+    signers: [release-lead, sec-lead]
+    message: Prod releases are also signed by release-lead or sec-lead.
+
+keys:
+  release-lead: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+    
+    mDMEas8yyBYJKwYBBAHaRw8BAQdARgQtR6FZCckYy8pf9+9snMoIb3gcbH9QVotM
+    2CEt2za0H1JlbGVhc2UgTGVhZCA8bGVhZEBleGFtcGxlLmNvbT6IkwQTFgoAOxYh
+    BGx5V+qHOlRnp48dB1l3WaOCcpNZBQJqzzLIAhsDBQsJCAcCAiICBhUKCQgLAgQW
+    AgMBAh4HAheAAAoJEFl3WaOCcpNZf7IBAO02jJtCe9KhJlLAOTz/XX+kpgyY8mth
+    6Cku2bukuF6bAP40EeqZQ1ISoo/Agcdncm5Z+KysHKFd7y49xzE0q6ObDA==
+    =3XJY
+    -----END PGP PUBLIC KEY BLOCK-----
+  dev-lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE dev-lead
+  sec-lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl sec-lead

@@ -1,5 +1,7 @@
 version: 1
 rules:
-  - name: r
-    match: x
+  r:
+    match: [x]
+    priority: 1
     branches: [x]
+    message: m

@@ -9,9 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
@@ -51,22 +50,15 @@ type Config struct {
 	DefaultBranch []string      `yaml:"default_branch"`
 	SettingsCheck SettingsCheck `yaml:"settings_check"`
 	Help          Help          `yaml:"help"`
-	// CommitPolicyPresets and BranchPolicyPresets are kept undecoded; their modules parse them.
-	CommitPolicyPresets map[string]any `yaml:"commitpolicy_presets"`
-	BranchPolicyPresets map[string]any `yaml:"branchpolicy_presets"`
+	// Presets are rules shared by projects, by module name and preset name;
+	// they are kept undecoded and their modules parse them.
+	Presets map[string]map[string]any `yaml:"presets"`
 }
 
 // Help is where a pusher gets help; both are optional and printed in denials.
-type Help struct {
-	// Contact is who to ask about a problem of the server or a broken policy,
-	// for example "#gitlab-support".
-	Contact string `yaml:"contact"`
-	// DocsURL is the documentation of the rules for developers.
-	DocsURL string `yaml:"docs_url"`
-}
-
-// MaxHelp is the length limit of the help values, in characters.
-const MaxHelp = 200
+// Contact is who to ask about a problem of the server or a broken policy, for
+// example "#gitlab-support"; DocsURL is the documentation of the rules.
+type Help = module.Help
 
 // Audit configures where audit events go.
 type Audit struct {
@@ -76,10 +68,8 @@ type Audit struct {
 
 // Timeouts of a hook invocation and of its parts.
 type Timeouts struct {
-	Total         Duration `yaml:"total"`
-	HTTP          Duration `yaml:"http"`
-	Pattern       Duration `yaml:"pattern"`
-	PatternBudget Duration `yaml:"pattern_budget"`
+	Total Duration `yaml:"total"`
+	HTTP  Duration `yaml:"http"`
 }
 
 // SettingsCheck holds the project settings expected by settings-check.
@@ -142,43 +132,40 @@ func Defaults() Config {
 		Audit:         Audit{File: "/var/log/gitlab-repopolicy/audit.log"},
 		BreakglassDir: filepath.Join(etcDir, "breakglass"),
 		Timeouts: Timeouts{
-			Total:         Duration(10 * time.Second),
-			HTTP:          Duration(3 * time.Second),
-			Pattern:       Duration(100 * time.Millisecond),
-			PatternBudget: Duration(2 * time.Second),
+			Total: Duration(10 * time.Second),
+			HTTP:  Duration(3 * time.Second),
 		},
 		MaxAPICalls: 30,
 	}
 }
 
-// Presets reads only commitpolicy_presets and branchpolicy_presets of a
-// server config, for validate and lint-commit on a developer machine: the
-// other keys, such as the URL and the token of the server, are neither needed
-// nor checked.
-func Presets(data []byte) (commit, branch map[string]any, err error) {
+// Presets reads only the presets of a server config, for validate and
+// lint-commit on a developer machine: the other keys, such as the URL and the
+// token of the server, are neither needed nor checked.
+func Presets(data []byte) (map[string]map[string]any, error) {
 	tree, err := strictyaml.DecodeTree(data, MaxSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("config: %w", err)
+		return nil, fmt.Errorf("config: %w", err)
 	}
 	if tree.Kind != strictyaml.Map {
-		return nil, nil, fmt.Errorf("config: line %d: expected a mapping", tree.Line)
+		return nil, fmt.Errorf("config: line %d: expected a mapping", tree.Line)
 	}
-	read := func(key string) (map[string]any, error) {
-		v, ok := tree.Fields[key]
-		if !ok || v.Kind == strictyaml.Null {
-			return nil, nil
-		}
-		presets, ok := v.Interface().(map[string]any)
+	v, ok := tree.Fields["presets"]
+	if !ok || v.Kind == strictyaml.Null {
+		return nil, nil
+	}
+	if v.Kind != strictyaml.Map {
+		return nil, fmt.Errorf("config: line %d: presets: expected a mapping", v.Line)
+	}
+	out := make(map[string]map[string]any, len(v.Keys))
+	for _, module := range v.Keys {
+		presets, ok := v.Fields[module].Interface().(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("config: line %d: %s: expected a mapping", v.Line, key)
+			return nil, fmt.Errorf("config: line %d: presets.%s: expected a mapping", v.Fields[module].Line, module)
 		}
-		return presets, nil
+		out[module] = presets
 	}
-	if commit, err = read("commitpolicy_presets"); err != nil {
-		return nil, nil, err
-	}
-	branch, err = read("branchpolicy_presets")
-	return commit, branch, err
+	return out, nil
 }
 
 // Parse decodes data over Defaults and validates the result.
@@ -236,19 +223,13 @@ func (c *Config) validate() error {
 	if c.TokenLifetime.Std() < 24*time.Hour {
 		errs = append(errs, errors.New("token_lifetime: must be at least 1d"))
 	}
-	for name, d := range map[string]Duration{
-		"timeouts.total": c.Timeouts.Total, "timeouts.http": c.Timeouts.HTTP,
-		"timeouts.pattern": c.Timeouts.Pattern, "timeouts.pattern_budget": c.Timeouts.PatternBudget,
-	} {
+	for name, d := range map[string]Duration{"timeouts.total": c.Timeouts.Total, "timeouts.http": c.Timeouts.HTTP} {
 		if d <= 0 {
 			errs = append(errs, fmt.Errorf("%s: must be positive", name))
 		}
 	}
 	if c.Timeouts.HTTP > c.Timeouts.Total {
 		errs = append(errs, errors.New("timeouts.http: must not exceed timeouts.total"))
-	}
-	if c.Timeouts.Pattern > c.Timeouts.PatternBudget {
-		errs = append(errs, errors.New("timeouts.pattern: must not exceed timeouts.pattern_budget"))
 	}
 	if c.MaxAPICalls < 1 {
 		errs = append(errs, errors.New("max_api_calls: must be at least 1"))
@@ -259,17 +240,11 @@ func (c *Config) validate() error {
 		}
 	}
 	errs = append(errs, validateDefaultBranch(c.DefaultBranch))
-	for _, h := range []struct{ name, v string }{{"help.contact", c.Help.Contact}, {"help.docs_url", c.Help.DocsURL}} {
-		name, v := h.name, h.v
-		switch {
-		case utf8.RuneCountInString(v) > MaxHelp:
-			errs = append(errs, fmt.Errorf("%s: %d characters, the limit is %d", name, utf8.RuneCountInString(v), MaxHelp))
-		case strings.ContainsFunc(v, unicode.IsControl):
-			errs = append(errs, fmt.Errorf("%s: control characters are not allowed", name))
-		}
+	if err := module.CheckHelpText(c.Help.Contact); err != nil {
+		errs = append(errs, fmt.Errorf("help.contact: %w", err))
 	}
-	if u := c.Help.DocsURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		errs = append(errs, fmt.Errorf("help.docs_url: %q is not an http(s) URL", u))
+	if err := module.CheckHelpURL(c.Help.DocsURL); err != nil {
+		errs = append(errs, fmt.Errorf("help.docs_url: %w", err))
 	}
 	return errors.Join(errs...)
 }

@@ -25,7 +25,7 @@ In this process `settings-check` only detects changes of project Settings on a s
 
 Keep everything that belongs to your installation in a separate repository:
 - the pinned version of gitlab-repopolicy
-- `config.yaml` and the COMMITPOLICY presets
+- `config.yaml` with the presets of all modules
 - CI that verifies the signature and checksums of artifacts ([install.en.md](install.en.md#1-download-and-verify-the-release)) before any installation, stores the verified packages in your registry and delivers them to the nodes
 - rollback is the same job with the previous version
 
@@ -49,23 +49,26 @@ What to look at in audit:
 - `duration_ms` and `api_calls` - the cost of the hook under your load
 - `invalid_policy` and `decision` with `code: invalid_policy_update` - policies that block a project in `enforce`
 - `decision` with `code: default_branch_not_allowed`, if `default_branch` is set ([configuration.en.md](configuration.en.md#default_branch)) - projects whose default branch has another name; in `enforce` pushes to them will be denied
+- `decision` with `code: tag_not_on_branch` - who puts tags on commits outside of branches. This check applies to every group project, even without policy files ([tagpolicy.en.md](tagpolicy.en.md#3-a-tag-outside-of-branches)). Before `enforce` agree with the teams that tags are pushed together with the branch (`git push --follow-tags`)
 
 ## 4. COMMITPOLICY in a few projects
 
 COMMITPOLICY is the safest start: it cannot lock anyone out, and an API failure only skips the check. The exception is a new COMMITPOLICY version with `except.users`: if the API did not answer, its acceptance is denied with `authorization_backend_failure`.
 
-1. Describe the team standard as a preset in `commitpolicy_presets` ([commitpolicy.en.md](commitpolicy.en.md#presets-extends)). Derive it from the real commits of the team, not from earlier client-side schemas
+1. Describe the team standard as a preset in `presets.commitpolicy` ([configuration.en.md](configuration.en.md#presets)). Derive it from the real commits of the team, not from earlier client-side schemas
 2. In 2-3 projects add a COMMITPOLICY with `extends:` and `mode: warn`
 3. Set the squash commit template of the project so that the squash commit follows the standard. The easiest way to get an issue reference is the `%{issues}` variable: GitLab fills in `Closes #N` for issues from the MR description
 4. When there are almost no warnings, switch the file to `mode: enforce`
 
-Turn on a required issue reference gradually: in the preset `reference` with `level: warn`, a project that is ready raises it to `error` in its own file (file rules override the preset), then `error` moves into the preset. Audit shows readiness: the share of `reference` warnings per project.
+Turn on a required issue reference gradually: in the preset a `pattern` check with `level: warn`, a project that is ready raises it to `error` in its own file (`checks.pattern: { level: error }`, the file merges over the preset), then `error` moves into the preset. Audit shows readiness: the share of `pattern` warnings per project.
 
 On a merge through the UI the author does not see warnings: GitLab does not show the successful hook output for web operations. The `warn` stage gives statistics, not training.
 
 ## 5. BRANCHPOLICY
 
-BRANCHPOLICY, like COMMITPOLICY, does not threaten to block access: only names of new branches are checked, existing branches are not touched, and an API failure skips the check with a warning. The order - [branchpolicy.en.md](branchpolicy.en.md#how-to-roll-out): a preset in `branchpolicy_presets`, BRANCHPOLICY with `extends` and `mode: warn` in projects, a week or two of warnings in audit, then `mode: enforce`.
+BRANCHPOLICY, like COMMITPOLICY, does not threaten to block access: only names of new branches are checked, existing branches are not touched, and an API failure skips the check with a warning. The order - [branchpolicy.en.md](branchpolicy.en.md#quick-start): a preset in `presets.branchpolicy`, BRANCHPOLICY with `extends` and `mode: warn` in projects, a week or two of warnings in audit, then `mode: enforce`. Names that will apply differently than intended show before the start: `validate --config presets.yaml --branch <name>`.
+
+`git push --mirror` of an old repository creates all branches at once and is rejected as a whole when one name does not follow the standard. Add BRANCHPOLICY after the import.
 
 ## 6. PATHPOLICY in one or two projects
 
@@ -96,6 +99,15 @@ Before the switch:
 
 ## 9. The other projects
 
-Policy files are added by merge requests as needed, one repository at a time. The default `refs: all` does not let a Developer push even a proposal branch with a protected path; for paths where this gets in the way, use `refs: protected` ([pathpolicy.en.md](pathpolicy.en.md#where-a-rule-applies-refs)).
+With hundreds of projects the rules are not copied into every repository. The order:
+1. The standards of the organization are presets in the server config ([configuration.en.md](configuration.en.md#presets)): `org-ci` for PATHPOLICY, `org-commits`, `org-branches`, `org-tags`. The presets live in the deployment repository and reach every node with the config
+2. The file of a project is one line `extends` plus what is its own: `admins` of PATHPOLICY, `keys` of TAGPOLICY, deviations from the standard ([an example](pathpolicy.en.md#7-a-preset-of-the-organization))
+3. Before the merge `validate --config presets.yaml` checks every file in the CI of the merge request ([validate.en.md](validate.en.md#validate-in-the-ci-of-a-merge-request)). The copy of the presets for CI is the same file of the deployment repository
+4. The first denials after the merge. `validate` does not know everything the hook knows ([validate.en.md](validate.en.md#what-validate-does-not-know)): most often it is a new username that GitLab does not have, or an admin without the role Maintainer. The text of the denial names the rule and the field, the fix is a new merge request with the file. Denials to developers for protected files are the expected behavior: the text of the denial says whom to ask
+5. A change of a preset applies to every project from the first push after the config is delivered. Check it the same way: `validate --config` on a few files of projects before the delivery, `selftest` after
+
+A rule with `match: all` does not let a Developer push even a proposal branch with a changed protected file. For files GitLab reads only from the default branch `match: default` is enough ([pathpolicy.en.md](pathpolicy.en.md#where-a-file-takes-effect)).
+
+Hygiene after the rollout: old branches created before the policies stay as they are. Their merge into `main` is checked by the rules, and a branch where somebody other than the owner changed a protected file gets a denial. Delete the branches nobody plans to merge, and rebase the needed ones onto a fresh `main`: then they hold only the own changes of their author.
 
 Only an organizational measure closes the bypasses through project settings fully: the Maintainer role only for the owners of protected paths. Where this is not possible, `settings-check` is required ([threat-model.en.md](threat-model.en.md#bypasses-through-project-settings)).

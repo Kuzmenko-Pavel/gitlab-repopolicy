@@ -18,14 +18,15 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const oneRule = `  - name: prod
-    tags: 'v.*'
+const oneRule = `  prod:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [lead]
 `
 
 func parseErr(t *testing.T, data []byte) string {
 	t.Helper()
-	_, err := parsePolicy(data)
+	_, err := parsePolicy(data, nil)
 	require.Error(t, err)
 	return err.Error()
 }
@@ -34,34 +35,38 @@ func TestParse(t *testing.T) {
 	lead := newSSH(t, "ed25519").line
 	p := mustParse(t, policyYAML(oneRule, map[string]string{"lead": lead}))
 	require.Len(t, p.rules, 1)
-	assert.True(t, p.rules[0].tags.MatchString("v1"))
-	assert.False(t, p.rules[0].tags.MatchString("xv1"), "the pattern is anchored at both ends")
-	assert.False(t, p.rules[0].tags.MatchString("v1\n"))
+	assert.True(t, p.rules[0].match.Matches("v1"))
+	assert.False(t, p.rules[0].match.Matches("xv1"), "the regex is anchored as written")
+	assert.Equal(t, []string{"file"}, p.rules[0].source)
 
-	alt := `  - name: prod
-    tags: 'a|b'
-    signers: [lead]
-`
-	p = mustParse(t, policyYAML(alt, map[string]string{"lead": lead}))
-	assert.False(t, p.rules[0].tags.MatchString("ab"), "alternatives are grouped before anchoring")
+	free := mustParse(t, policyYAML("  prod:\n    match: ['/v\\d+/']\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}))
+	assert.True(t, free.rules[0].match.Matches("build-v2"), "a regex without anchors is found anywhere, like =~ in GitLab CI")
+	all := mustParse(t, policyYAML("  any:\n    match: all\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}))
+	assert.Len(t, all.matching("anything"), 1)
 
+	rule := func(fields string) []byte {
+		return policyYAML("  prod:\n    match: ['/^v/']\n    message: m\n"+fields, map[string]string{"lead": lead})
+	}
 	cases := map[string]struct {
 		data []byte
 		want string
 	}{
 		"version":         {[]byte("version: 2\nkeys:\n  lead: " + lead + "\n"), "version: 2"},
-		"no keys":         {[]byte("version: 1\nrules: []\n"), "keys: 1 to 32"},
+		"rules no keys":   {[]byte("version: 1\nrules:\n  prod: {match: all, signers: [lead], message: m}\n"), `signers: "lead" is not a label in keys of the file`},
 		"unknown field":   {[]byte("version: 1\nkey:\n  lead: " + lead + "\n"), "key"},
-		"rule name":       {policyYAML("  - name: Prod\n    tags: v.*\n    signers: [lead]\n", map[string]string{"lead": lead}), "name"},
-		"duplicate rule":  {policyYAML(oneRule+oneRule, map[string]string{"lead": lead}), "used twice"},
-		"empty tags":      {policyYAML("  - name: prod\n    tags: ''\n    signers: [lead]\n", map[string]string{"lead": lead}), "tags"},
-		"bad regex":       {policyYAML("  - name: prod\n    tags: 'v(\\d'\n    signers: [lead]\n", map[string]string{"lead": lead}), "tags"},
-		"backreference":   {policyYAML("  - name: prod\n    tags: '(a)\\1'\n    signers: [lead]\n", map[string]string{"lead": lead}), "tags"},
-		"no signers":      {policyYAML("  - name: prod\n    tags: v.*\n    signers: []\n", map[string]string{"lead": lead}), "signers"},
-		"unknown signer":  {policyYAML("  - name: prod\n    tags: v.*\n    signers: [nobody]\n", map[string]string{"lead": lead}), `"nobody" is not a label`},
-		"signer twice":    {policyYAML("  - name: prod\n    tags: v.*\n    signers: [lead, lead]\n", map[string]string{"lead": lead}), "twice"},
+		"rule name":       {policyYAML("  Prod:\n    match: all\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), `rule name "Prod" must match`},
+		"tags are gone":   {rule("    signers: [lead]\n    tags: v.*\n"), `unknown field "tags"`},
+		"no match":        {policyYAML("  prod:\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), "match: required"},
+		"default":         {policyYAML("  prod:\n    match: default\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), "default is not allowed here"},
+		"bad regex":       {policyYAML("  prod:\n    match: ['/v(\\d/']\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), "not a valid RE2 regex"},
+		"backreference":   {policyYAML("  prod:\n    match: ['/(a)\\1/']\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), "not a valid RE2 regex"},
+		"glob":            {policyYAML("  prod:\n    match: ['v*']\n    signers: [lead]\n    message: m\n", map[string]string{"lead": lead}), "a glob is not supported"},
+		"no signers":      {rule("    signers: []\n"), "signers"},
+		"unknown signer":  {rule("    signers: [nobody]\n"), `"nobody" is not a label in keys of the file`},
+		"signer twice":    {rule("    signers: [lead, lead]\n"), "twice"},
+		"no message":      {policyYAML("  prod:\n    match: all\n    signers: [lead]\n", map[string]string{"lead": lead}), "message: required"},
 		"label":           {policyYAML("", map[string]string{"lead lead": lead}), "label"},
-		"message":         {policyYAML("  - name: prod\n    tags: v.*\n    signers: [lead]\n    message: "+strings.Repeat("я", 1001)+"\n", map[string]string{"lead": lead}), "message: 1001"},
+		"message":         {policyYAML("  prod:\n    match: all\n    signers: [lead]\n    message: "+strings.Repeat("я", 1001)+"\n", map[string]string{"lead": lead}), "message: 1001"},
 		"not a key":       {policyYAML(oneRule, map[string]string{"lead": "hello"}), "not an OpenPGP"},
 		"key not string":  {[]byte("version: 1\nkeys:\n  lead: [a]\n"), "keys.lead: expected a string, got a list"},
 		"duplicate label": {[]byte("version: 1\nkeys:\n  lead: " + lead + "\n  lead: " + lead + "\n"), "lead"},
@@ -71,6 +76,25 @@ func TestParse(t *testing.T) {
 			assert.Contains(t, parseErr(t, c.data), c.want)
 		})
 	}
+	_, err := parsePolicy([]byte("version: 1\n"), nil)
+	assert.NoError(t, err, "a file without rules needs no keys")
+}
+
+func TestParse_Presets(t *testing.T) {
+	lead := newSSH(t, "ed25519").line
+	s := NewSettings(map[string]any{"org-releases": map[string]any{"rules": map[string]any{
+		"prod": map[string]any{"match": []any{`/^v\d+\.\d+\.\d+$/`}, "signers": []any{"release-lead"}, "protected": true, "message": "Prod releases."},
+	}}})
+	p, err := parsePolicy([]byte("version: 1\nextends: org-releases\nkeys:\n  release-lead: "+lead+"\n"), s)
+	require.NoError(t, err, "signers of a preset refer to the keys of the file")
+	require.Len(t, p.rules, 1)
+	assert.Equal(t, []string{"preset:org-releases"}, p.rules[0].source)
+	_, err = parsePolicy([]byte("version: 1\nextends: org-releases\n"), s)
+	assert.ErrorContains(t, err, `rule prod: signers: "release-lead" is not a label in keys of the file`)
+	_, err = parsePolicy([]byte("version: 1\nextends: org-other\n"), s)
+	assert.EqualError(t, err, `extends: preset "org-other" is not defined in the server config`, "a missing preset breaks the file")
+	assert.Equal(t, []string{"presets.tagpolicy.bad: rules: expected a mapping, got a number"},
+		New(NewSettings(map[string]any{"bad": map[string]any{"rules": 1}})).PresetErrors())
 }
 
 func TestParse_Limits(t *testing.T) {
@@ -85,18 +109,13 @@ func TestParse_Limits(t *testing.T) {
 	lead := map[string]string{"lead": newSSH(t, "ed25519").line}
 	var rules strings.Builder
 	for i := range maxRules + 1 {
-		fmt.Fprintf(&rules, "  - name: r%d\n    tags: 'v%d'\n    signers: [lead]\n", i, i)
+		fmt.Fprintf(&rules, "  r%d:\n    match: [v%d]\n    signers: [lead]\n    message: m\n", i, i)
 	}
 	assert.Contains(t, parseErr(t, policyYAML(rules.String(), lead)), "rules: 51 rules")
 
-	long := "  - name: prod\n    tags: '" + strings.Repeat("a", maxPatternBytes) + "'\n    signers: [lead]\n"
-	mustParse(t, policyYAML(long, lead))
-	long = "  - name: prod\n    tags: '" + strings.Repeat("a", maxPatternBytes+1) + "'\n    signers: [lead]\n"
-	assert.Contains(t, parseErr(t, policyYAML(long, lead)), "257 bytes")
-
 	big := append(policyYAML(oneRule, lead), "# "+strings.Repeat("x", maxPolicySize)+"\n"...)
 	assert.Contains(t, parseErr(t, big), "limit")
-	assert.Equal(t, 256<<10, New().MaxPolicySize())
+	assert.Equal(t, 256<<10, New(nil).MaxPolicySize())
 }
 
 func TestAcceptance_PrivateKey(t *testing.T) {
@@ -198,8 +217,8 @@ func TestAcceptance_DuplicateFingerprint(t *testing.T) {
 
 func TestAcceptance_SignersAndKeys(t *testing.T) {
 	lead, spare := newSSH(t, "ed25519"), newSSH(t, "ed25519")
-	assert.Contains(t, parseErr(t, policyYAML("  - name: prod\n    tags: v.*\n    signers: [nobody]\n", map[string]string{"lead": lead.line})),
-		"rule prod: signers: \"nobody\" is not a label in keys")
+	assert.Contains(t, parseErr(t, policyYAML("  prod:\n    match: ['/^(?:v.*)$/']\n    message: m\n    signers: [nobody]\n", map[string]string{"lead": lead.line})),
+		"rule prod: signers: \"nobody\" is not a label in keys of the file")
 
 	p := mustParse(t, policyYAML(oneRule, map[string]string{"lead": lead.line, "spare": spare.line}))
 	problems := p.ValidateVersion(nil, now)
@@ -212,14 +231,15 @@ func TestAcceptance_ExpiredKey(t *testing.T) {
 	expired := armorPublic(t, newPGP(t, pgpOptions{created: now.Add(-48 * time.Hour), lifetime: 24 * time.Hour}))
 	valid := armorPublic(t, newPGP(t, pgpOptions{}))
 	ssh1 := newSSH(t, "ed25519").line
-	rules := `  - name: prod
-    tags: 'v.*'
+	rules := `  prod:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [lead, old, dev]
 `
 	anchor := mustParse(t, policyYAML(rules, map[string]string{"lead": valid, "old": expired, "dev": ssh1}))
 
 	// The expired key was already there: a warning, the edit goes through.
-	edited := mustParse(t, policyYAML(rules+"    message: edited\n", map[string]string{"lead": valid, "old": expired, "dev": ssh1}))
+	edited := mustParse(t, policyYAML(strings.Replace(rules, "message: m", "message: edited", 1), map[string]string{"lead": valid, "old": expired, "dev": ssh1}))
 	problems := edited.ValidateVersion(anchor, now)
 	require.Len(t, problems, 1)
 	assert.True(t, problems[0].Warning)

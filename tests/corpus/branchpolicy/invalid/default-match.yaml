@@ -1,0 +1,6 @@
+version: 1
+rules:
+  r:
+    match: default
+    priority: 1
+    message: m

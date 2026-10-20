@@ -1,0 +1,10 @@
+version: 1
+rules:
+  all:
+    match: all
+    priority: 1
+    message: m
+  late:
+    match: [x]
+    priority: 2
+    message: m

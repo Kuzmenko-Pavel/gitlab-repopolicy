@@ -1,22 +1,28 @@
-# The platform team owns the CI configuration, the deploy logic and the
-# production values; everything else is authorized by GitLab as usual.
+# The platform team, alice and sre-lead, owns the CI configuration and the
+# deploy scripts in every branch and the production values in main and
+# release branches. Everything else is authorized by GitLab as usual.
 version: 1
 
-admins: [platform-lead, sre-lead]
+admins: [alice, sre-lead]
 
 rules:
-  - name: ci-config
+  ci-config:
+    match: all
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
-      - "Makefile"
       - "scripts/deploy/**"
-    allow: [platform-lead, sre-lead, ci-maintainer]
+    allow: [alice, sre-lead]
     message: >-
-      The platform team changes the CI/CD configuration and the deploy logic.
-      Ask platform-lead, sre-lead or ci-maintainer to make this change.
+      The platform team changes the CI/CD configuration and the deploy scripts.
+      Ask alice or sre-lead to push this change.
+    help:
+      contact: "#platform"
 
-  - name: prod-values
+  prod-values:
+    match: [main, '/^release\//']
     paths: ["helm/**/values-prod.yaml"]
-    refs: protected
-    allow: [platform-lead, release-manager]
+    allow: [alice, release-manager]
+    message: >-
+      Production values are changed in main and release branches by alice or
+      release-manager. Propose the change in your branch and ask them to merge it.

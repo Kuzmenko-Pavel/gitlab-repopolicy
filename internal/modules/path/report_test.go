@@ -13,26 +13,26 @@ import (
 const explainPolicy = `version: 1
 admins: [platform-lead, ghost]
 rules:
-  - name: ci
+  ci:
+    match: all
     paths: [".gitlab-ci.yml", "ci/**"]
     allow: [platform-lead, Alice]
-  - name: release-ci
-    paths: ["ci/release/**"]
-    allow: [sre-lead]
-    refs: protected
-  - name: main-only
+    message: m
+  main-only:
+    match: default
     paths: ["ci/**"]
     allow: [alice]
-    refs: default
-  - name: listed
+    message: m
+  listed:
+    match: ['/^release\//']
     paths: ["ci/**"]
     allow: [alice]
-    refs: [refs/heads/release/*]
+    message: m
 `
 
 func parsed(t *testing.T, text string) *Policy {
 	t.Helper()
-	p, err := New().Parse([]byte(text))
+	p, err := New(nil).Parse([]byte(text))
 	require.NoError(t, err)
 	return p.(*Policy)
 }
@@ -61,31 +61,33 @@ func TestExplainPath(t *testing.T) {
 	p := parsed(t, explainPolicy)
 	ctx := context.Background()
 	refs := &fakeRefs{class: module.ClassOther, status: ok}
+	file := []string{"file"}
 
 	got, st := p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/feature", "alice", refs)
 	require.True(t, st.IsConfirmed())
+	require.NotEmpty(t, got)
+	assert.Equal(t, module.FieldOrigin{Field: "allow", Layers: file}, got[0].Fields[2])
+	for i := range got {
+		got[i].Fields = nil
+	}
 	assert.Equal(t, []PathRule{
-		{Name: "ci", Refs: "all", Applies: true, Allow: []string{"platform-lead", "Alice"}, Allowed: true},
-		{Name: "release-ci", Refs: "protected", Applies: false, Allow: []string{"sre-lead"}},
-		{Name: "main-only", Refs: "default", Applies: false, Allow: []string{"alice"}, Allowed: true},
-		{Name: "listed", Refs: "refs/heads/release/*", Applies: false, Allow: []string{"alice"}, Allowed: true},
+		{Name: "ci", Match: "all", Applies: true, Allow: []string{"platform-lead", "Alice"}, Allowed: true, Source: file},
+		{Name: "main-only", Match: "default", Applies: false, Allow: []string{"alice"}, Allowed: true, Source: file},
+		{Name: "listed", Match: `[/^release\//]`, Applies: false, Allow: []string{"alice"}, Allowed: true, Source: file},
 	}, got)
 
 	got, st = p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/main", "alice", refs)
 	require.True(t, st.IsConfirmed())
-	assert.True(t, got[1].Applies, "the default branch is protected")
-	assert.True(t, got[2].Applies)
-	got, _ = p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/release/1", "alice", &fakeRefs{class: module.ClassProtected, status: ok})
-	assert.True(t, got[1].Applies)
-	assert.True(t, got[3].Applies)
+	assert.True(t, got[1].Applies, "default is the default branch")
+	got, _ = p.ExplainPath(ctx, "ci/release/deploy.yml", "refs/heads/release/1", "alice", refs)
+	assert.True(t, got[2].Applies, "a branch of the list")
+	got, _ = p.ExplainPath(ctx, "ci/x", "refs/tags/v1", "alice", refs)
+	assert.False(t, got[0].Applies, "PATHPOLICY does not check tags")
 
 	got, _ = p.ExplainPath(ctx, "README.md", "refs/heads/main", "alice", refs)
 	assert.Empty(t, got)
 	got, _ = p.ExplainPath(ctx, File, "refs/heads/main", "Platform-Lead", refs)
 	require.Len(t, got, 1)
-	assert.Equal(t, PathRule{Name: "admins of PATHPOLICY", Refs: "all", Applies: true,
-		Allow: []string{"platform-lead", "ghost"}, Allowed: true}, got[0])
-
-	_, st = p.ExplainPath(ctx, "ci/release/x", "refs/heads/feature", "alice", &fakeRefs{status: module.Unknown("api down")})
-	assert.False(t, st.IsConfirmed())
+	assert.Equal(t, PathRule{Name: "admins of PATHPOLICY", Match: "all", Applies: true,
+		Allow: []string{"platform-lead", "ghost"}, Allowed: true, Source: file}, got[0])
 }

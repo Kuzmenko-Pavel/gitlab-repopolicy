@@ -67,25 +67,15 @@ jq -c 'select(.decision == "deny") | {event, code, codes: [.violations[]?.code],
 
 ### Доставка і ротація логу
 
-Куди відправляти лог (Fluent Bit, Vector, journald, SIEM), вирішує інсталяція. Hook відкриває файл на кожен запис з `O_APPEND`, тому logrotate не потребує `copytruncate`. Пакет конфігурацію logrotate не ставить, приклад:
+Куди відправляти лог (Fluent Bit, Vector, journald, SIEM), вирішує інсталяція. Hook відкриває файл на кожен запис з `O_APPEND`, тому logrotate не потребує `copytruncate`.
 
-```text
-# /etc/logrotate.d/gitlab-repopolicy
-/var/log/gitlab-repopolicy/audit.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-}
-```
+Пакет ставить `/etc/logrotate.d/gitlab-repopolicy`: щоденна ротація, 30 файлів, стиснення. Це conffile, ваші правки переживають оновлення пакета. Шлях у файлі - `audit.file` за замовчуванням: якщо ви змінили `audit.file` у конфігу, змініть шлях і тут. Якщо лог забирає зовнішній агент зі своєю ротацією, видаліть цей файл або замініть своїм. Без пакета - приклад у [install.md](install.md#2-встановити-пакет).
 
-Новий файл створить hook від користувача git. Інші команди від root створюють відсутній файл з власником каталогу логу, тож hook не втратить права на запис.
+Наступний `audit.log` після ротації створить hook від користувача git, а команди від root створюють відсутній файл з власником каталогу логу, тож hook не втратить права на запис. Тому в конфігу logrotate стоїть `nocreate`.
 
 ## Recovery
 
-Recovery вмикається, коли в PATHPOLICY не залишилося жодного effective admin: усіх видалили з проєкту, заблокували або понизили нижче Maintainer. Тоді Owner проєкту (зокрема Owner батьківської групи) може змінити PATHPOLICY. Правила - [pathpolicy.md](pathpolicy.md#admins-перша-policy-і-recovery).
+Recovery вмикається, коли в PATHPOLICY не залишилося жодного effective admin: усіх видалили з проєкту, заблокували або понизили нижче Maintainer. Тоді Owner проєкту (зокрема Owner батьківської групи) може змінити PATHPOLICY. Правила - [pathpolicy.md](pathpolicy.md#8-recovery-коли-всі-admins-пішли).
 
 ```sh
 sudo gitlab-repopolicy admins --project group/project
@@ -138,18 +128,18 @@ sudo gitlab-repopolicy token rotate --before 30d
 
 Hook бачить лише зміни гілок і тегів. Налаштування проєкту змінюються в Settings, і Maintainer може обійти PATHPOLICY через них: перенести шлях CI-конфігурації в незахищений файл, зробити default гілку без policy, увімкнути push через `CI_JOB_TOKEN`. `settings-check` знаходить такі зміни.
 
-Для кожного проєкту з PATHPOLICY або BRANCHPOLICY, який бачить service account. Архівні проєкти й проєкти в особистих namespace пропускаються. Проєкт лише з BRANCHPOLICY отримує тільки перевірки `default_branch`, `access` і `protected_branches` за її правилами: решта стосується PATHPOLICY:
+Для кожного проєкту з файлами політик, який бачить service account. Архівні проєкти й проєкти в особистих namespace пропускаються. Проєкт без PATHPOLICY отримує тільки перевірки `default_branch`, `access`, `policy` і `protected_branches` за правилами BRANCHPOLICY: решта стосується PATHPOLICY:
 
 | Перевірка (`violations[].rule`) | Що вважається розбіжністю |
 | --- | --- |
 | `default_branch` | default branch не входить у список `default_branch` |
-| `protected_branches` | default branch не захищена (у звіті як `<branch> (the default branch)`, лише для проєктів з PATHPOLICY) або проєкт не захищає шаблон правила BRANCHPOLICY з `protected: true` (у звіті як `release/* (BRANCHPOLICY)`). Шаблон захищений, якщо його текст покриває protected branch проєкту: `release/*` покривають `release/*` і `*`, але не `release/v*`. Список гілок проєкту не вивантажується |
+| `protected_branches` | default branch не захищена (у звіті як `<branch> (the default branch)`, лише для проєктів з PATHPOLICY) або GitLab не захищає наявну гілку, чиє правило BRANCHPOLICY має `protected: true` (у звіті як `release/v1.4.0 (BRANCHPOLICY)`). Гілки проєкту вивантажуються через API |
 | `protected_tags` | шаблони тегів не захищені. Перевіряється лише в проєктах з TAGPOLICY у default branch і з увімкненим модулем |
 | `job_token_push` | дозвіл push через `CI_JOB_TOKEN` не такий, як очікується |
 | `ci_config_path` | CI-конфігурація в іншому проєкті, за URL або не покрита path-правилом PATHPOLICY |
 | `principals` | username з policy-файлів більше не активні користувачі GitLab |
 | `access` | роль service account нижча за Maintainer: налаштування не видно |
-| `policy` | policy-файл не розбирається |
+| `policy` | файл політики в default branch не розбирається, або пресета з його `extends` немає в серверному конфігу, або пресет зламаний |
 | `unavailable` | API не відповів для цього проєкту |
 
 Розбіжність - подія `settings_drift` на проєкт і код виходу 1. Проєкт з PATHPOLICY шукається і на поточній default branch, і на очікуваних: перемикання default на гілку без PATHPOLICY - розбіжність, а не "проєкт без policy".
@@ -256,14 +246,17 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 | усі зміни проєкту відхиляються: `PATHPOLICY in main is broken, so no changes are accepted` | невалідна PATHPOLICY у default branch | Owner виправляє PATHPOLICY (recovery) або break-glass |
 | теги відхиляються: `TAGPOLICY in main is broken, so no tag can be created or moved` | невалідна TAGPOLICY у default branch | виправити TAGPOLICY через merge |
 | новий тег відхиляється: `the tag must be protected, but the project does not protect it` | правило TAGPOLICY з `protected: true`, а тег не захищено в проєкті (`tag_not_protected`) | Maintainer додає шаблон тегу в Settings > Repository > Protected tags і пушить тег знову |
-| нова гілка відхиляється: `the name does not follow the branch standard` або `the branch must be protected, but the project does not protect it` | правило BRANCHPOLICY (`branch_name_violation`, `branch_not_protected`) | перейменувати гілку за `message` правила (`git branch -m`) або, для захисту, Maintainer додає `match` правила в Settings > Repository > Protected branches |
+| нова гілка відхиляється: `the name does not follow the branch standard` або `the branch must be protected, but the project does not protect it` | правило BRANCHPOLICY (`branch_name_violation`, `branch_not_protected`) | перейменувати гілку за `message` правила (`git branch -m`) або, для захисту, Maintainer захищає гілку в Settings > Repository > Protected branches |
+| тег відхиляється: `the tag points to a commit that is in no branch` | тег запушили без гілки, на якій лежить його коміт (`tag_not_on_branch`), у будь-якому груповому проєкті | `git push origin <гілка> <тег>` або `git push --follow-tags` |
+| попередження `COMMITPOLICY cannot be used` або `BRANCHPOLICY in main cannot be used` у багатьох проєктах | пресета з `extends` немає в конфігу ноди або він зламаний | `selftest` показує зламані пресети; доставте правильний конфіг на всі ноди |
+| відмови `PATHPOLICY in main is broken` або `TAGPOLICY in main is broken` після зміни конфігу | зник або зламався пресет, який бере файл | повернути пресет у конфіг: PATHPOLICY і TAGPOLICY без пресета вважаються зламаними |
 | merge через UI повільний або `could not check permissions` під піковим навантаженням | web-операції тримають Puma-worker, а hook звертається назад до Rails | `api_calls`, `duration_ms` в audit; `timeouts.http` |
 
 Якщо в конфігурації задано `help.contact`, у відмовах, де користувач нічого не може виправити сам, замість `your GitLab administrators` друкується цей контакт ([configuration.md](configuration.md#help)).
 
 ## Перевірити push без push
 
-`gitlab-repopolicy test` приймає рішення hook на локальному репозиторії без push - зручно, щоб відтворити відмову:
+`gitlab-repopolicy test` приймає рішення hook на локальному репозиторії без push - зручно, щоб відтворити відмову. Усі прапорці - [cli.md](cli.md#test):
 
 ```sh
 git clone --mirror https://gitlab.example.com/acme/app.git app.git

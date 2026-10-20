@@ -1,0 +1,9 @@
+# The tag rules of the organization come from the preset org-tags: it names
+# the signers by label. The keys behind the labels live in this file, so
+# replacing or revoking a key is a reviewed change of the project.
+version: 1
+extends: org-tags
+
+keys:
+  release-lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl release-lead
+  dev-lead: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6MuGxttDci5himWr8891GvUm9MjQljladoClrTOUiE dev-lead

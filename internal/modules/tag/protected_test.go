@@ -30,13 +30,14 @@ func (r *fakeRefs) ProtectedScope(context.Context) (module.Scope, module.Status)
 	return module.Scope{}, r.status
 }
 
-const protectedRules = `  - name: release
-    tags: 'v\d+\.\d+\.\d+'
+const protectedRules = `  release:
+    match: ['/^(?:v\d+\.\d+\.\d+)$/']
     signers: [release-lead]
     protected: true
     message: Protect v* in Settings > Repository > Protected tags.
-  - name: any
-    tags: 'v.*'
+  any:
+    match: ['/^(?:v.*)$/']
+    message: m
     signers: [release-lead]
 `
 

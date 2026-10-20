@@ -1,0 +1,4 @@
+version: 1
+admins: [a]
+rules:
+  r: {paths: [x], allow: [a], message: m}

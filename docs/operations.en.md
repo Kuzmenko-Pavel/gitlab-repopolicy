@@ -67,25 +67,15 @@ Also watch `decision` with `code: invalid_policy_update` in `mode: audit`: the h
 
 ### Shipping and rotating the log
 
-Where to ship the log (Fluent Bit, Vector, journald, SIEM) is up to the installation. The hook opens the file for every write with `O_APPEND`, so logrotate does not need `copytruncate`. The package does not install a logrotate config, an example:
+Where to ship the log (Fluent Bit, Vector, journald, SIEM) is up to the installation. The hook opens the file for every write with `O_APPEND`, so logrotate does not need `copytruncate`.
 
-```text
-# /etc/logrotate.d/gitlab-repopolicy
-/var/log/gitlab-repopolicy/audit.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-}
-```
+The package installs `/etc/logrotate.d/gitlab-repopolicy`: daily rotation, 30 files, compression. It is a conffile, your edits survive an upgrade of the package. The path in the file is the default `audit.file`: if you changed `audit.file` in the config, change the path here too. When an external agent with its own rotation collects the log, delete this file or replace it with yours. Without the package - an example in [install.en.md](install.en.md#2-install-the-package).
 
-The hook creates the new file as the git user. Other commands run as root create a missing file with the owner of the log directory, so the hook keeps its write access.
+The hook creates the next `audit.log` after a rotation as the git user, and the commands run as root create a missing file with the owner of the log directory, so the hook keeps its write access. That is why the logrotate config has `nocreate`.
 
 ## Recovery
 
-Recovery turns on when PATHPOLICY has no effective admin left: all were removed from the project, blocked or demoted below Maintainer. Then an Owner of the project (including an Owner of a parent group) may change PATHPOLICY. The rules - [pathpolicy.en.md](pathpolicy.en.md#admins-the-first-policy-and-recovery).
+Recovery turns on when PATHPOLICY has no effective admin left: all were removed from the project, blocked or demoted below Maintainer. Then an Owner of the project (including an Owner of a parent group) may change PATHPOLICY. The rules - [pathpolicy.en.md](pathpolicy.en.md#8-recovery-when-every-admin-is-gone).
 
 ```sh
 sudo gitlab-repopolicy admins --project group/project
@@ -138,18 +128,18 @@ The `gitlab-repopolicy-token-rotate.timer` timer runs the rotation daily ([insta
 
 The hook sees only changes of branches and tags. Project settings change in Settings, and a Maintainer can bypass PATHPOLICY through them: move the CI configuration path to an unprotected file, make a branch without the policy the default, turn on push with `CI_JOB_TOKEN`. `settings-check` finds such changes.
 
-For every project with PATHPOLICY or BRANCHPOLICY that the service account sees. Archived projects and projects in personal namespaces are skipped. A project with only BRANCHPOLICY gets only the checks `default_branch`, `access` and `protected_branches` by its rules: the rest is about PATHPOLICY:
+For every project with policy files that the service account sees. Archived projects and projects in personal namespaces are skipped. A project without PATHPOLICY gets only the checks `default_branch`, `access`, `policy` and `protected_branches` by the rules of BRANCHPOLICY: the rest is about PATHPOLICY:
 
 | Check (`violations[].rule`) | What counts as a difference |
 | --- | --- |
 | `default_branch` | the default branch is not in the list `default_branch` |
-| `protected_branches` | the default branch is not protected (reported as `<branch> (the default branch)`, only for projects with PATHPOLICY), or the project does not protect a pattern of a BRANCHPOLICY rule with `protected: true` (reported as `release/* (BRANCHPOLICY)`). A pattern is protected when a protected branch of the project covers its text: `release/*` is covered by `release/*` and `*`, not by `release/v*`. The list of branches of the project is not loaded |
+| `protected_branches` | the default branch is not protected (reported as `<branch> (the default branch)`, only for projects with PATHPOLICY), or GitLab does not protect an existing branch whose BRANCHPOLICY rule has `protected: true` (reported as `release/v1.4.0 (BRANCHPOLICY)`). The branches of the project are loaded through the API |
 | `protected_tags` | the tag patterns are not protected. Checked only in projects with TAGPOLICY on the default branch and with the module enabled |
 | `job_token_push` | the permission to push with `CI_JOB_TOKEN` is not the expected one |
 | `ci_config_path` | the CI configuration is in another project, at a URL or not covered by a PATHPOLICY path rule |
 | `principals` | usernames from the policy files are no longer active GitLab users |
 | `access` | the role of the service account is below Maintainer: the settings are not visible |
-| `policy` | a policy file cannot be parsed |
+| `policy` | a policy file of the default branch cannot be parsed, or the preset of its `extends` is not in the server config, or the preset is broken |
 | `unavailable` | the API did not answer for this project |
 
 A difference is a `settings_drift` event per project and exit code 1. A project with PATHPOLICY is looked up both on the current default branch and on the expected ones: switching the default to a branch without PATHPOLICY is a difference, not "a project without a policy".
@@ -256,14 +246,17 @@ Every release checks that the previous minor version accepts every valid PATHPOL
 | every change of a project is denied: `PATHPOLICY in main is broken, so no changes are accepted` | an invalid PATHPOLICY in the default branch | an Owner fixes PATHPOLICY (recovery) or break-glass |
 | tags are denied: `TAGPOLICY in main is broken, so no tag can be created or moved` | an invalid TAGPOLICY in the default branch | fix TAGPOLICY through a merge |
 | a new tag is denied: `the tag must be protected, but the project does not protect it` | a TAGPOLICY rule with `protected: true`, and the tag is not protected in the project (`tag_not_protected`) | a Maintainer adds the tag pattern in Settings > Repository > Protected tags and pushes the tag again |
-| a new branch is denied: `the name does not follow the branch standard` or `the branch must be protected, but the project does not protect it` | a BRANCHPOLICY rule (`branch_name_violation`, `branch_not_protected`) | rename the branch by the `message` of the rule (`git branch -m`) or, for protection, a Maintainer adds the `match` of the rule in Settings > Repository > Protected branches |
+| a new branch is denied: `the name does not follow the branch standard` or `the branch must be protected, but the project does not protect it` | a BRANCHPOLICY rule (`branch_name_violation`, `branch_not_protected`) | rename the branch by the `message` of the rule (`git branch -m`) or, for protection, a Maintainer protects the branch in Settings > Repository > Protected branches |
+| a tag is denied: `the tag points to a commit that is in no branch` | the tag was pushed without a branch that holds its commit (`tag_not_on_branch`), in any group project | `git push origin <branch> <tag>` or `git push --follow-tags` |
+| the warning `COMMITPOLICY cannot be used` or `BRANCHPOLICY in main cannot be used` in many projects | the preset of `extends` is missing from the config of the node or broken | `selftest` shows broken presets; deliver the right config to every node |
+| denials `PATHPOLICY in main is broken` or `TAGPOLICY in main is broken` after a change of the config | a preset that the file takes is gone or broken | bring the preset back into the config: PATHPOLICY and TAGPOLICY without their preset count as broken |
 | a merge in the UI is slow or `could not check permissions` under peak load | web operations hold a Puma worker while the hook calls back into Rails | `api_calls`, `duration_ms` in audit; `timeouts.http` |
 
 If `help.contact` is set in the config, denials the user cannot fix alone print this contact instead of `your GitLab administrators` ([configuration.en.md](configuration.en.md#help)).
 
 ## Check a push without pushing
 
-`gitlab-repopolicy test` makes the hook decision on a local repository without a push, which helps to reproduce a denial:
+`gitlab-repopolicy test` makes the hook decision on a local repository without a push, which helps to reproduce a denial. All flags - [cli.en.md](cli.en.md#test):
 
 ```sh
 git clone --mirror https://gitlab.example.com/acme/app.git app.git

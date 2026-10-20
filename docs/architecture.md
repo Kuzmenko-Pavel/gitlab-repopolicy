@@ -89,7 +89,7 @@ internal/gitlab           клієнт REST і GraphQL, бюджет викли�
 internal/report           повідомлення користувачу, GL-HOOK-ERR
 internal/audit            JSON-події
 internal/strictyaml       строгий розбір YAML: без anchors, невідомих ключів і дублікатів
-internal/spec, schema     опис формату policy-файлів, валідатор і JSON Schema з нього
+internal/spec, schema     формат policy-файлів, валідатор, злиття з пресетами, JSON Schema
 internal/buildinfo        версія і коміт збірки
 internal/install, settings, coverage, token, breakglass   допоміжні команди
 internal/testmodule       тестовий модуль для перевірок ядра, лише в тестах
@@ -109,7 +109,7 @@ internal/testmodule       тестовий модуль для перевіро�
 
 API доступний через unix socket Workhorse на тій самій ноді або через HTTPS, якщо Gitaly на окремій ноді. Один запит - до 3 s, на push - до 30 викликів. Кешу між викликами немає: відкликання прав діє одразу.
 
-Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/bmatcuk/doublestar/v4`, `github.com/dlclark/regexp2/v2` (лише `pattern` у COMMITPOLICY), `github.com/ProtonMail/go-crypto` і `golang.org/x/crypto` (лише підписи тегів). Повний список версій - `go.mod` і SBOM релізу. Збірка статична, `CGO_ENABLED=0`.
+Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/bmatcuk/doublestar/v4`, `github.com/ProtonMail/go-crypto` і `golang.org/x/crypto` (лише підписи тегів). Повний список версій - `go.mod` і SBOM релізу. Збірка статична, `CGO_ENABLED=0`.
 
 ## Потік даних
 
@@ -119,10 +119,11 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 2. **Якір.** Коміт, на який вказувала default branch до push. Усі policy-файли читаються лише звідси: push не може послабити правила для самого себе, а гілка зі слабшою policy не авторизує себе
 3. **Break-glass.** Чинний дозвіл для проєкту - дозволено з подією `breakglass`
 4. **Default branch.** Якщо в конфігурації задано `default_branch`, а default branch проєкту називається інакше, push відхиляється з `default_branch_not_allowed`. Модулі не запускаються: policy з такої гілки не читаються. Перевірка діє на всі проєкти інстансу, зокрема без policy
-5. **Приймання.** Кожен змінений policy-файл у будь-якій гілці перевіряється як нова версія, навіть якщо в якорі policy ще немає: невалідний новий файл відхиляється з `invalid_policy_update`
-6. **Без policy.** Якщо в якорі немає policy-файлів, модулі не запускаються. Push, який додає першу PATHPOLICY в default branch, проходить bootstrap-перевірку (Maintainer+)
-7. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY, TAGPOLICY і BRANCHPOLICY. Лише для гілок і тегів, які зачіпають правила: шляхи, нові й вхідні коміти. У default і protected гілках - різниця вмісту до і після push, в інших - нові коміти, яких ще немає в жодній гілці чи тегу (докладно - [pathpolicy.md](pathpolicy.md#де-діє-правило-refs)). API - лише якщо рішення від нього залежить
-8. **Рішення.** AND за модулями. Якщо проєкт у особистому namespace, відмова не застосовується: push дозволено без логу. За `mode: audit` рішення пишеться в audit з `"enforced": false`, а push проходить. Інакше одне повідомлення на push у stderr, одна проблема - один блок; audit-подія на кожне рішення з `receive_id` запуску. Події зміни policy (`policy_change`, `policy_bootstrap`, `policy_recovery`) пишуться, лише якщо push прийнято
+5. **Теги поза гілками.** Створений або переміщений тег має вказувати на коміт, який лежить у гілці після push, інакше відмова `tag_not_on_branch`. Тег, що не вказує на коміт, - `tag_object_invalid`. Один `rev-list` на тег, для всіх групових проєктів, зокрема без policy. Push без тегів цей крок не зачіпає
+6. **Приймання.** Кожен змінений policy-файл у будь-якій гілці перевіряється як нова версія, навіть якщо в якорі policy ще немає: невалідний новий файл відхиляється з `invalid_policy_update`
+7. **Без policy.** Якщо в якорі немає policy-файлів, модулі не запускаються. Push, який додає першу PATHPOLICY в default branch, проходить bootstrap-перевірку (Maintainer+)
+8. **Модулі.** PATHPOLICY першим, далі COMMITPOLICY, TAGPOLICY і BRANCHPOLICY. Правила кожного модуля - файл з якоря, злитий з пресетами серверного конфігу з його `extends`. Лише для гілок і тегів, які зачіпають правила. У default branch, захищених гілках і гілках зі списку `match` - кожен коміт, що входить у гілку, і різниця вмісту до і після push. В інших гілках - новий вміст файлів у нових комітах (докладно - [pathpolicy.md](pathpolicy.md#що-вважається-зміною)). Теги PATHPOLICY і COMMITPOLICY не перевіряють. API - лише якщо рішення від нього залежить
+9. **Рішення.** AND за модулями. Якщо проєкт у особистому namespace, відмова не застосовується: push дозволено без логу. За `mode: audit` рішення пишеться в audit з `"enforced": false`, а push проходить. Інакше одне повідомлення на push у stderr, одна проблема - один блок; audit-подія на кожне рішення з `receive_id` запуску. Події зміни policy (`policy_change`, `policy_bootstrap`, `policy_recovery`) пишуться, лише якщо push прийнято
 
 Час роботи hook залежить від ноди, розміру репозиторію і push. Орієнтир - близько 10 ms для проєкту без policy і 15-50 ms, коли policy є, але правила не зачеплено. Здебільшого це запуск процесів git. Звернення до API додає 50-300 ms і буває рідко. Виміряти на своєму обладнанні можна бенчмарками `tests/integration/bench_test.go` (`make test-load`).
 
@@ -134,9 +135,8 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 | path-правил / патернів у правилі | 100 / 50 | policy невалідна |
 | час одного виклику hook | 10 s | `limit_exceeded` |
 | викликів API на push | 30 | `limit_exceeded` |
-| нових комітів (PATHPOLICY) | 50 000 | `limit_exceeded` |
+| комітів, що входять у гілку (PATHPOLICY) | 50 000 | `limit_exceeded` |
 | вхідних комітів (COMMITPOLICY) | 10 000 | `limit_exceeded` за `mode` файлу |
-| `pattern` на повідомлення / на push | 100 ms / 2 s | `commit_check_timeout` |
 | вивід користувачу | 8 KiB | обрізається |
 
 ## Модель розгортання
@@ -163,8 +163,8 @@ Go-залежності бінарника - `go.yaml.in/yaml/v3`, `github.com/b
 ## Відомі обмеження
 
 - Hook бачить лише зміни гілок і тегів. Зміни налаштувань проєкту (шлях CI-конфігурації, default branch, protected branches, push через `CI_JOB_TOKEN`) Maintainer робить в обхід; `settings-check` лише виявляє їх за розкладом. Виняток - default branch: якщо задано `default_branch`, push у проєкт з іншою default branch відхиляється одразу
-- Merge у незахищену гілку не приносить нових комітів. PATHPOLICY його не перевіряє, COMMITPOLICY перевіряє лише сам merge-коміт (якщо не ввімкнено `except.merge_commits`), але не влиті коміти, які вже є в репозиторії. Merge у default branch перевіряють обидва модулі повністю, у protected гілки - PATHPOLICY за вмістом, COMMITPOLICY - за `refs` ruleset ([commitpolicy.md](commitpolicy.md#які-коміти-перевіряються))
-- Нова гілка або тег на старому коміті, який уже лежить у захищеній гілці, PATHPOLICY і COMMITPOLICY не перевіряються: вміст пройшов перевірку раніше
+- Merge у звичайну гілку під `match: all` приносить лише вміст, який уже є в репозиторії. PATHPOLICY перевіряє тільки новий вміст, COMMITPOLICY - лише сам merge-коміт (якщо не ввімкнено `except.merge_commit`), але не влиті коміти. Merge у default branch і гілки зі списку `match` перевіряють обидва модулі повністю ([commitpolicy.md](commitpolicy.md#які-коміти-перевіряються))
+- Нова гілка або тег на старому коміті, який уже лежить у гілці, PATHPOLICY і COMMITPOLICY не перевіряються: вміст пройшов перевірку раніше
 - Username може звільнитися після rename або видалення користувача і бути зайнятий іншою людиною. `settings-check` повідомляє про principals, яких більше немає
 - Токен service account не бачить заблокованого чи забаненого користувача. Особистий проєкт такого користувача обробляється як груповий (fail closed)
 - Web-операції (merge кнопкою) тримають Puma-worker, поки hook звертається назад до Rails. Під піковим навантаженням на одній ноді це може дати `authorization_backend_failure` через таймаут

@@ -1,0 +1,7 @@
+version: 1
+rules:
+  r:
+    match: [x]
+    priority: 1
+    pattern: x
+    message: m

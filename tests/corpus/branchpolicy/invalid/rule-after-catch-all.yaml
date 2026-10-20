@@ -1,6 +1,0 @@
-version: 1
-rules:
-  - name: all
-    match: "*"
-  - name: late
-    match: "x/*"

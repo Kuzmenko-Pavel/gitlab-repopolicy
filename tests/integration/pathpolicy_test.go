@@ -18,30 +18,39 @@ const (
 	pathPolicy = `version: 1
 admins: [alice]
 rules:
-  - name: ci
+  ci:
+    match: all
     paths: [ci.yml, "deploy/**"]
     allow: [alice]
-  - name: commit-policy
+    message: CI and deploy belong to alice.
+  commit-policy:
+    match: all
     paths: [COMMITPOLICY]
     allow: [dev-lead]
+    message: COMMITPOLICY belongs to dev-lead.
 `
 	pathRelease = `version: 1
 admins: [alice]
 rules:
-  - name: release-ci
+  release-ci:
+    match: ['/^release\//']
     paths: [ci.yml]
-    refs: ["refs/heads/release/*"]
     allow: [alice]
+    message: CI of release branches belongs to alice.
 `
 	pathBroad = `version: 1
 admins: [alice]
 rules:
-  - name: everything
+  everything:
+    match: all
     paths: ["**"]
     allow: [alice, dev-lead]
-  - name: commit-policy
+    message: m
+  commit-policy:
+    match: all
     paths: [COMMITPOLICY]
     allow: [dev-lead]
+    message: COMMITPOLICY belongs to dev-lead.
 `
 )
 
@@ -119,7 +128,7 @@ func TestDelegation_NonOwnerDenied(t *testing.T) {
 
 func TestDelegation_DelegateCannotChangePathPolicy(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
-	s.Commit("chore: delegate more", map[string]string{"PATHPOLICY": pathPolicy + "  - name: tags\n    paths: [TAGPOLICY]\n    allow: [dev-lead]\n"})
+	s.Commit("chore: delegate more", map[string]string{"PATHPOLICY": pathPolicy + "  tags:\n    match: all\n    paths: [TAGPOLICY]\n    allow: [dev-lead]\n    message: m\n"})
 	r := s.Push(devLead, "HEAD:refs/heads/feature")
 	assertDenied(t, r, "PATHPOLICY, branch feature: only PATHPOLICY admins may change PATHPOLICY", "admins: alice")
 	ev := Events(s.Audit(), "decision")
@@ -189,7 +198,7 @@ func TestBootstrap_NoEffectiveAdmin(t *testing.T) {
 }
 
 func TestPaths_NestedRulesAnd(t *testing.T) {
-	policy := "version: 1\nadmins: [alice]\nrules:\n  - {name: deploy, paths: [\"deploy/**\"], allow: [alice, bob]}\n  - {name: prod, paths: [\"deploy/prod/**\"], allow: [alice]}\n"
+	policy := "version: 1\nadmins: [alice]\nrules:\n  deploy: {match: all, paths: [\"deploy/**\"], allow: [alice, bob], message: m}\n  prod: {match: all, paths: [\"deploy/prod/**\"], allow: [alice], message: m}\n"
 	s, _ := pathStand(t, policy, nil)
 	s.Commit("feat: stage", map[string]string{"deploy/stage/x": "1"})
 	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
@@ -314,4 +323,253 @@ func TestLimits_NewCommits(t *testing.T) {
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "limit_exceeded", ev[len(ev)-1]["code"])
+}
+
+// changeAndRevert commits a change of ci.yml and its revert: the push has no
+// net diff of ci.yml.
+func changeAndRevert(s *Stand) {
+	s.Commit("ci: evil", map[string]string{"ci.yml": "evil"})
+	s.Commit("ci: revert", map[string]string{"ci.yml": "v1"})
+}
+
+// TestPathPolicy_ChangedAndReverted: a protected file changed and reverted in
+// one push is still a change of the default branch and of a branch of a
+// match list, also when the commits are in another branch first.
+func TestPathPolicy_ChangedAndReverted(t *testing.T) {
+	t.Run("main", func(t *testing.T) {
+		s, _ := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		changeAndRevert(s)
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`, "ci.yml")
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+	})
+	t.Run("branch of a match list", func(t *testing.T) {
+		s, base := pathStand(t, pathRelease, map[string]string{"ci.yml": "v1"})
+		s.Seed(base + ":refs/heads/release/1")
+		changeAndRevert(s)
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), `PATHPOLICY rule "release-ci", branch release/1`)
+	})
+	t.Run("fast-forward from another branch", func(t *testing.T) {
+		s, base := pathStand(t, pathRelease, map[string]string{"ci.yml": "v1"})
+		s.Seed(base + ":refs/heads/release/1")
+		changeAndRevert(s)
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature")) // the list of the rule does not have feature
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), `PATHPOLICY rule "release-ci", branch release/1`)
+	})
+	t.Run("merge into main", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.git(s.Work, "checkout", "-q", "-b", "feature")
+		changeAndRevert(s)
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "checkout", "-q", "-B", "main", base)
+		s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'main'", "feature")
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+	})
+	t.Run("rollback by a force push", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		assertDenied(t, s.Push(bob, "+"+base+":refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+	})
+}
+
+// TestLimits_DefaultBranch: more than 50 000 commits entering the default
+// branch fail closed, because every one of them is checked.
+func TestLimits_DefaultBranch(t *testing.T) {
+	s, base := pathStand(t, pathPolicy, nil)
+	s.fastImport(base, "refs/heads/many", 50_001)
+	assertDenied(t, s.Push(alice, "refs/heads/many:refs/heads/main"), "the check did not finish within the server limits")
+}
+
+// aliceBranch: alice pushes ci.yml v2 to feature, then main moves on without
+// ci.yml. The work clone is on feature.
+func aliceBranch(t *testing.T) (*Stand, string) {
+	t.Helper()
+	return aliceBranchWith(t, pathPolicy)
+}
+
+func aliceBranchWith(t *testing.T, policy string) (*Stand, string) {
+	t.Helper()
+	s, base := pathStand(t, policy, map[string]string{"ci.yml": "v1", "app.go": "a"})
+	s.git(s.Work, "checkout", "-q", "-b", "feature")
+	s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+	s.git(s.Work, "checkout", "-q", "main")
+	s.Commit("feat: app", map[string]string{"app.go": "b"})
+	assertAllowed(t, s.Push(bob, "HEAD:refs/heads/main"))
+	s.git(s.Work, "checkout", "-q", "feature")
+	return s, base
+}
+
+// TestPathPolicy_SharedBranch: in an ordinary branch a new commit changes a
+// protected file only when it brings content that neither the branch nor the
+// default branch had. Rewritten commits of an allowed person pass.
+func TestPathPolicy_SharedBranch(t *testing.T) {
+	t.Run("alice pushes a commit to the branch of bob", func(t *testing.T) {
+		s, _ := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.git(s.Work, "checkout", "-q", "-b", "feature")
+		s.Commit("feat: bob", map[string]string{"test.py": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.Commit("feat: bob again", map[string]string{"test.py": "y"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+	})
+	t.Run("bob merges the branch of alice into his branch", func(t *testing.T) {
+		s, base := aliceBranch(t)
+		s.git(s.Work, "checkout", "-q", "-b", "bob-feature", base)
+		s.Commit("feat: bob", map[string]string{"test.py": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/bob-feature"))
+		s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into bob-feature", "feature")
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/bob-feature"))
+	})
+	t.Run("bob rebases a commit of alice onto a fresh main", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "rebase", "-q", "main")
+		assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+	})
+	t.Run("bob rebases two edits of alice", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.Commit("ci: v3", map[string]string{"ci.yml": "v3"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "rebase", "-q", "main")
+		assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+	})
+	t.Run("bob squashes the branch", func(t *testing.T) {
+		s, base := aliceBranch(t)
+		s.Commit("feat: bob", map[string]string{"src.go": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "reset", "-q", "--soft", base)
+		s.git(s.Work, "commit", "-q", "-m", "feat: all of it")
+		assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+	})
+	t.Run("bob rewords a commit of alice", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "commit", "-q", "--amend", "-m", "ci: version 2")
+		assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+	})
+	t.Run("bob cherry-picks a CI commit of alice from main", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		s.git(s.Work, "checkout", "-q", "-b", "feature", base)
+		s.Commit("feat: bob", map[string]string{"src.go": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "cherry-pick", "main")
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+	})
+	t.Run("bob merges main into feature or rebases feature on main", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		s.git(s.Work, "checkout", "-q", "-b", "feature", base)
+		feature := s.Commit("feat: bob", map[string]string{"src.go": "x"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'main' into feature", "main")
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "reset", "-q", "--hard", feature)
+		s.git(s.Work, "rebase", "-q", "main")
+		assertAllowed(t, s.Push(bob, "+HEAD:refs/heads/feature"))
+	})
+	t.Run("bob pushes his own content", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		own := s.Commit("ci: bob", map[string]string{"ci.yml": "bob"})
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), `PATHPOLICY rule "ci", branch feature`,
+			"the content of ci.yml in commit "+own[:9]+" differs both from this branch and from main")
+	})
+	t.Run("conflicting rebase gives merged content", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "checkout", "-q", "main")
+		s.Commit("ci: v3", map[string]string{"ci.yml": "v3"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		// The result of resolving the conflict of the rebase of feature.
+		s.git(s.Work, "checkout", "-q", "-B", "feature", "main")
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2\nv3"})
+		assertDenied(t, s.Push(bob, "+HEAD:refs/heads/feature"), `PATHPOLICY rule "ci", branch feature`)
+	})
+	t.Run("bob pushes the rewritten history to a new branch", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "rebase", "-q", "main")
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature-2"), `PATHPOLICY rule "ci", branch feature-2`)
+	})
+	t.Run("bob changes the mode of the same content", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "update-index", "--chmod=+x", "ci.yml")
+		s.git(s.Work, "commit", "-q", "-m", "ci: executable")
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), `PATHPOLICY rule "ci", branch feature`)
+	})
+	t.Run("bob brings back v2 of alice from the branch history", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.Commit("ci: v3", map[string]string{"ci.yml": "v3"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.Commit("ci: back to v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/feature"))
+	})
+	t.Run("bob rebases a change of PATHPOLICY", func(t *testing.T) {
+		s, _ := pathStand(t, pathPolicy, map[string]string{"app.go": "a"})
+		s.git(s.Work, "checkout", "-q", "-b", "feature")
+		s.Commit("chore: policy", map[string]string{"PATHPOLICY": pathPolicy + "# reviewed\n"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
+		s.git(s.Work, "checkout", "-q", "main")
+		s.Commit("feat: app", map[string]string{"app.go": "b"})
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/main"))
+		s.git(s.Work, "checkout", "-q", "feature")
+		s.git(s.Work, "rebase", "-q", "main")
+		assertDenied(t, s.Push(bob, "+HEAD:refs/heads/feature"), "PATHPOLICY")
+	})
+	for _, squash := range []bool{false, true} {
+		name := "merge"
+		if squash {
+			name = "squash-merge"
+		}
+		t.Run(name+" into main", func(t *testing.T) {
+			s, _ := aliceBranch(t)
+			s.git(s.Work, "checkout", "-q", "main")
+			if squash {
+				s.git(s.Work, "merge", "-q", "--squash", "feature")
+				s.git(s.Work, "commit", "-q", "-m", "ci: v2")
+			} else {
+				s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'main'", "feature")
+			}
+			assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+			assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		})
+	}
+	t.Run("more commits than the limit", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.fastImport(s.Rev("HEAD"), "refs/heads/many", 50_001)
+		assertDenied(t, s.Push(bob, "refs/heads/many:refs/heads/feature"), "the check did not finish within the server limits")
+	})
+}
+
+// TestPathPolicy_AllAndList: match: all and a list of the same branches
+// differ in what a change is. A branch of a list counts every commit that
+// enters it, an ordinary branch only new content.
+func TestPathPolicy_AllAndList(t *testing.T) {
+	for _, tc := range []struct {
+		match string
+		allow bool
+	}{{"all", true}, {"['/./']", false}} {
+		t.Run(tc.match, func(t *testing.T) {
+			s, _ := aliceBranchWith(t, strings.Replace(pathPolicy, "    match: all\n    paths: [ci.yml", "    match: "+tc.match+"\n    paths: [ci.yml", 1))
+			s.git(s.Work, "rebase", "-q", "main")
+			r := s.Push(bob, "+HEAD:refs/heads/feature")
+			if tc.allow {
+				assertAllowed(t, r)
+			} else {
+				assertDenied(t, r, `PATHPOLICY rule "ci", branch feature`)
+			}
+		})
+	}
+}
+
+// TestPathPolicy_RecoveryNoAdmins: when no admin of PATHPOLICY is an active
+// user any more, an Owner of the project may change PATHPOLICY, nobody else.
+func TestPathPolicy_RecoveryNoAdmins(t *testing.T) {
+	gone := strings.Replace(pathPolicy, "admins: [alice]", "admins: [ghost]", 1)
+	s, _ := pathStand(t, gone, nil)
+	s.Commit("chore: new admins", map[string]string{"PATHPOLICY": pathPolicy})
+	assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), "only PATHPOLICY admins may change PATHPOLICY")
+	assertAllowed(t, s.Push(User{Name: "owner", GLID: "user-5"}, "HEAD:refs/heads/main"))
+	assert.Len(t, Events(s.Audit(), "policy_recovery"), 1)
 }

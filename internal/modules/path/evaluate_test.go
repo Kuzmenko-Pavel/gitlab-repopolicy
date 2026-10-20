@@ -13,8 +13,11 @@ import (
 )
 
 type fakeChanges struct {
-	paths map[string][]string // by ref
-	err   error
+	paths    map[string][]string // by ref
+	err      error
+	changes  []module.PathChange
+	known    map[string][]module.PathState
+	stateErr error
 }
 
 func (f *fakeChanges) CandidatePaths(_ context.Context, u module.RefUpdate) ([]string, error) {
@@ -34,6 +37,14 @@ func (*fakeChanges) EnteringCommits(context.Context, module.RefUpdate, module.Sc
 }
 func (*fakeChanges) NewCommits(context.Context, module.RefUpdate, int) ([]string, error) {
 	return nil, nil
+}
+
+func (f *fakeChanges) NewPathChanges(context.Context, module.RefUpdate) ([]module.PathChange, error) {
+	return f.changes, f.stateErr
+}
+
+func (f *fakeChanges) KnownStates(context.Context, module.RefUpdate, []string) (map[string][]module.PathState, error) {
+	return f.known, f.stateErr
 }
 
 type fakeRefs struct {
@@ -118,7 +129,7 @@ func newEnv(user string, paths map[string][]string) *env {
 
 func (e *env) evaluate(t *testing.T, text string) *module.Result {
 	t.Helper()
-	p, err := New().Parse([]byte(text))
+	p, err := New(nil).Parse([]byte(text))
 	require.NoError(t, err)
 	res, err := p.Evaluate(context.Background(), e.in)
 	require.NoError(t, err)
@@ -162,7 +173,7 @@ func TestEvaluate_UnmatchedPathAllowed(t *testing.T) {
 }
 
 func TestEvaluate_BotByUsername(t *testing.T) {
-	policy := "version: 1\nadmins: [a]\nrules:\n  - {name: r, paths: [deploy/**], allow: [project_1_bot_e42782]}\n"
+	policy := "version: 1\nadmins: [a]\nrules:\n  r: {match: all, paths: [deploy/**], allow: [project_1_bot_e42782], message: m}\n"
 	e := newEnv("project_1_bot_e42782", map[string][]string{"refs/heads/main": {"deploy/x"}})
 	assert.Equal(t, module.Allow, e.evaluate(t, policy).Decision)
 }
@@ -171,8 +182,8 @@ func TestMatch_NestedRulesAnd(t *testing.T) {
 	policy := `version: 1
 admins: [a]
 rules:
-  - {name: helm, paths: ["helm/**"], allow: [alice, bob]}
-  - {name: prod, paths: ["helm/**/values-prod.yaml"], allow: [bob]}
+  helm: {match: all, paths: ["helm/**"], allow: [alice, bob], message: m}
+  prod: {match: all, paths: ["helm/**/values-prod.yaml"], allow: [bob], message: m}
 `
 	e := newEnv("alice", map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}})
 	res := e.evaluate(t, policy)
@@ -195,28 +206,101 @@ func TestEvaluate_UnknownPrincipal(t *testing.T) {
 	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "unprotected paths do not need a person")
 }
 
-func TestEvaluate_ProtectedRefsRule(t *testing.T) {
+func TestEvaluate_MatchList(t *testing.T) {
 	e := newEnv("bob", map[string][]string{"refs/heads/feature": {"helm/x/values-prod.yaml"}})
-	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "refs: protected does not apply to a feature branch")
+	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "the list of prod-values does not have the feature branch")
 	e.in.Refs = &fakeRefs{class: module.ClassProtected, status: ok}
-	assert.Equal(t, []string{module.CodeProtectedPath}, codes(e.evaluate(t, basePolicy)))
+	assert.Equal(t, module.Allow, e.evaluate(t, basePolicy).Decision, "a list does not follow the protected branches of GitLab")
+
+	e = newEnv("bob", map[string][]string{"refs/heads/release/1.0": {"helm/x/values-prod.yaml"}})
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, []string{module.CodeProtectedPath}, codes(res), "a branch of the list, without asking GitLab")
+	assert.Equal(t, []module.Help{{Contact: "#release"}}, res.Violations[0].Help)
+	assert.Equal(t, []string{"file"}, res.Violations[0].Source)
+
+	e = newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
 	e.in.Refs = &fakeRefs{status: module.Unknown("503")}
-	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(e.evaluate(t, basePolicy)), "unknown class: fail closed")
+	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(e.evaluate(t, basePolicy)), "match all needs the class: fail closed")
 }
 
-func TestEvaluate_NotCommitTag(t *testing.T) {
-	e := newEnv("bob", map[string][]string{"refs/tags/v1": nil})
-	e.in.Changes = &fakeChanges{err: module.ErrNotCommit}
-	assert.Equal(t, []string{module.CodeTagObjectInvalid}, codes(e.evaluate(t, basePolicy)))
+func TestEvaluate_TagsNotChecked(t *testing.T) {
+	e := newEnv("bob", map[string][]string{"refs/tags/v1": {".gitlab-ci.yml"}})
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, module.Allow, res.Decision, "the commit of a tag is checked as part of its branch")
+	assert.False(t, res.Touched)
 }
 
 func TestEvaluate_LimitIsAnError(t *testing.T) {
 	e := newEnv("bob", map[string][]string{"refs/heads/main": nil})
 	e.in.Changes = &fakeChanges{err: module.ErrLimitExceeded}
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	_, err = p.Evaluate(context.Background(), e.in)
 	assert.ErrorIs(t, err, module.ErrLimitExceeded, "the core turns it into limit_exceeded, fail closed")
+}
+
+func TestEvaluate_KnownContentInOrdinaryBranch(t *testing.T) {
+	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
+	bob := module.PathState{Mode: "100644", OID: strings.Repeat("2", 40)}
+	commit := strings.Repeat("c", 40)
+	tests := []struct {
+		name    string
+		changes []module.PathChange
+		err     error
+		denied  []module.Item
+		hint    string
+	}{
+		{name: "rebased change of an allowed person",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: alice}}},
+		{name: "new content",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: bob}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}},
+			hint:    "the content of .gitlab-ci.yml in commit ccccccccc differs both from this branch and from main; new content is pushed by one of them"},
+		{name: "same content, other mode",
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: module.PathState{Mode: "100755", OID: alice.OID}}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}}},
+		{name: "path without a change of its own",
+			denied: []module.Item{{Name: ".gitlab-ci.yml"}}, hint: "ask one of them to push the change"},
+		{name: "over the commit limit", err: module.ErrLimitExceeded,
+			changes: []module.PathChange{{Commit: commit, Path: ".gitlab-ci.yml", State: alice}},
+			denied:  []module.Item{{Name: ".gitlab-ci.yml"}}, hint: "ask one of them to push the change"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
+			e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}},
+				changes: tt.changes, known: map[string][]module.PathState{".gitlab-ci.yml": {alice}}, stateErr: tt.err}
+			res := e.evaluate(t, basePolicy)
+			if tt.denied == nil {
+				assert.Equal(t, module.Allow, res.Decision)
+				return
+			}
+			require.Len(t, res.Violations, 1)
+			assert.Equal(t, tt.denied, res.Violations[0].Items)
+			if tt.hint != "" {
+				assert.Contains(t, res.Violations[0].Hint, tt.hint)
+			}
+		})
+	}
+}
+
+func TestEvaluate_KnownContentOnlyInOrdinaryBranches(t *testing.T) {
+	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
+	e := newEnv("bob", map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}})
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}},
+		changes: []module.PathChange{{Commit: strings.Repeat("c", 40), Path: "helm/app/values-prod.yaml", State: alice}},
+		known:   map[string][]module.PathState{"helm/app/values-prod.yaml": {alice}}}
+	res := e.evaluate(t, basePolicy)
+	assert.Equal(t, module.Deny, res.Decision, "a branch of a match list counts every change")
+}
+
+func TestEvaluate_KnownContentStateError(t *testing.T) {
+	e := newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
+	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}}, stateErr: errors.New("git failed")}
+	p, err := New(nil).Parse([]byte(basePolicy))
+	require.NoError(t, err)
+	_, err = p.Evaluate(context.Background(), e.in)
+	assert.ErrorContains(t, err, "git failed")
 }
 
 func policyChange(user string, access int) *env {
@@ -317,7 +401,7 @@ func TestRecovery_APIFailures(t *testing.T) {
 }
 
 func TestRecovery_InvalidAnchorOwner(t *testing.T) {
-	m := New()
+	m := New(nil)
 	e := newEnv("owner", map[string][]string{"refs/heads/main": {"PATHPOLICY"}})
 	e.authz.pusher = 50
 	res, err := m.EvaluateInvalid(context.Background(), e.in, errors.New("line 2: bad"))
@@ -346,7 +430,7 @@ func TestRecovery_InvalidAnchorOwner(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	m := New()
+	m := New(nil)
 	for _, tc := range []struct {
 		access int
 		want   module.Decision
@@ -381,7 +465,7 @@ func TestDeletionWarning(t *testing.T) {
 }
 
 func TestAcceptance_LockoutPrevented(t *testing.T) {
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	a := team()
 	a.known = map[string]bool{"platform-lead": true, "sre-lead": true, "ci-maintainer": true, "dev-lead": true, "release-manager": true}
@@ -404,7 +488,7 @@ func TestAcceptance_LockoutPrevented(t *testing.T) {
 }
 
 func TestAcceptance_AddedPrincipalsSingleGraphQL(t *testing.T) {
-	p, err := New().Parse([]byte(basePolicy))
+	p, err := New(nil).Parse([]byte(basePolicy))
 	require.NoError(t, err)
 	a := team()
 	a.known = map[string]bool{"platform-lead": true, "sre-lead": true}

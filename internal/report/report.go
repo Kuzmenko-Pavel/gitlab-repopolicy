@@ -30,13 +30,13 @@ var titles = map[string]string{
 	module.CodeAuthorizationBackend:    "could not check permissions: the GitLab API did not answer",
 	module.CodeUnknownPrincipal:        "only a person may change these files",
 	module.CodeCommitFormat:            "commit messages do not follow the format",
-	module.CodeCommitCheckTimeout:      "a rule could not check a commit message in time",
 	module.CodeTagNotSigned:            "the tag must be signed",
 	module.CodeTagObjectInvalid:        "the tag does not match its ref",
 	module.CodeTagSignerNotAllowed:     "this key may not sign these tags",
 	module.CodeBranchName:              "the name does not follow the branch standard",
 	module.CodeBranchNotProtected:      "the branch must be protected, but the project does not protect it",
 	module.CodeTagNotProtected:         "the tag must be protected, but the project does not protect it",
+	module.CodeTagNotOnBranch:          "the tag points to a commit that is in no branch",
 	module.CodeTagSignatureInvalid:     "the signature cannot be accepted",
 	module.CodeDefaultBranchNotAllowed: "the default branch of this project is not allowed",
 	module.CodeLimitExceeded:           "the check did not finish within the server limits",
@@ -203,7 +203,7 @@ func merge(sections []Section) []*block {
 // identity is what makes two violations the same problem: everything but the ref.
 func identity(v module.Violation) string {
 	var b strings.Builder
-	for _, f := range []string{v.Code, v.Rule, v.RuleKind, v.Title, v.Message, v.Hint, v.Summary} {
+	for _, f := range []string{v.Code, v.Rule, v.Title, v.Message, v.Hint, v.Summary} {
 		b.WriteString(f + "\x00")
 	}
 	for _, f := range v.Facts {
@@ -241,11 +241,7 @@ func (b *block) head() string {
 	if b.section != CoreSection {
 		name = b.section
 		if b.v.Rule != "" {
-			kind := b.v.RuleKind
-			if kind == "" {
-				kind = "rule"
-			}
-			name += fmt.Sprintf(" %s %q", kind, b.v.Rule)
+			name += fmt.Sprintf(" rule %q", b.v.Rule)
 		}
 		parts = append(parts, name)
 	}
@@ -263,7 +259,8 @@ func (b *block) title() string {
 }
 
 // render writes every block: the head and title, facts, items, the message
-// of the policy, the hint and, for a problem the pusher cannot fix, who helps.
+// of the policy, the hint, the help of the rule and, for a problem the pusher
+// cannot fix, the help of the server config.
 func render(blocks []*block, c Context) string {
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -277,6 +274,16 @@ func render(blocks []*block, c Context) string {
 		writeItems(&b, bl.v.Items)
 		lines(&b, bl.v.Message)
 		lines(&b, bl.v.Hint)
+		if !serverSide[bl.v.Code] {
+			for _, h := range bl.v.Help {
+				if h.Contact != "" {
+					lines(&b, "who can help with this rule: "+h.Contact)
+				}
+				if h.DocsURL != "" {
+					lines(&b, "docs of this rule: "+h.DocsURL)
+				}
+			}
+		}
 		if serverSide[bl.v.Code] {
 			contact := "your GitLab administrators"
 			if c.Contact != "" {

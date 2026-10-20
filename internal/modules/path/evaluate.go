@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/audit"
@@ -84,11 +85,13 @@ func (e *evaluation) scopeOf(ctx context.Context, ref string) (module.Scope, mod
 	return module.Scope{Class: class}, module.Confirmed()
 }
 
-// Evaluate checks every branch and tag update of the push.
+// Evaluate checks every branch update of the push. Tags are not checked: the
+// core accepts only tags on commits of branches, and those commits are
+// checked as part of the branches.
 func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := newEvaluation(p, in)
 	for _, u := range in.Updates {
-		if u.Kind() == module.Delete {
+		if u.Kind() == module.Delete || !u.IsBranch() {
 			continue
 		}
 		if err := e.update(ctx, u); err != nil {
@@ -106,10 +109,6 @@ func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 
 func (e *evaluation) update(ctx context.Context, u module.RefUpdate) error {
 	candidates, err := e.in.Changes.CandidatePaths(ctx, u)
-	if errors.Is(err, module.ErrNotCommit) {
-		e.notCommit(ctx, u)
-		return nil
-	}
 	if err != nil {
 		return err
 	}
@@ -155,39 +154,16 @@ func (e *evaluation) update(ctx context.Context, u module.RefUpdate) error {
 	return nil
 }
 
-// notCommit denies a tag whose object does not peel to a commit when a rule
-// covers the ref.
-func (e *evaluation) notCommit(ctx context.Context, u module.RefUpdate) {
-	for _, r := range e.p.rules {
-		_, applies, st := e.ruleScope(ctx, r, u)
-		if !st.IsConfirmed() {
-			e.unknown(st, r.name, u.Ref)
-			return
-		}
-		if applies {
-			e.deny(notCommitTag(r.name, u.Ref))
-			return
-		}
-	}
-}
-
-func notCommitTag(rule, ref string) module.Violation {
-	name := strings.TrimPrefix(ref, "refs/tags/")
-	return module.Violation{Code: module.CodeTagObjectInvalid, Rule: rule, Ref: ref,
-		Title:   "the tag does not point to a commit, so its files cannot be checked",
-		Hint:    fmt.Sprintf("tag a commit: git tag -s %s <commit>", name),
-		Summary: fmt.Sprintf("tag %s does not point to a commit, so its files cannot be checked", name)}
-}
-
-// ruleScope returns the scope of a rule for the ref and whether the rule applies to it.
+// ruleScope returns the scope of a rule for the branch and whether the rule
+// applies to it. A branch of a match list is checked like a protected branch.
 func (e *evaluation) ruleScope(ctx context.Context, r *rule, u module.RefUpdate) (module.Scope, bool, module.Status) {
-	switch r.refs.Kind {
-	case module.RefsList:
-		if !r.refs.MatchList(u.Ref) {
+	switch {
+	case r.match.IsList():
+		if !r.protects(u.Ref) {
 			return module.Scope{}, false, module.Confirmed()
 		}
-		return module.Scope{Class: module.ClassProtected, Key: "pathpolicy/" + r.name, Protected: r.refs.MatchList}, true, module.Confirmed()
-	case module.RefsDefault:
+		return module.Scope{Class: module.ClassProtected, Key: "pathpolicy/" + r.name, Protected: r.protects}, true, module.Confirmed()
+	case r.match.Default:
 		if u.Ref != e.in.Refs.Default() {
 			return module.Scope{}, false, module.Confirmed()
 		}
@@ -197,10 +173,13 @@ func (e *evaluation) ruleScope(ctx context.Context, r *rule, u module.RefUpdate)
 	if !st.IsConfirmed() {
 		return module.Scope{}, false, st
 	}
-	if r.refs.Kind == module.RefsProtected && scope.Class == module.ClassOther {
-		return module.Scope{}, false, module.Confirmed()
-	}
 	return scope, true, module.Confirmed()
+}
+
+// protects reports whether a branch is in the match list of the rule.
+func (r *rule) protects(ref string) bool {
+	name, ok := strings.CutPrefix(ref, "refs/heads/")
+	return ok && r.match.Matches(name)
 }
 
 // rule checks one touched rule on one ref.
@@ -229,6 +208,20 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 		return nil
 	}
 	e.res.Touched = true
+	hint := r.advice()
+	if scope.Class == module.ClassOther {
+		var why string
+		var err error
+		if hit, names, why, err = e.newContent(ctx, u, hit, names); err != nil {
+			return err
+		}
+		if len(hit) == 0 {
+			return nil
+		}
+		if why != "" {
+			hint = why
+		}
+	}
 	person, st := e.in.Principals.Person(ctx)
 	switch {
 	case !st.IsConfirmed():
@@ -238,23 +231,78 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 			Facts:   []string{e.notAPerson(), "may change them: " + strings.Join(r.allow, ", ")},
 			Hint:    "push with your own SSH key or HTTPS, or with a project access token whose bot user is in the rule",
 			Summary: fmt.Sprintf("%s: only people listed in PATHPOLICY rule %s may change it", filesText(names), r.name),
-			Reason:  "principal is not a person: " + e.in.Principal.GLID})
+			Reason:  "principal is not a person: " + e.in.Principal.GLID, Help: r.helpOf(), Source: r.source})
 		e.res.Events = append(e.res.Events, audit.Event{Event: audit.EventUnknownPrincipal, Ref: u.Ref, OldRev: u.Old, NewRev: u.New,
-			Violations: []audit.Violation{{Rule: r.name, Paths: names}}})
+			Violations: []audit.Violation{{Rule: r.name, Paths: names, Source: r.source}}})
 	case !r.allows(person.Username):
 		e.deny(module.Violation{Code: module.CodeProtectedPath, Rule: r.name, Ref: u.Ref, Items: hit,
 			Facts:   []string{"may change them: " + strings.Join(r.allow, ", ")},
-			Message: r.message, Hint: r.advice(),
+			Message: r.message, Hint: hint,
 			Summary: fmt.Sprintf("you may not change %s (PATHPOLICY rule %s; may change: %s)", filesText(names), r.name, strings.Join(r.allow, ", ")),
-			Reason:  "not in allow: " + person.Username})
+			Reason:  "not in allow: " + person.Username, Help: r.helpOf(), Source: r.source})
 	}
 	return nil
+}
+
+// short is the abbreviated commit SHA of a hint.
+func short(oid string) string { return oid[:min(len(oid), 9)] }
+
+// newContent keeps the paths of a rule that a new commit of an ordinary
+// branch leaves in a state the branch and the default branch never had: a
+// rebase, squash or cherry-pick of a change of an allowed person is not a
+// change. PATHPOLICY itself is never exempt. Above the commit limit nothing
+// is exempt, and the paths stay denied.
+// The hint, empty when there is no such commit to name, says which commit
+// brings the new content.
+func (e *evaluation) newContent(ctx context.Context, u module.RefUpdate, hit []module.Item, names []string) ([]module.Item, []string, string, error) {
+	changes, err := e.in.Changes.NewPathChanges(ctx, u)
+	if errors.Is(err, module.ErrLimitExceeded) {
+		return hit, names, "", nil
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+	known, err := e.in.Changes.KnownStates(ctx, u, names)
+	if errors.Is(err, module.ErrLimitExceeded) {
+		return hit, names, "", nil
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+	// first is the first commit that brings a new state of a path; a path
+	// without a change of its own stays denied.
+	first := map[string]string{}
+	changed := map[string]bool{}
+	for _, c := range changes {
+		changed[c.Path] = true
+		if _, ok := first[c.Path]; !ok && !slices.Contains(known[c.Path], c.State) {
+			first[c.Path] = c.Commit
+		}
+	}
+	var keptHit []module.Item
+	var kept []string
+	for i, p := range names {
+		if _, ok := first[p]; ok || !changed[p] || isPolicyPath(p) {
+			keptHit = append(keptHit, hit[i])
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, nil, "", nil
+	}
+	for _, p := range kept {
+		if commit, ok := first[p]; ok {
+			return keptHit, kept, fmt.Sprintf("the content of %s in commit %s differs both from this branch and from %s; new content is pushed by one of them",
+				p, short(commit), strings.TrimPrefix(e.in.Refs.Default(), "refs/heads/")), nil
+		}
+	}
+	return keptHit, kept, "", nil
 }
 
 // advice is what to do about a denied change of the paths: a rule for every
 // branch also stops a merge request from the branch.
 func (r *rule) advice() string {
-	if r.refs.Kind == module.RefsAll {
+	if r.match.All {
 		return "this rule applies to every branch: ask one of them to push the change"
 	}
 	return "ask one of them to make the change, or to merge it from your branch"

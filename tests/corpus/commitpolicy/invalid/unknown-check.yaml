@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    parser: conventional
+    checks:
+      typo-enum: { level: error, value: [feat] }
+    message: m

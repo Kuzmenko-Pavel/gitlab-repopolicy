@@ -1,5 +1,0 @@
-version: 1
-rulesets:
-  - name: r
-    rules:
-      pattern: { level: error, value: "feat: .+", examples: { valid: ["fix: x"] } }

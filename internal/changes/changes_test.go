@@ -161,7 +161,50 @@ func TestPaths_ForcePushRollback(t *testing.T) {
 	entering, err := s.EnteringCommits(ctx, u, def, 10)
 	require.NoError(t, err)
 	assert.Empty(t, entering)
-	assert.Equal(t, 2, c.revLists)
+	assert.Equal(t, 3, c.revLists, "the entering commits of Paths, then the views of the test with their own limit")
+}
+
+// TestPaths_ChangedAndRevertedInOnePush: a commit that changes a file and a
+// commit that reverts it leave no net diff, but the default branch and a
+// protected branch still count the change, and so do the candidates of a
+// branch that takes both commits from another branch.
+func TestPaths_ChangedAndRevertedInOnePush(t *testing.T) {
+	f := newFixture(t)
+	base := f.commit("base", map[string]string{"ci.yml": "v1", "app.go": "a"})
+	f.commit("evil", map[string]string{"ci.yml": "evil"})
+	back := f.commit("revert", map[string]string{"ci.yml": "v1"})
+	f.publish(base+":refs/heads/main", base+":refs/heads/release/1")
+	f.stage(back)
+	s, _ := f.set("refs/heads/main")
+	for _, tc := range []struct {
+		ref   string
+		scope module.Scope
+	}{{"refs/heads/main", def}, {"refs/heads/release/1", module.Scope{Class: module.ClassProtected, Key: "gitlab"}}} {
+		u := update(base, back, tc.ref)
+		paths, err := s.Paths(ctx, u, tc.scope)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ci.yml"}, paths, tc.ref)
+		candidates, err := s.CandidatePaths(ctx, u)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ci.yml"}, candidates, "the candidates are a superset of Paths: %s", tc.ref)
+	}
+
+	// Both commits are in another branch first: no new commits, still a candidate.
+	f.publish(back + ":refs/heads/feature")
+	s, _ = f.set("refs/heads/main")
+	u := update(base, back, "refs/heads/release/1")
+	commits, err := s.NewCommits(ctx, u, 10)
+	require.NoError(t, err)
+	assert.Empty(t, commits)
+	candidates, err := s.CandidatePaths(ctx, u)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ci.yml"}, candidates)
+	paths, err := s.Paths(ctx, u, module.Scope{Class: module.ClassProtected, Key: "gitlab"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ci.yml"}, paths)
+	paths, err = s.Paths(ctx, update(base, back, "refs/heads/feature2"), other)
+	require.NoError(t, err)
+	assert.Empty(t, paths, "an ordinary branch checks only new commits")
 }
 
 func TestPaths_RebaseOnMainOnlyOwnChanges(t *testing.T) {
@@ -328,7 +371,7 @@ func TestMemoised(t *testing.T) {
 		_, err = s.Paths(ctx, u, other)
 		require.NoError(t, err)
 	}
-	assert.Equal(t, 1, c.revLists, "one rev-list per ref and view")
+	assert.Equal(t, 2, c.revLists, "one rev-list per ref and view: old..new of the candidates, then the new commits")
 }
 
 // fixtureGit is the git of the fixtures: GIT_BIN when it is a path. exec looks
@@ -365,4 +408,81 @@ func TestEnteringCommits_FirstParent(t *testing.T) {
 	paths, err := s.Paths(ctx, update(zero, merge, "refs/heads/copy"), module.Scope{Class: module.ClassProtected, Key: "x", FirstParent: true})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"b"}, paths, "paths ignore FirstParent")
+}
+
+func (f *fixture) state(rev, path string) module.PathState {
+	f.t.Helper()
+	return module.PathState{Mode: "100644", OID: f.git(f.work, "rev-parse", rev+":"+path)}
+}
+
+func TestKnownStates_Rebase(t *testing.T) {
+	f := newFixture(t)
+	base := f.commit("base", map[string]string{"ci.yml": "v1", "app.go": "a"})
+	f.git(f.work, "checkout", "-q", "-b", "feature")
+	alice := f.commit("alice", map[string]string{"ci.yml": "v2"})
+	f.git(f.work, "checkout", "-q", "main")
+	fresh := f.commit("main", map[string]string{"app.go": "b"})
+	f.publish(fresh+":refs/heads/main", alice+":refs/heads/feature")
+	f.git(f.work, "checkout", "-q", "feature")
+	f.git(f.work, "rebase", "-q", "main")
+	rebased := f.git(f.work, "rev-parse", "HEAD")
+	f.stage(rebased)
+	s, _ := f.set("refs/heads/main")
+	u := update(alice, rebased, "refs/heads/feature")
+
+	changes, err := s.NewPathChanges(ctx, u)
+	require.NoError(t, err)
+	assert.Equal(t, []module.PathChange{{Commit: rebased, Path: "ci.yml", State: f.state(alice, "ci.yml")}}, changes)
+	known, err := s.KnownStates(ctx, u, []string{"ci.yml"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []module.PathState{f.state(base, "ci.yml"), f.state(alice, "ci.yml")}, known["ci.yml"])
+}
+
+func TestKnownStates_OnlyTheBranch(t *testing.T) {
+	f := newFixture(t)
+	c1 := f.commit("1", map[string]string{"ci.yml": "v1"})
+	c2 := f.commit("2", map[string]string{"ci.yml": "v2"})
+	f.git(f.work, "checkout", "-q", "-b", "feature", c1)
+	v3 := f.commit("3", map[string]string{"ci.yml": "v3"})
+	tip := f.commit("app", map[string]string{"app.go": "x"})
+	f.publish(c2+":refs/heads/main", tip+":refs/heads/feature")
+	s, _ := f.set("refs/heads/main")
+
+	known, err := s.KnownStates(ctx, update(tip, tip, "refs/heads/feature"), []string{"ci.yml", "app.go"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []module.PathState{f.state(c2, "ci.yml"), f.state(v3, "ci.yml")}, known["ci.yml"],
+		"the state of main before the branch changed the path is not known")
+	assert.ElementsMatch(t, []module.PathState{{}, f.state(tip, "app.go")}, known["app.go"], "a missing path is a state")
+
+	known, err = s.KnownStates(ctx, update(zero, tip, "refs/heads/feature-2"), []string{"ci.yml"})
+	require.NoError(t, err)
+	assert.Equal(t, []module.PathState{f.state(c2, "ci.yml")}, known["ci.yml"], "a new branch knows only the default branch")
+}
+
+func TestKnownStates_CommitKeepsForkState(t *testing.T) {
+	f := newFixture(t)
+	c1 := f.commit("1", map[string]string{"ci.yml": "v1"})
+	c2 := f.commit("2", map[string]string{"ci.yml": "v2"})
+	f.git(f.work, "checkout", "-q", "-b", "feature", c1)
+	f.commit("app", map[string]string{"app.go": "x"})
+	tip := f.commit("3", map[string]string{"ci.yml": "v3"})
+	f.publish(c2+":refs/heads/main", tip+":refs/heads/feature")
+	s, _ := f.set("refs/heads/main")
+
+	known, err := s.KnownStates(ctx, update(tip, tip, "refs/heads/feature"), []string{"ci.yml"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []module.PathState{f.state(c1, "ci.yml"), f.state(c2, "ci.yml"), f.state(tip, "ci.yml")}, known["ci.yml"],
+		"a commit of the branch that keeps the state of the fork point has that state")
+}
+
+func TestKnownStates_NoDefaultBranch(t *testing.T) {
+	f := newFixture(t)
+	c1 := f.commit("1", map[string]string{"ci.yml": "v1"})
+	c2 := f.commit("2", map[string]string{"ci.yml": "v2"})
+	f.publish(c2 + ":refs/heads/feature")
+	s, _ := f.set("refs/heads/main")
+
+	known, err := s.KnownStates(ctx, update(c2, c2, "refs/heads/feature"), []string{"ci.yml"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []module.PathState{f.state(c1, "ci.yml"), f.state(c2, "ci.yml")}, known["ci.yml"])
 }

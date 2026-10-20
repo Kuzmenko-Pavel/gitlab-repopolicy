@@ -45,27 +45,29 @@ func isGitRevert(m Message) bool {
 type evaluation struct {
 	p       *Policy
 	in      *module.Input
-	budget  *budget
 	commits map[string]commitInfo
 	res     *module.Result
 }
 
-// Evaluate checks the commits entering every ref of the push.
+// Evaluate checks the commits entering every branch of the push. Tags are
+// not checked: the core accepts only tags on commits of branches.
 func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result, error) {
 	e := &evaluation{p: p, in: in, commits: map[string]commitInfo{}, res: &module.Result{}}
-	if p.settings.Clock != nil && p.settings.PatternBudget > 0 {
-		e.budget = &budget{left: p.settings.PatternBudget, clock: p.settings.Clock}
-	}
-	if p.unknownPreset != "" {
-		e.warn(module.Violation{Code: module.CodeInvalidPolicy,
-			Title: fmt.Sprintf("COMMITPOLICY extends preset %q, which the server config does not define, so the preset is skipped", p.unknownPreset)})
+	if p.unusable != nil {
+		if pushesBranches(in) {
+			e.res.Touched = true
+			e.warn(module.Violation{Code: module.CodeInvalidPolicy,
+				Title: "COMMITPOLICY cannot be used, so commit messages are not checked until it is fixed",
+				Facts: []string{"problem: COMMITPOLICY " + p.unusable.Error()}})
+		}
+		return e.res, nil
 	}
 	for _, u := range in.Updates {
-		if u.Kind() == module.Delete {
+		if u.Kind() == module.Delete || !u.IsBranch() {
 			continue
 		}
-		for _, rs := range p.rulesets {
-			if err := e.ruleset(ctx, rs, u); err != nil {
+		for _, r := range p.rules {
+			if err := e.rule(ctx, r, u); err != nil {
 				return nil, err
 			}
 		}
@@ -73,101 +75,65 @@ func (p *Policy) Evaluate(ctx context.Context, in *module.Input) (*module.Result
 	return e.res, nil
 }
 
+func pushesBranches(in *module.Input) bool {
+	for _, u := range in.Updates {
+		if u.Kind() != module.Delete && u.IsBranch() {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *evaluation) warn(v module.Violation) {
 	e.res.Decision = max(e.res.Decision, module.Warn)
 	e.res.Violations = append(e.res.Violations, v)
 }
 
-// ruleset applies one ruleset to one ref.
-func (e *evaluation) ruleset(ctx context.Context, rs *ruleset, u module.RefUpdate) error {
-	scope := module.Scope{Class: module.ClassOther, FirstParent: rs.except.MergedCommits}
-	switch rs.refs.Kind {
-	case module.RefsAll:
+// rule applies one rule to one branch.
+func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) error {
+	scope := module.Scope{Class: module.ClassOther, FirstParent: r.except.MergedCommits}
+	name := strings.TrimPrefix(u.Ref, "refs/heads/")
+	switch {
+	case r.match.All:
 		// A merge into the default branch brings every commit of the merged
 		// branch; on other branches only commits that no ref has yet are new.
 		if u.Ref == e.in.Refs.Default() {
 			scope.Class = module.ClassDefault
 		}
-	case module.RefsDefault:
+	case r.match.Default:
 		if u.Ref != e.in.Refs.Default() {
 			return nil
 		}
 		scope.Class = module.ClassDefault
-	case module.RefsList:
-		if !rs.refs.MatchList(u.Ref) {
+	default:
+		if !r.match.Matches(name) {
 			return nil
 		}
-		scope.Class, scope.Key, scope.Protected = module.ClassProtected, "commitpolicy/"+rs.name, rs.refs.MatchList
-	case module.RefsProtected:
-		return e.protectedRuleset(ctx, rs, u)
+		scope.Class, scope.Key, scope.Protected = module.ClassProtected, "commitpolicy/"+r.name, r.listed
 	}
 	commits, err := e.in.Changes.EnteringCommits(ctx, u, scope, MaxEnteringCommits)
-	if done, err := e.listFailed(rs, u, err); done {
+	if done, err := e.listFailed(r, u, err); done {
 		return err
 	}
-	if len(rs.unknown) > 0 {
-		e.warnUnknown(rs, u)
+	if len(r.unknown) > 0 {
+		e.warnUnknown(r, u)
 	}
-	findings, err := e.check(ctx, rs, commits)
+	findings, err := e.check(ctx, r, commits)
 	if err != nil {
 		return err
 	}
 	e.res.Touched = e.res.Touched || len(commits) > 0
-	return e.report(ctx, rs, u, findings)
+	return e.report(ctx, r, u, findings)
 }
 
-// protectedRuleset checks the candidates first and asks GitLab for the class
-// of the ref only when some commit breaks a rule.
-func (e *evaluation) protectedRuleset(ctx context.Context, rs *ruleset, u module.RefUpdate) error {
-	candidates, err := e.in.Changes.CandidateCommits(ctx, u, MaxEnteringCommits)
-	if done, err := e.listFailed(rs, u, err); done {
-		return err
-	}
-	findings, err := e.check(ctx, rs, candidates)
-	if err != nil || len(findings) == 0 {
-		return err
-	}
-	class, status := e.in.Refs.Class(ctx, u.Ref)
-	if !status.IsConfirmed() {
-		e.warn(skipped(rs, u, status))
-		return nil
-	}
-	scope := module.Scope{Class: class, FirstParent: rs.except.MergedCommits}
-	switch class {
-	case module.ClassOther:
-		return nil
-	case module.ClassProtected:
-		ps, status := e.in.Refs.ProtectedScope(ctx)
-		if !status.IsConfirmed() {
-			e.warn(skipped(rs, u, status))
-			return nil
-		}
-		ps.FirstParent = rs.except.MergedCommits
-		scope = ps
-	}
-	exact, err := e.in.Changes.EnteringCommits(ctx, u, scope, MaxEnteringCommits)
-	if done, err := e.listFailed(rs, u, err); done {
-		return err
-	}
-	if len(rs.unknown) > 0 {
-		e.warnUnknown(rs, u)
-	}
-	in := map[string]bool{}
-	for _, c := range exact {
-		in[c] = true
-	}
-	kept := findings[:0]
-	for _, f := range findings {
-		if in[f.commit.oid] {
-			kept = append(kept, f)
-		}
-	}
-	e.res.Touched = e.res.Touched || len(exact) > 0
-	return e.report(ctx, rs, u, kept)
+// listed reports whether a branch is in the match list of the rule.
+func (r *rule) listed(ref string) bool {
+	name, ok := strings.CutPrefix(ref, "refs/heads/")
+	return ok && r.match.Matches(name)
 }
 
 // listFailed turns the limit of entering commits into a violation.
-func (e *evaluation) listFailed(rs *ruleset, u module.RefUpdate, err error) (bool, error) {
+func (e *evaluation) listFailed(r *rule, u module.RefUpdate, err error) (bool, error) {
 	switch {
 	case err == nil:
 		return false, nil
@@ -175,7 +141,7 @@ func (e *evaluation) listFailed(rs *ruleset, u module.RefUpdate, err error) (boo
 		return true, nil
 	case errors.Is(err, module.ErrLimitExceeded):
 		e.res.Touched = true
-		v := module.Violation{Code: module.CodeLimitExceeded, Rule: rs.name, RuleKind: "ruleset", Ref: u.Ref, Reason: err.Error(),
+		v := module.Violation{Code: module.CodeLimitExceeded, Rule: r.name, Ref: u.Ref, Reason: err.Error(), Source: r.source,
 			Facts:   []string{fmt.Sprintf("limit reached: more than %d commits enter the ref", MaxEnteringCommits)},
 			Hint:    "push the branch in parts, for example git push origin <commit>:refs/heads/<branch>, then the rest",
 			Summary: fmt.Sprintf("more than %d commits enter the ref, COMMITPOLICY does not check pushes this large; push the branch in parts", MaxEnteringCommits)}
@@ -191,16 +157,16 @@ func (e *evaluation) listFailed(rs *ruleset, u module.RefUpdate, err error) (boo
 	}
 }
 
-func (e *evaluation) warnUnknown(rs *ruleset, u module.RefUpdate) {
-	e.warn(module.Violation{Code: module.CodeInvalidPolicy, Rule: rs.name, RuleKind: "ruleset", Ref: u.Ref,
-		Title: "rules unknown to this version of gitlab-repopolicy are skipped: " + strings.Join(rs.unknown, ", ")})
+func (e *evaluation) warnUnknown(r *rule, u module.RefUpdate) {
+	e.warn(module.Violation{Code: module.CodeInvalidPolicy, Rule: r.name, Ref: u.Ref, Source: r.source,
+		Title: "checks unknown to this version of gitlab-repopolicy are skipped: " + strings.Join(r.unknown, ", ")})
 }
 
-// skipped is the warning of a ruleset that was not applied because GitLab
-// did not answer: COMMITPOLICY fails open.
-func skipped(rs *ruleset, u module.RefUpdate, st module.Status) module.Violation {
-	return module.Violation{Code: module.CodeAuthorizationBackend, Rule: rs.name, RuleKind: "ruleset", Ref: u.Ref, Reason: st.Reason(),
-		Title: "commit messages were not checked by this ruleset: the GitLab API did not answer"}
+// skipped is the warning of a rule that was not applied because GitLab did
+// not answer: COMMITPOLICY fails open.
+func skipped(r *rule, u module.RefUpdate, st module.Status) module.Violation {
+	return module.Violation{Code: module.CodeAuthorizationBackend, Rule: r.name, Ref: u.Ref, Reason: st.Reason(), Source: r.source,
+		Title: "commit messages were not checked by this rule: the GitLab API did not answer"}
 }
 
 // commitFinding is a finding of a commit.
@@ -230,22 +196,22 @@ func (e *evaluation) load(ctx context.Context, oid string) (commitInfo, error) {
 	return c, nil
 }
 
-// check applies the rules of the ruleset to the commits, minus the exceptions.
-func (e *evaluation) check(ctx context.Context, rs *ruleset, commits []string) ([]commitFinding, error) {
+// check applies the checks of the rule to the commits, minus the exceptions.
+func (e *evaluation) check(ctx context.Context, r *rule, commits []string) ([]commitFinding, error) {
 	var out []commitFinding
 	for _, oid := range commits {
 		c, err := e.load(ctx, oid)
 		if err != nil {
 			return nil, err
 		}
-		if rs.except.MergeCommits && c.parents > 1 {
+		if r.except.MergeCommit && c.parents > 1 {
 			continue
 		}
-		m := ParseMessage(c.message, rs.conventional)
-		if rs.except.GitReverts && isGitRevert(m) {
+		m := ParseMessage(c.message, r.conventional)
+		if r.except.GitReverts && isGitRevert(m) {
 			continue
 		}
-		for _, f := range rs.check(m, e.budget, e.p.settings.PatternTimeout) {
+		for _, f := range r.apply(m) {
 			out = append(out, commitFinding{commit: c, header: m.Header, finding: f})
 		}
 	}
@@ -253,50 +219,45 @@ func (e *evaluation) check(ctx context.Context, rs *ruleset, commits []string) (
 }
 
 // report applies except.users and the mode and records the violations.
-func (e *evaluation) report(ctx context.Context, rs *ruleset, u module.RefUpdate, findings []commitFinding) error {
+func (e *evaluation) report(ctx context.Context, r *rule, u module.RefUpdate, findings []commitFinding) error {
 	if len(findings) == 0 {
 		return nil
 	}
-	if len(rs.except.Users) > 0 {
+	if len(r.except.Users) > 0 {
 		person, status := e.in.Principals.Person(ctx)
 		if !status.IsConfirmed() {
-			e.warn(skipped(rs, u, status))
+			e.warn(skipped(r, u, status))
 			return nil
 		}
-		for _, x := range rs.except.Users {
+		for _, x := range r.except.Users {
 			if person.Username != "" && strings.EqualFold(x, person.Username) {
 				return nil
 			}
 		}
 	}
-	type key struct {
-		lv      level
-		timeout bool
-	}
-	groups := map[key][]module.Item{}
-	index := map[key]map[string]int{}
-	var order []key
+	groups := map[level][]module.Item{}
+	index := map[level]map[string]int{}
+	var order []level
 	for _, f := range findings {
 		lv := f.level
 		if e.p.warnMode && lv == levelError {
 			lv = levelWarn
 		}
-		k := key{lv, f.timeout}
-		if _, ok := groups[k]; !ok {
-			order = append(order, k)
-			index[k] = map[string]int{}
+		if _, ok := groups[lv]; !ok {
+			order = append(order, lv)
+			index[lv] = map[string]int{}
 		}
-		i, ok := index[k][f.commit.oid]
+		i, ok := index[lv][f.commit.oid]
 		if !ok {
-			i = len(groups[k])
-			index[k][f.commit.oid] = i
-			groups[k] = append(groups[k], module.Item{Commit: true, Name: fmt.Sprintf("%s %q", short(f.commit.oid), f.header)})
+			i = len(groups[lv])
+			index[lv][f.commit.oid] = i
+			groups[lv] = append(groups[lv], module.Item{Commit: true, Name: fmt.Sprintf("%s %q", short(f.commit.oid), f.header)})
 		}
-		groups[k][i].Details = append(groups[k][i].Details, f.reason)
+		groups[lv][i].Details = append(groups[lv][i].Details, f.reason)
 	}
-	for _, k := range order {
-		v := rs.violation(u, groups[k], k.lv, k.timeout)
-		if k.lv == levelError {
+	for _, lv := range order {
+		v := r.violation(u, groups[lv], lv)
+		if lv == levelError {
 			e.res.Decision = module.Deny
 			e.res.Violations = append(e.res.Violations, v)
 		} else {
@@ -310,30 +271,25 @@ func short(oid string) string { return oid[:min(len(oid), 9)] }
 
 // violation tells the author what is wrong with the commits and how to fix
 // them; a warning does not ask to rewrite commits that are already pushed.
-func (rs *ruleset) violation(u module.RefUpdate, items []module.Item, lv level, timeout bool) module.Violation {
+func (r *rule) violation(u module.RefUpdate, items []module.Item, lv level) module.Violation {
 	n := len(items)
-	v := module.Violation{Code: module.CodeCommitFormat, Rule: rs.name, RuleKind: "ruleset", Ref: u.Ref, Items: items, Message: rs.message}
-	switch {
-	case timeout:
-		v.Code = module.CodeCommitCheckTimeout
-		v.Title = `rule "pattern" could not check a commit message in time`
-		v.Hint = "a different message usually passes; if ordinary messages fail too, the rule is too slow and COMMITPOLICY needs a fix"
-		v.Summary = fmt.Sprintf(`rule "pattern" of COMMITPOLICY ruleset %s could not check commit %s in time`, rs.name, items[0].Name)
-	case lv == levelWarn:
+	v := module.Violation{Code: module.CodeCommitFormat, Rule: r.name, Ref: u.Ref, Items: items, Message: r.message,
+		Help: r.helpOf(), Source: r.source}
+	if lv == levelWarn {
 		v.Title = fmt.Sprintf("%d commit %s not follow the format; this is a warning, it does not block the push", n, verb(n))
-		v.Facts = rs.format()
+		v.Facts = r.format()
 		v.Hint = "next time: follow the format; commits that are pushed stay as they are"
-	default:
-		v.Title = fmt.Sprintf("%d commit %s not follow the format", n, verb(n))
-		v.Facts = rs.format()
-		v.Hint = "how to fix: git rebase -i and reword these commits, then push again"
-		if n == 1 {
-			v.Hint = "how to fix: reword the commit (git commit --amend for the last one, git rebase -i for an older one), then push again"
-		}
-		v.Summary = fmt.Sprintf("commit %s does not follow the format of COMMITPOLICY ruleset %s", items[0].Name, rs.name)
-		if len(items[0].Details) > 0 {
-			v.Summary += ": " + items[0].Details[0]
-		}
+		return v
+	}
+	v.Title = fmt.Sprintf("%d commit %s not follow the format", n, verb(n))
+	v.Facts = r.format()
+	v.Hint = "how to fix: git rebase -i and reword these commits, then push again"
+	if n == 1 {
+		v.Hint = "how to fix: reword the commit (git commit --amend for the last one, git rebase -i for an older one), then push again"
+	}
+	v.Summary = fmt.Sprintf("commit %s does not follow the format of COMMITPOLICY rule %s", items[0].Name, r.name)
+	if len(items[0].Details) > 0 {
+		v.Summary += ": " + items[0].Details[0]
 	}
 	return v
 }
@@ -345,18 +301,18 @@ func verb(n int) string {
 	return "messages do"
 }
 
-// format describes the expected header once, with the types and scopes of the rules.
-func (rs *ruleset) format() []string {
-	if !rs.conventional {
+// format describes the expected header once, with the types and scopes of the checks.
+func (r *rule) format() []string {
+	if !r.conventional {
 		return nil
 	}
 	out := []string{"required: type(scope): subject, for example feat(api): add refunds"}
-	for _, r := range rs.rules {
-		switch r.name {
+	for _, c := range r.checks {
+		switch c.name {
 		case "type-enum":
-			out = append(out, "types: "+strings.Join(r.list, ", "))
+			out = append(out, "types: "+strings.Join(c.list, ", "))
 		case "scope-enum":
-			out = append(out, "scopes: "+strings.Join(r.list, ", "))
+			out = append(out, "scopes: "+strings.Join(c.list, ", "))
 		}
 	}
 	return out

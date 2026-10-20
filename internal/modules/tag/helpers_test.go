@@ -209,7 +209,7 @@ func policyYAML(rules string, keys map[string]string) []byte {
 
 func mustParse(t *testing.T, data []byte) *policy {
 	t.Helper()
-	p, err := parsePolicy(data)
+	p, err := parsePolicy(data, nil)
 	require.NoError(t, err)
 	return p
 }

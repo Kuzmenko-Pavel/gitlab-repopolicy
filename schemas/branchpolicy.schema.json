@@ -3,8 +3,23 @@
   "additionalProperties": false,
   "properties": {
     "extends": {
-      "description": "A preset from branchpolicy_presets of the server config; a rule of the file with the name of a preset rule replaces it.",
-      "type": "string"
+      "description": "Presets of the server config, merged in this order before the file.",
+      "oneOf": [
+        {
+          "pattern": "^[a-z0-9-]{1,63}$",
+          "type": "string"
+        },
+        {
+          "items": {
+            "pattern": "^[a-z0-9-]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      ],
+      "x-repopolicy-check": "extends"
     },
     "mode": {
       "description": "warn turns every denial into a warning; the default is enforce.",
@@ -15,74 +30,114 @@
       "type": "string"
     },
     "rules": {
-      "description": "Classes of branch names; a new branch takes the first rule whose match it fits, a name that fits none is denied.",
-      "items": {
+      "additionalProperties": {
         "additionalProperties": false,
+        "description": "A class of branch names; a new branch takes the matching rule with the lowest priority, a name that matches none is not checked.",
         "properties": {
           "deny": {
             "description": "true: branches of this class may not be created.",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
-          "examples": {
+          "help": {
             "additionalProperties": false,
-            "description": "Names that pattern must accept and reject; checked when the file is accepted, not shown to users.",
+            "description": "Help printed in the denial of this rule.",
             "properties": {
-              "invalid": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
+              "contact": {
+                "description": "Who to ask, for example #gitlab-support.",
+                "maxLength": 200,
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-text"
               },
-              "valid": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
+              "docs_url": {
+                "description": "Documentation of the rule, an http(s) URL.",
+                "maxLength": 200,
+                "pattern": "^https?://",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-repopolicy-check": "help-url"
               }
             },
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "match": {
-            "description": "Pattern of the class as in GitLab protected branches: * matches any characters, including /.",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
+            "description": "Required after merging with presets. all or a list of branch names and /regexes/: the names of the class.",
+            "oneOf": [
+              {
+                "enum": [
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-repopolicy-check": "match"
           },
           "message": {
-            "description": "Text shown when a branch is denied, up to 1000 characters: the format with an example and, for protected, what to protect.",
+            "description": "Required after merging with presets. What the pusher reads when the rule denies a push.",
             "maxLength": 1000,
-            "type": "string"
-          },
-          "name": {
-            "pattern": "^[a-z0-9-]{1,63}$",
-            "type": "string"
-          },
-          "pattern": {
-            "description": "RE2 regular expression that the whole branch name must match.",
-            "maxLength": 256,
             "minLength": 1,
-            "type": "string",
-            "x-repopolicy-check": "re2"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "description": "Required after merging with presets. Order of the rules: the lowest number that matches wins; unique after merging with presets.",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "protected": {
             "description": "true: a new branch of this class must be a protected branch of the GitLab project.",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "user_prefix": {
             "description": "true: the part of the name before the first / is the username of an active GitLab user.",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
-        "required": [
-          "name",
-          "match"
+        "type": [
+          "object",
+          "null"
         ],
-        "type": "object",
         "x-repopolicy-check": "rule"
       },
-      "maxItems": 50,
-      "type": "array",
-      "x-repopolicy-check": "unique-names"
+      "description": "Rules by name. A rule of the file with the name of a preset rule overrides its fields; null removes it.",
+      "maxProperties": 50,
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]{1,63}$"
+      },
+      "type": "object"
     },
     "version": {
       "const": 1,

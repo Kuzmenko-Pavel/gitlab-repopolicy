@@ -265,20 +265,18 @@ func TestOps_CommitsAPI(t *testing.T) {
 	assert.Equal(t, "web", e.Protocol)
 }
 
-// TestOps_RevertUI: the revert button and the revert API run
-// the same service and reach the hook as a web operation.
+// TestOps_RevertUI: the revert button and the revert API run the same
+// service and reach the hook as a web operation of the user who clicks. A
+// revert in an ordinary branch brings back content the branch already had,
+// so bob may revert a commit of alice there.
 func TestOps_RevertUI(t *testing.T) {
 	t.Parallel()
 	p := withCIPolicy(t, "revert")
 	sha := mustCommit(t, user("alice"), p, "feature", "main", "ci: change the build", create("ci/build.yml", "build"))
-	revert := func(u *standUser) error {
-		return gl.api(t.Context(), u.Token, http.MethodPost, p.api("/repository/commits/"+sha+"/revert"),
-			map[string]any{"branch": "feature"}, nil)
-	}
-	requireHookDenied(t, revert(user("bob")), ciDenied)
-	require.NoError(t, revert(user("alice")))
+	require.NoError(t, gl.api(t.Context(), user("bob").Token, http.MethodPost, p.api("/repository/commits/"+sha+"/revert"),
+		map[string]any{"branch": "feature"}, nil))
 	e := requireEvent(t, p, "allow of the revert", func(e auditEvent) bool {
-		return e.Event == "decision" && e.Ref == "refs/heads/feature" && e.Username == "alice" && e.Decision == "allow"
+		return e.Event == "decision" && e.Ref == "refs/heads/feature" && e.Username == "bob" && e.Decision == "allow"
 	})
 	assert.Equal(t, "web", e.Protocol)
 }

@@ -291,13 +291,20 @@ func (r *Resolved) Refs(presets Presets) []module.PresetRef {
 	return out
 }
 
-// RuleOrigins are the merged rules with the layers of each rule and field.
+// RuleOrigins are the merged rules with the layers of each rule and field;
+// a mapping field such as checks also lists its keys, one level deep.
 func (r *Resolved) RuleOrigins() []module.RuleOrigin {
 	out := make([]module.RuleOrigin, 0, len(r.Rules()))
 	for _, name := range r.Rules() {
 		o := module.RuleOrigin{Rule: name, Layers: r.Origin[name]}
-		for _, f := range r.Rule(name).Keys {
+		rule := r.Rule(name)
+		for _, f := range rule.Keys {
 			o.Fields = append(o.Fields, module.FieldOrigin{Field: f, Layers: r.Origin[name+"."+f]})
+			if v := rule.Fields[f]; v.Kind == strictyaml.Map {
+				for _, k := range v.Keys {
+					o.Fields = append(o.Fields, module.FieldOrigin{Field: f + "." + k, Layers: r.Origin[name+"."+f+"."+k]})
+				}
+			}
 		}
 		out = append(out, o)
 	}

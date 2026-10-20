@@ -74,7 +74,7 @@ func (a App) runExplain(ctx context.Context, args []string, _ []string, stdio St
 	project := fs.String("project", "", "project ID or full path")
 	user := fs.String("user", "", "username")
 	path := fs.String("path", "", "path in the repository")
-	ref := fs.String("ref", "", "branch or tag; default: the default branch")
+	ref := fs.String("ref", "", "branch name or full ref; default: the default branch")
 	if !parse(fs, args, stdio.Err) {
 		return ExitUsage
 	}

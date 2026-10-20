@@ -150,21 +150,35 @@ sudo -u git gitlab-repopolicy selftest
 
 ## Редактор
 
-Policy-файли не мають розширення, тому редактор треба навчити, що це YAML зі схемою. Для VS Code з розширенням YAML (`yaml-language-server`):
+Policy-файли не мають розширення, тому редактор треба навчити, що це YAML зі схемою. Схеми лежать у каталозі `schemas/` репозиторію. Посилання нижче ведуть на гілку `main`. Щоб редактор перевіряв файли за схемою конкретного релізу, замініть у посиланні `main` на тег релізу, наприклад `v1.0.0`.
+
+**VS Code** з розширенням YAML (`yaml-language-server`), у `settings.json`:
 
 ```json
 {
   "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json": "PATHPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/commitpolicy.schema.json": "COMMITPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
 
-Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate` ([validate.md](docs/validate.md)), повідомлення комітів - `gitlab-repopolicy lint-commit`.
+**PyCharm, GoLand, IntelliJ IDEA** та інші IDE JetBrains перевіряють YAML за схемою без плагінів. Схеми написані за JSON Schema draft 2020-12.
+1. Settings > Editor > File Types > YAML, у "File name patterns" додайте `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY`. Це налаштування самої IDE, його робить кожен у себе один раз
+2. Settings > Languages & Frameworks > Schemas and DTDs > JSON Schema Mappings, кнопка `+` для кожного файлу:
+   - Name: `PATHPOLICY`
+   - Schema file or URL: `https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json`
+   - Schema version: JSON Schema 2020-12
+   - кнопкою `+` під списком додайте File path pattern `PATHPOLICY`
+
+   Так само для `COMMITPOLICY`, `TAGPOLICY` і `BRANCHPOLICY`. Ці прив'язки IDE зберігає в проєкті, у `.idea/jsonSchemas.xml`: закомітьте файл, і в команди схеми підключаться самі
+
+Після цього IDE підсвічує невідомі ключі й неправильні значення і показує підказки з описів полів.
+
+Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate` ([validate.md](docs/validate.md)), повідомлення комітів - `gitlab-repopolicy lint-commit`. Редактор знає лише схему, а `validate` перевіряє ще й злиття з пресетами, регулярні вирази, порядок правил BRANCHPOLICY і ключі TAGPOLICY.
 
 ## Документація
 

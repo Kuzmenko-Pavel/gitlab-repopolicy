@@ -150,21 +150,35 @@ The e2e matrix runs on the current and the two previous minor versions of GitLab
 
 ## Editor
 
-Policy files have no extension, so the editor has to be told that they are YAML with a schema. For VS Code with the YAML extension (`yaml-language-server`):
+Policy files have no extension, so the editor has to be told that they are YAML with a schema. The schemas are in the directory `schemas/` of the repository. The links below point to the branch `main`. For the editor to check files against the schema of a given release, replace `main` in the link with the tag of the release, for example `v1.0.0`.
+
+**VS Code** with the YAML extension (`yaml-language-server`), in `settings.json`:
 
 ```json
 {
   "files.associations": { "PATHPOLICY": "yaml", "COMMITPOLICY": "yaml", "TAGPOLICY": "yaml", "BRANCHPOLICY": "yaml" },
   "yaml.schemas": {
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/pathpolicy.schema.json": "PATHPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/commitpolicy.schema.json": "COMMITPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/tagpolicy.schema.json": "TAGPOLICY",
-    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/v1.0.0/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json": "PATHPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/commitpolicy.schema.json": "COMMITPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/tagpolicy.schema.json": "TAGPOLICY",
+    "https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/branchpolicy.schema.json": "BRANCHPOLICY"
   }
 }
 ```
 
-Check a file locally with the same code as the hook with `gitlab-repopolicy validate` ([validate.en.md](docs/validate.en.md)), commit messages with `gitlab-repopolicy lint-commit`.
+**PyCharm, GoLand, IntelliJ IDEA** and other JetBrains IDEs check YAML against a schema without plugins. The schemas follow JSON Schema draft 2020-12.
+1. Settings > Editor > File Types > YAML, add `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY`, `BRANCHPOLICY` to "File name patterns". This is a setting of the IDE itself, everyone makes it once on their machine
+2. Settings > Languages & Frameworks > Schemas and DTDs > JSON Schema Mappings, the button `+` for every file:
+   - Name: `PATHPOLICY`
+   - Schema file or URL: `https://raw.githubusercontent.com/Kuzmenko-Pavel/gitlab-repopolicy/main/schemas/pathpolicy.schema.json`
+   - Schema version: JSON Schema 2020-12
+   - with the button `+` under the list add the File path pattern `PATHPOLICY`
+
+   The same for `COMMITPOLICY`, `TAGPOLICY` and `BRANCHPOLICY`. The IDE keeps these mappings in the project, in `.idea/jsonSchemas.xml`: commit the file, and the schemas connect for the whole team by themselves
+
+After that the IDE highlights unknown keys and wrong values and shows hints from the descriptions of the fields.
+
+Check a file locally with the same code as the hook with `gitlab-repopolicy validate` ([validate.en.md](docs/validate.en.md)), commit messages with `gitlab-repopolicy lint-commit`. The editor knows only the schema, while `validate` also checks the merge with presets, regular expressions, the order of the rules of BRANCHPOLICY and the keys of TAGPOLICY.
 
 ## Documentation
 

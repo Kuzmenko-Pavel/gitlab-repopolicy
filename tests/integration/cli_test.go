@@ -237,7 +237,12 @@ func TestAuditNotWritable(t *testing.T) {
 	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
 	r = s.Push(alice, "HEAD:refs/heads/feature")
 	assertAllowed(t, r)
-	assert.Contains(t, r.Output, "the audit log is not writable, tell your GitLab administrators")
+	// Root writes to a file whatever its mode.
+	if os.Geteuid() != 0 {
+		assert.Contains(t, r.Output, "the audit log is not writable, tell your GitLab administrators")
+	} else {
+		t.Log("running as root: a read-only audit log is writable, not checked")
+	}
 
 	s.API.Handle("GET", memberProjects, gitlabtest.OK([]any{}))
 	c := s.Run(nil, "settings-check", "--config", s.config)

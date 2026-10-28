@@ -119,9 +119,14 @@ func TestSelftest_Files(t *testing.T) {
 	assert.Regexp(t, `(?m)^warn audit +.*audit.log is readable by everyone \(-rw-r--r--\)`, out)
 	assert.Regexp(t, `(?m)^warn breakglass .*: break-glass cannot be granted`, out)
 
-	require.NoError(t, os.Chmod(s.audit, 0o440))
-	_, out, _ = s.run(nil, "selftest", "--config", s.config)
-	assert.Regexp(t, `(?m)^FAIL audit +.*audit.log is not writable: `, out)
+	// Root writes to a file whatever its mode.
+	if os.Geteuid() != 0 {
+		require.NoError(t, os.Chmod(s.audit, 0o440))
+		_, out, _ = s.run(nil, "selftest", "--config", s.config)
+		assert.Regexp(t, `(?m)^FAIL audit +.*audit.log is not writable: `, out)
+	} else {
+		t.Log("running as root: a read-only audit log is writable, not checked")
+	}
 
 	require.NoError(t, os.Remove(s.audit))
 	require.NoError(t, os.Mkdir(s.audit, 0o700))

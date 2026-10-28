@@ -128,12 +128,19 @@ jobs:
     permissions:
       issues: write
     steps:
-      - name: Open an issue for the failed nightly run
+      - name: Report the failed nightly run in an issue
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create --repo "$REPO" \
-            --title "nightly failed on $(date -u +%Y-%m-%d)" \
-            --body "Nightly run failed: $RUN_URL"
+          # A failure that repeats goes to the open issue, not to a new one every night.
+          open=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+            --jq '[.[] | select(.title | startswith("nightly failed on "))][0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$REPO" --body "Nightly run failed: $RUN_URL"
+          else
+            gh issue create --repo "$REPO" \
+              --title "nightly failed on $(date -u +%Y-%m-%d)" \
+              --body "Nightly run failed: $RUN_URL"
+          fi

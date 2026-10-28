@@ -148,6 +148,47 @@ To check that the hook really works, use a test project. Add a PATHPOLICY to it 
 
 The e2e matrix runs on the current and the two previous minor versions of GitLab CE, nightly on `latest`. EE and any tier are supported by the same code: only Free features are used. GitLab.com and GitLab Dedicated are not supported.
 
+## Performance
+
+The hook runs inside the push, so a push with it takes longer. How much longer depends on whether the hook needs the GitLab API.
+
+How it was measured. GitLab CE 19.4.2 in Docker and the git client on one machine, pushes over HTTPS and SSH to `localhost`. Every scenario was pushed without the hook (after `uninstall-hook`) and with the hook (`install-hook`, `mode: enforce`). The modes alternated in blocks: without, with, without, with, without, with. In every block, for every scenario and protocol, 3 warm-up pushes and 10 measured ones, 30 measurements per cell in total. The time is the full `git push` on the client, the table shows the median in milliseconds.
+
+| Scenario | HTTPS: (without hook / with hook), ms | SSH: (without hook / with hook), ms |
+| --- | --- | --- |
+| no policy files, one commit | 274 / 329 (+55) | 372 / 400 (+28) |
+| PATHPOLICY, the commit does not change the files of a rule | 297 / 315 (+18) | 379 / 405 (+25) |
+| PATHPOLICY, the commit changes a file of a rule, the author is in `allow` | 297 / 448 (+151) | 376 / 600 (+223) |
+| COMMITPOLICY, one commit | 278 / 328 (+51) | 385 / 414 (+29) |
+| COMMITPOLICY, a new branch with 50 commits | 309 / 342 (+33) | 385 / 441 (+55) |
+| BRANCHPOLICY, a new branch by `match` | 285 / 302 (+16) | 375 / 388 (+14) |
+| BRANCHPOLICY, a new branch with `user_prefix` | 281 / 299 (+17) | 388 / 465 (+77) |
+| BRANCHPOLICY, a new branch with `protected: true` | 290 / 398 (+108) | 384 / 477 (+93) |
+| TAGPOLICY, a signed tag | 293 / 320 (+27) | 375 / 409 (+35) |
+| TAGPOLICY, a signed tag with `protected: true` | 312 / 410 (+98) | 387 / 502 (+115) |
+| all four policies, a commit in a new `alice/...` branch | 313 / 342 (+29) | 394 / 503 (+110) |
+
+What this shows:
+- when the hook does not need the GitLab API, a push takes 14-55 ms longer. The hook itself, by the `duration_ms` field of the audit, runs 12-46 ms (median)
+- it takes noticeably longer where the hook asks GitLab. When a commit changes a file of a PATHPOLICY rule, the hook requests the members of the project to check `allow`, that is +150-220 ms. For `protected: true` in BRANCHPOLICY and TAGPOLICY the hook requests the protected branches or tags of the project, that is +90-115 ms
+- over SSH the hook also checks that the key is a personal key and not a deploy key. That is why SSH costs more in the scenarios with `user_prefix` and with all policies
+
+Parallel load. 10 clients at once, each makes 30 pushes to its own branches of one project with all four policies, every tenth push with a signed tag.
+
+| Protocol | Without hook: (p50 / p90), ms | With hook: (p50 / p90), ms | Total time: (without hook / with hook), s |
+| --- | --- | --- | --- |
+| HTTPS | 324 / 357 | 347 / 372 | 10.2 / 10.7 |
+| SSH | 400 / 428 | 445 / 550 | 12.3 / 14.2 |
+
+No push was rejected. Under this load the hook runs as fast as with sequential pushes: `duration_ms` median 18 ms, p90 24 ms. All 300 pushes of one measurement come from one user to one project, about 1500 per minute. This is above the GitLab limit `gitlab_shell_operation_limit` (600 operations per minute for a user and a project by default), so the limit was lifted for the measurement. With the limit, GitLab itself rejects the excess pushes with `GitLab: rate limited` before the hook.
+
+Limits of the measurement:
+- the client and GitLab are on one machine, there is no network. If Gitaly is on separate nodes, every API request of the hook also adds the network latency between Gitaly and GitLab Rails
+- one user, small repositories, every push changes one or a few files
+- one machine. On other hardware the absolute time differs, compare the difference without and with the hook
+
+Machine: Intel Core i9-14900HX (32 threads, governor `performance`), 62 GiB RAM, NVMe WD PC SN560 1 TB, Linux 6.17, Docker 29.9.2 without CPU and memory limits for the GitLab container, git 2.43.0 on the client, gitlab-repopolicy from commit `ffcda2e`. Measured on 2026-10-28.
+
 ## Editor
 
 Policy files have no extension, so the editor has to be told that they are YAML with a schema. The schemas are in the directory `schemas/` of the repository. The links below point to the branch `main`. For the editor to check files against the schema of a given release, replace `main` in the link with the tag of the release, for example `v1.0.0`.

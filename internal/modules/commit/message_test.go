@@ -54,28 +54,45 @@ func TestParseMessage(t *testing.T) {
 		assert.Empty(t, m.Trailers, "a paragraph that is not all trailers is body")
 		assert.Contains(t, m.Body, "code()")
 	})
-	t.Run("grammar", func(t *testing.T) {
+	t.Run("header_error", func(t *testing.T) {
 		cases := map[string]string{
-			"feat(: add x":           "scope parenthesis is not closed",
-			" feat:  ":               "header",
-			"feat:":                  "the subject is empty",
-			"feat:x":                 `a space must follow ":"`,
-			"feat:  two spaces":      `exactly one space must follow ":"`,
-			"feat(): empty scope":    "scope in parentheses is empty",
-			"feat: x\nbody directly": "separated from the header by an empty line",
-			"":                       "header is empty",
+			"feat(: add x":        "scope parenthesis is not closed",
+			" feat:  ":            `expected "type(scope): subject"`,
+			"feat:":               "the subject is empty",
+			"feat:x":              `a space must follow ":"`,
+			"feat:  two spaces":   `exactly one space must follow ":"`,
+			"feat(): empty scope": "scope in parentheses is empty",
 		}
 		for in, want := range cases {
 			m := ParseMessage(in, true)
-			assert.NotEmpty(t, m.Grammar, in)
-			assert.Contains(t, strings.Join(m.Grammar, "; "), want, in)
+			assert.Empty(t, m.Grammar, in)
+			assert.Contains(t, m.HeaderError, want, in)
+		}
+		assert.Equal(t, []string{"header is empty"}, ParseMessage("", true).Grammar)
+	})
+	t.Run("body_from_second_line", func(t *testing.T) {
+		m := ParseMessage("feat: x\nbody directly", true)
+		assert.Empty(t, m.Grammar)
+		assert.Equal(t, "body directly", m.Body)
+		assert.False(t, m.BlankAfterHeader)
+		m = ParseMessage("feat: x\nSigned-off-by: A <a@b>", true)
+		assert.Equal(t, "Signed-off-by: A <a@b>", m.Body, "a trailer block needs an empty line before it")
+		assert.Empty(t, m.Trailers)
+	})
+	t.Run("blank_after_header", func(t *testing.T) {
+		for raw, want := range map[string]bool{
+			"feat: x": false, "feat: x\n": false, "feat: x\n\n": true, "feat: x\r\n\r\n": true,
+			"feat: x\n\nbody": true, "feat: x\n  \nbody": true, "feat: x\nbody": false,
+		} {
+			assert.Equal(t, want, ParseMessage(raw, true).BlankAfterHeader, "%q", raw)
 		}
 	})
 	t.Run("free", func(t *testing.T) {
 		m := ParseMessage("Anything goes here\n\nbody", false)
 		assert.Empty(t, m.Grammar)
+		assert.Empty(t, m.HeaderError)
 		assert.Equal(t, "Anything goes here", m.Subject)
-		assert.NotEmpty(t, ParseMessage("x\nno blank line", false).Grammar)
+		assert.Equal(t, "no blank line", ParseMessage("x\nno blank line", false).Body)
 	})
 }
 
@@ -94,8 +111,8 @@ func FuzzParseMessage(f *testing.F) {
 		if strings.Contains(m.Text, "\r") {
 			t.Fatalf("not normalised: %q", m.Text)
 		}
-		if conventional && len(m.Grammar) == 0 && m.Type == "" {
-			t.Fatalf("conventional header without a type accepted: %q", raw)
+		if conventional && len(m.Grammar) == 0 && m.HeaderError == "" && m.Type == "" {
+			t.Fatalf("conventional header without a type and without an error: %q", raw)
 		}
 	})
 }

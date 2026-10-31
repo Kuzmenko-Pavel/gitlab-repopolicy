@@ -8,7 +8,7 @@ PATHPOLICY rule "ci-config", branch main, tag v1.0.0: you may not change these f
 COMMITPOLICY rule "protected", branch main: commit messages do not follow the format
   commits:
     3f2a9c1 "Fix deploy"
-      - header: expected "type(scope): subject"
+      - header-format conventional: expected "type(scope): subject"
 
 rules: PATHPOLICY, COMMITPOLICY in main (ca191b7)
 checked as: alice (HTTPS)

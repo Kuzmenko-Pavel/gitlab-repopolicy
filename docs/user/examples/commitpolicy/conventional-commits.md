@@ -12,41 +12,60 @@
 ```yaml
 # examples/conventional-commits/COMMITPOLICY
 # Conventional Commits in main and release branches; a stricter type list in
-# release branches. Other branches are not checked.
+# release branches. Every commit that enters these branches is checked, also
+# the commits of a merged branch. Other branches are not checked.
 version: 1
 mode: enforce
 
 rules:
   conventional:
     match: [main, '/^release\//']
+    check_history: incoming
     parser: conventional
     except:
       merge_commit: true
       git_reverts: true
       users: [release-bot]
     checks:
-      type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      scope:             { level: error, value: optional }
-      breaking-bang:     { level: error, value: allow }
-      header-max-length: { level: warn,  value: 100 }
-      subject-case:      { level: error, value: lower-first }
-      subject-full-stop: { level: error, value: forbid }
-      body-required:     { level: error, types: [feat, fix] }
-      pattern:           { level: warn,  location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
-      trailer-required:  { level: error, value: [Signed-off-by] }
+      header-format:
+        conventional: { level: error }
+      header-max-length:
+        limit: { level: warn, value: 100 }
+      type-enum:
+        allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:
+        optional: { level: error, value: optional }
+      breaking-bang:
+        optional: { level: error, value: optional }
+      subject-starts-lowercase:
+        lowercase: { level: error, value: required }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      body-leading-blank-lines:
+        blank-line: { level: error, value: required }
+      body-min-line-length:
+        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      trailer-required:
+        dco: { level: error, value: [Signed-off-by] }
+      pattern:
+        issue-ref: { level: warn, location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits in main and release branches follow Conventional Commits.
       Reword them with git rebase -i or squash the merge request.
 
   release:
     match: ['/^release\//']
+    check_history: incoming
     parser: conventional
     checks:
-      type-enum: { level: error, value: [fix, docs, chore] }
+      type-enum:
+        release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore commits.
 ```
 
-У `main` збігається `conventional`. У `release/1` діють обидва правила: загальні вимоги не зникають, а список типів звужується правилом `release`. `header-max-length` і посилання на issue дають попередження, а не відмову. Винятки дозволяють звичайний merge-коміт, стандартний revert і push розпізнаного release-bot; вони стосуються лише свого правила.
+У `main` збігається `conventional`. У `release/1` діють обидва правила: загальні вимоги не зникають, а список типів звужується правилом `release`. `header-max-length` і посилання на issue дають попередження, а не відмову. Body обов'язковий лише для `feat` і `fix`: `body-min-line-length` обмежено `types`. Винятки дозволяють звичайний merge-коміт, стандартний revert і push розпізнаного release-bot; вони стосуються лише свого правила.
+
+Обидва правила мають `check_history: incoming`. Коміти в `main` і release-гілки приходять через merge request з робочих гілок, а там цей файл їх не перевіряє. `incoming` перевіряє кожен коміт, який входить у гілку правила, тож коміти робочої гілки перевіряються під час merge. З `new-content` вони пройшли б без перевірки: для репозиторію вони вже не нові.
 
 ## Повідомлення та перевірка
 

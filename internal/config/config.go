@@ -45,8 +45,8 @@ type Config struct {
 	Timeouts      Timeouts          `yaml:"timeouts"`
 	MaxAPICalls   int               `yaml:"max_api_calls"`
 	Modules       map[string]string `yaml:"modules"`
-	// DefaultBranch lists the allowed names of the default branch, for example
-	// [main, master]; the hook and settings-check use it, empty turns the check off.
+	// DefaultBranch lists the allowed names of the default branch, [main,
+	// master] by default; the hook and settings-check use it, [] turns the check off.
 	DefaultBranch []string      `yaml:"default_branch"`
 	SettingsCheck SettingsCheck `yaml:"settings_check"`
 	Help          Help          `yaml:"help"`
@@ -135,7 +135,8 @@ func Defaults() Config {
 			Total: Duration(10 * time.Second),
 			HTTP:  Duration(3 * time.Second),
 		},
-		MaxAPICalls: 30,
+		MaxAPICalls:   30,
+		DefaultBranch: []string{"main", "master"},
 	}
 }
 

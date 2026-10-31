@@ -136,13 +136,13 @@ gitlab-repopolicy lint-commit (-m MSG | --range A..B [--skip-author EMAIL]...) [
 - `--skip-author` без `--range` - код 2
 - невідоме ім'я в `--rule` - код 1 зі списком правил файлу
 
-Код 0 - порушень рівня `error` немає, 1 - є. Порушення - у stdout рядком на кожне: `<коміт>: [<правило>] error|warning: <перевірка>: <що не так>`.
+Код 0 - порушень рівня `error` немає, 1 - є. Порушення - у stdout рядком на кожне: `<коміт>: [<правило>] error|warning: <тип перевірки> <ім'я перевірки>: <що не так>`.
 
 ```text
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
-message: [conventional] error: header: expected "type(scope): subject"
-message: [conventional] error: trailer-required: missing Signed-off-by in the trailer block
-message: [release] error: header: expected "type(scope): subject"
+message: [conventional] error: header-format conventional: expected "type(scope): subject"
+message: [conventional] error: body-leading-blank-lines blank-line: an empty line must follow the header
+message: [conventional] error: trailer-required dco: missing Signed-off-by in the trailer block
 ```
 
 Щоб перевіряти повідомлення перед створенням коміту або в CI, використайте [приклади запуску lint-commit](../policies/commitpolicy.md#перевірка-без-push).

@@ -29,9 +29,14 @@ presets:
             merge_commit: true
             git_reverts: true
           checks:
-            type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
-            header-max-length: { level: error, value: 100 }
-            subject-full-stop: { level: error, value: forbid }
+            header-format:
+              conventional: { level: error }
+            header-max-length:
+              limit: { level: error, value: 100 }
+            type-enum:
+              allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
+            subject-trailing-dot:
+              no-dot: { level: error, value: forbidden }
           message: Commits in the default branch follow Conventional Commits.
           help:
             docs_url: https://www.conventionalcommits.org/en/v1.0.0/

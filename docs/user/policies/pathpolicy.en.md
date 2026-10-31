@@ -37,6 +37,7 @@ What bob, who is not in `allow`, sees when they push a branch with a changed `.g
 | `admins` | yes | 1-5 usernames. Only they change PATHPOLICY itself. Presets have no `admins`, it is always in the file of the project |
 | `rules` | no | rules, up to 100: rule name → rule. The name is `[a-z0-9-]{1,63}`, it is shown in denials and in audit |
 | `rules.<name>.match` | yes | the branches the rule applies to: `all`, `default` or a list of branches ([match.en.md](match.en.md)) |
+| `rules.<name>.check_history` | no | how to check changes in these branches: `new-content` (the default) or `incoming` ([below](#what-counts-as-a-change)) |
 | `rules.<name>.paths` | yes | 1-50 path patterns ([below](#path-patterns)) |
 | `rules.<name>.allow` | yes | 1-50 usernames of those who may change these paths |
 | `rules.<name>.message` | yes | text for the person who is denied, up to 1000 characters |
@@ -85,17 +86,21 @@ Author and committer are commit metadata and do not establish the pusher's ident
 
 ### What counts as a change
 
-| Where | What counts as a change of a protected file |
+`match` only selects branches. What counts as a change of a protected file in these branches is set by `check_history` of the rule:
+
+| `check_history` | What counts as a change of a protected file |
 | --- | --- |
-| the default branch, branches protected in GitLab, branches of the `match` list of the rule | every commit that this push brings into the branch, and the difference of the content of the branch before and after the push. It does not matter who made the commit and whether another branch already holds it: the change is made by whoever pushes or merges it into the branch |
-| other branches (under `match: all`) | new content of the file. A commit changes the file only when the content after it (together with the file mode) differs from every version of the file in this branch before the push and from the default branch |
-| tags | not checked: a tag can point only to a commit that a branch already holds ([tagpolicy.en.md](../examples/tagpolicy/tag-on-branch.en.md)), and that commit was checked with the branch |
+| `new-content` (the default) | a new state of the file in new commits that no branch or tag has yet. A commit changes the file only when the state of the file after it differs from every version in this branch before the push and from the default branch. The state is the content and the mode of the file in git: a regular file, an executable one (`chmod +x`), a symlink or a submodule. So `chmod +x ci.yml` without a change of the text is a change too |
+| `incoming` | every commit that this push brings into the branch, and the difference of the content of the branch before and after the push. It does not matter who made the commit and whether another branch already holds it: the change is made by whoever pushes or merges it into the branch. For a new branch, the commits that the default branch does not have |
 
-This has two consequences, both shown in the examples:
-- in `main` a change reverted in the same push is still a change ([example 5](../examples/pathpolicy/change-and-revert.en.md))
-- in an ordinary branch a rebase, a squash and a cherry-pick of commits of alice are not a change while the content of the file is the same ([example 4](../examples/pathpolicy/shared-branch.en.md))
+The value works the same in the default branch, in branches protected in GitLab and in ordinary branches: the status of a branch in GitLab does not change the check. Tags are not checked: a tag can point only to a commit that a branch already holds ([tagpolicy.en.md](../examples/tagpolicy/tag-on-branch.en.md)), and that commit was checked with the branch.
 
-`PATHPOLICY` itself does not fall under the second rule: only `admins` change it, in any branch.
+A [separate example](../examples/pathpolicy/check-history.en.md) compares the same actions with both values. The consequences, shown in the examples:
+- with `new-content` a rebase, a squash and a cherry-pick of commits of alice are not a change while the content of the file is the same ([example 4](../examples/pathpolicy/shared-branch.en.md))
+- with `new-content` a merge into `main` of a branch that was already pushed does not check its commits again: they are not new to the repository. If the rule must check merge requests into `main` or release branches, set `check_history: incoming` ([example 3](../examples/pathpolicy/production-values.en.md))
+- with `incoming` a change reverted in the same push is still a change, and so is a rollback of the branch by a force push ([example 5](../examples/pathpolicy/change-and-revert.en.md))
+
+`PATHPOLICY` itself does not fall under the `new-content` exception: only `admins` change it, in any branch, and in the default branch, where it takes effect, every commit that enters the branch is checked.
 
 When more than 50 000 commits enter a branch in one push, the hook does not check them and rejects the push with `limit_exceeded`. Check large imports or history rewrites separately and split them when needed.
 
@@ -109,6 +114,8 @@ The right `match` depends on where GitLab reads the file from:
 | the agent configuration `.gitlab/agents/**`, `CODEOWNERS`, policy files | only from the default branch | `default` |
 | deploy values (`values-prod.yaml`) | from the branches deployments run from | a list of branches, for example `[main, '/^release\//']` |
 
+The agent configuration and the deploy values reach the default branch and release branches through merge requests from work branches, where their rule does not apply. For such a merge to be checked, give the rules with `default` and with a list of branches `check_history: incoming` ([what counts as a change](#what-counts-as-a-change)).
+
 ## Examples
 
 | Example | What it explains |
@@ -116,6 +123,7 @@ The right `match` depends on where GitLab reads the file from:
 | [CI/CD protection](../examples/pathpolicy/ci-configuration.en.md) | alice and sre-lead own CI and deploy scripts in every branch |
 | [GitLab Agent configuration](../examples/pathpolicy/agent-configuration.en.md) | Anyone proposes changes; only alice accepts them into the default branch |
 | [Production configuration](../examples/pathpolicy/production-values.en.md) | Rules for `main` and release branches |
+| [`new-content` and `incoming`](../examples/pathpolicy/check-history.en.md) | The same rebase, squash, merge and rollback with both values of `check_history` |
 | [Shared branches](../examples/pathpolicy/shared-branch.en.md) | Rebase, squash, cherry-pick and the limits of the known-content exception |
 | [Change and revert](../examples/pathpolicy/change-and-revert.en.md) | Why an empty endpoint diff does not cancel commit checks |
 | [Policy delegation](../examples/pathpolicy/delegation.en.md) | Separate COMMITPOLICY and TAGPOLICY owners |
@@ -172,7 +180,7 @@ git adds `remote:` to every line from the server.
 | `may change them:` | who may make this change |
 | `files:` | which files of the push this rule protects |
 | the English text | the `message` of the rule |
-| `the content of ... differs ...` | in an ordinary branch: which commit brought new content. In `main` and branches of a list there is advice whom to ask instead |
+| `the content of ... differs ...` | with `check_history: new-content`: which commit brought new content. With `incoming` there is advice whom to ask instead |
 | `who can help with this rule:`, `docs of this rule:` | the `help` of the rule |
 | `rules: PATHPOLICY in main (f50c5a0)` | the rules come from `main`, the commit `f50c5a0`. This version decides, not the one in your branch |
 | `checked as: bob (SSH)` | whom the hook checked and how the push came. If it is not you, the push was made under another name, for example from a CI job started by another user |
@@ -213,9 +221,9 @@ PATHPOLICY guards access. When the hook cannot get the answer it needs (the API 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
 | bob cannot push even a branch with `.gitlab-ci.yml` | a rule with `match: all` applies to every branch | this is intended for CI. The owner of the file pushes the branch with the change |
-| a denial after a rebase of a branch, although `ci.yml` was not touched | the branch is in the `match` list or protected in GitLab, and there every commit counts | for CI files use `match: all`, not a list |
-| bob changed the file in a branch, and the hook let it through | the rule with `match: default` or a list does not apply to this branch | this is intended. The change is checked at the merge into `main` |
-| a denial for a change that was reverted right away | in `main` every commit counts | remove both commits from the history (`git rebase -i`) |
+| a denial after a rebase of a branch, although `ci.yml` was not touched | the rule has `check_history: incoming`, and every commit that enters the branch counts | for CI files of work branches remove `check_history` or set `new-content` |
+| bob changed the file in a branch, and the hook let it through | the rule with `match: default` or a list does not apply to this branch | this is intended. At the merge into `main` a rule with `check_history: incoming` checks the change; with `new-content` the commit of the branch is no longer new then and is not checked |
+| a denial for a change that was reverted right away | the intermediate commit brought new content, and every new commit counts, not only the difference at the ends of the push | remove both commits from the history (`git rebase -i`) |
 | a new PATHPOLICY is rejected with `lockout_prevented` | a typo in the name of an admin, or the admin is not a Maintainer | fix the name, check it with `validate --online --project` |
 | `checked as:` shows another username | a push from a CI job runs as the user who started the pipeline | give automation a project access token and put the bot in `allow` |
 | `allow: [kpn]` in a file with `extends` removed the other people of the preset | a list in the file replaces the list of the preset | list everyone who has the right in the file |

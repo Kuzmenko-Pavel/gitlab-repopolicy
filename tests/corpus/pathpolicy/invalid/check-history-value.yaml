@@ -1,0 +1,9 @@
+version: 1
+admins: [alice]
+rules:
+  r:
+    match: all
+    check_history: every-commit
+    paths: [x]
+    allow: [alice]
+    message: m

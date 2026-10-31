@@ -47,10 +47,9 @@ modules:
 
 # Allowed names of the default branch, used by the hook and by settings-check.
 # The hook rejects every push to a project whose default branch has another
-# name; it applies to every project of the instance, so turn it on with
-# mode: audit first. Empty turns the check off. [main] is an example; the
-# default is empty.
-default_branch: [main]
+# name; it applies to every project of the instance, so check it with
+# mode: audit first. [] turns the check off. [main, master] is the default.
+default_branch: [main, master]
 
 # What settings-check expects of the projects with policy files. Empty values
 # are not checked and are the default; ["v*"] and false below are examples.

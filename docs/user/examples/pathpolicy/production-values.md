@@ -12,8 +12,9 @@
 ```yaml
 # examples/ci-config/PATHPOLICY
 # The platform team, alice and sre-lead, owns the CI configuration and the
-# deploy scripts in every branch and the production values in main and
-# release branches. Everything else is authorized by GitLab as usual.
+# deploy scripts in every branch, where only new content counts, and the
+# production values in main and release branches, where every commit that
+# enters the branch counts. Everything else is authorized by GitLab as usual.
 version: 1
 
 admins: [alice, sre-lead]
@@ -21,6 +22,7 @@ admins: [alice, sre-lead]
 rules:
   ci-config:
     match: all
+    check_history: new-content
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -34,6 +36,7 @@ rules:
 
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [alice, release-manager]
     message: >-
@@ -41,7 +44,7 @@ rules:
       release-manager. Propose the change in your branch and ask them to merge it.
 ```
 
-`prod-values` явно називає `main` і регулярним виразом охоплює `release/`. `feature` не збігається, тому пропозиція дозволена. У гілках зі списку враховуються коміти, що входять у гілку, а не лише підсумкова різниця файлів. Окреме правило `ci-config` лишає CI під контролем команди платформи.
+`prod-values` явно називає `main` і регулярним виразом охоплює `release/`. `feature` не збігається, тому пропозиція дозволена. `check_history: incoming` враховує кожен коміт, що входить у гілку правила, а не лише нові для репозиторію: коміт bob з `feature` уже є в репозиторії, і без `incoming` його merge у `main` пройшов би без перевірки. Окреме правило `ci-config` лишає CI під контролем команди платформи.
 
 ```mermaid
 ---
@@ -60,7 +63,7 @@ gitGraph
 | --- | --- | --- | --- |
 | bob | пушить зміну в `feature` | дозволено | `feature` немає в списку `match` |
 | bob | пушить ту саму зміну в `release/1` | відмова | `release/1` є в списку |
-| bob | мержить `feature` у `main` | відмова | коміт bob потрапляє в `main`, а мержить bob |
+| bob | мержить `feature` у `main` | відмова | коміт bob потрапляє в `main`, а мержить bob; з `incoming` перевіряється й коміт, який уже був у `feature` |
 | alice | мержить `feature` у `main` | дозволено | зміну в `main` вносить alice |
 
 Відмова bob'у під час merge:

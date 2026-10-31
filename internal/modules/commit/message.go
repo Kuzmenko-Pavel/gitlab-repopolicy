@@ -10,9 +10,14 @@ type Message struct {
 	// Text is the normalised message: "\n" line ends, no trailing empty lines.
 	Text   string
 	Header string
-	// Body is everything between the header and the trailer block.
+	// Body is everything between the header and the trailer block, from the
+	// second line on, without the empty lines around it.
 	Body     string
 	Trailers []Trailer
+	// BlankAfterHeader reports an empty line right after the header in the
+	// message as stored, before trailing empty lines are dropped: "header\n\n"
+	// has one, "header\n" has none.
+	BlankAfterHeader bool
 
 	// Conventional parts of the header.
 	Type     string
@@ -20,8 +25,11 @@ type Message struct {
 	HasScope bool
 	Breaking bool
 	Subject  string
+	// HeaderError says why the header does not follow the conventional
+	// format; it is "" when it does or the parser is free.
+	HeaderError string
 
-	// Grammar lists violations of the format grammar; they are always checked.
+	// Grammar lists why the message cannot be parsed at all; it is always an error.
 	Grammar []string
 }
 
@@ -50,17 +58,13 @@ func Normalise(raw string) string {
 
 // ParseMessage parses raw in the conventional or the free format.
 func ParseMessage(raw string, conventional bool) Message {
-	m := Message{Text: Normalise(raw)}
+	m := Message{Text: Normalise(raw), BlankAfterHeader: blankAfterHeader(raw)}
 	if strings.ContainsRune(m.Text, 0) {
 		m.Grammar = append(m.Grammar, "message contains a NUL byte")
 	}
 	lines := strings.Split(m.Text, "\n")
 	m.Header = lines[0]
-	rest := lines[1:]
-	if len(rest) > 0 && strings.TrimSpace(rest[0]) != "" {
-		m.Grammar = append(m.Grammar, "the body must be separated from the header by an empty line")
-	}
-	m.Body, m.Trailers = splitTrailers(rest)
+	m.Body, m.Trailers = splitTrailers(lines[1:])
 	if strings.TrimSpace(m.Header) == "" {
 		m.Grammar = append(m.Grammar, "header is empty")
 		return m
@@ -76,13 +80,25 @@ func ParseMessage(raw string, conventional bool) Message {
 func (m *Message) parseConventional() {
 	g := conventionalHeader.FindStringSubmatch(m.Header)
 	if g == nil {
-		m.Grammar = append(m.Grammar, `header: expected "type(scope): subject"`+headerHint(m.Header))
+		m.HeaderError = `expected "type(scope): subject"` + headerHint(m.Header)
 		return
 	}
 	m.Type, m.HasScope, m.Scope, m.Breaking, m.Subject = g[1], g[2] != "", g[3], g[4] == "!", g[5]
 	if m.HasScope && strings.TrimSpace(m.Scope) == "" {
-		m.Grammar = append(m.Grammar, "header: the scope in parentheses is empty")
+		m.HeaderError = "the scope in parentheses is empty"
 	}
+}
+
+// blankAfterHeader reports whether raw has a second line and it is empty.
+func blankAfterHeader(raw string) bool {
+	s := strings.ReplaceAll(raw, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	_, rest, ok := strings.Cut(s, "\n")
+	if !ok || rest == "" {
+		return false
+	}
+	line, _, _ := strings.Cut(rest, "\n")
+	return strings.TrimSpace(line) == ""
 }
 
 // headerHint explains the most common grammar mistakes.

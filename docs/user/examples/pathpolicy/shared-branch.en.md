@@ -7,7 +7,7 @@ alice changes `ci.yml`; bob works on code in the same branch. bob needs to rewri
 
 ## Prerequisites
 
-The following `PATHPOLICY` is active in the repository root of default branch `main`. alice is an active Maintainer or Owner. `feature` and `bob-feature` are ordinary branches, neither protected in GitLab nor explicitly covered by a `match` list. Global mode is `enforce`; other policies and GitLab permissions allow the operations shown.
+The following `PATHPOLICY` is active in the repository root of default branch `main`. alice is an active Maintainer or Owner. The rule does not set `check_history`, so `new-content` applies: only a new state of the file in new commits counts as a change. A [separate example](check-history.en.md) compares the same actions with `incoming`. Branch protection in GitLab does not affect this. Global mode is `enforce`; other policies and GitLab permissions allow the operations shown.
 
 ```yaml
 version: 1
@@ -20,7 +20,7 @@ rules:
     message: CI and deploy belong to alice.
 ```
 
-For an ordinary branch, the hook compares new `ci.yml` states with versions already present in that branch's history before the push and the state in the default branch's anchor commit. A state includes file content and mode. A new commit SHA after rebase does not by itself mean a new CI change.
+For an ordinary branch, the hook compares new `ci.yml` states with versions already present in that branch's history before the push and the state in the default branch's anchor commit. The state is the content and the mode of the file in git: a regular file, an executable one (`chmod +x`), a symlink or a submodule. So `chmod +x ci.yml` without a change of the text is a change too. A new commit SHA after rebase does not by itself mean a new CI change.
 
 ## History before and after operations
 
@@ -175,14 +175,16 @@ gitGraph
 | bob pushes their own new content of `ci.yml` | denied | neither the branch nor the default branch had this content |
 | a rebase with a conflict: main changed `ci.yml` too, the result is merged content | denied | the merged content is new |
 | bob pushes the rewritten history to a new branch `feature-2` | denied | a new branch has no history of its own, only the default branch is compared |
-| bob changes the mode of `ci.yml` (makes it executable) with the same content | denied | the file mode is part of the content |
+| bob changes the mode of `ci.yml` (makes it executable) with the same content | denied | the mode of the file in git is part of the state of the file |
 | bob brings back v2 of alice from the history of the branch | allowed | v2 was in the branch already |
 | bob rewrites a commit with a change of `PATHPOLICY` in a rebase | denied | only `admins` change `PATHPOLICY`, in any branch |
-| a merge or a squash merge into main by bob | denied | in `main` the change is made by whoever merges |
+| a merge into main by bob | allowed | the commit of alice is already in the repository, and a clean merge brings no new content of `ci.yml` |
+| a squash merge into main by bob | denied | the squash commit is new, and v2 of alice is new content for `main` |
 | a merge or a squash merge into main by alice | allowed | alice is in `allow` |
+| the same with `check_history: incoming`, a merge by bob | denied | `incoming` counts every commit that enters `main`, the commit of alice too |
 | more than 50 000 commits enter the branch | denied with `limit_exceeded` | the hook does not check such a push and does not let it through |
 
-In the diagram merging alice's branch, that branch is already on the server; a clean merge introduces no new `ci.yml` content. Resolving a conflict with new CI content in the merge commit requires alice.
+In the diagram merging alice's branch, that branch is already on the server; a clean merge introduces no new `ci.yml` content, so with `new-content` bob can merge a change that alice accepted before. Resolving a conflict with new CI content in the merge commit requires alice. If only alice should accept CI changes into `main`, give the rule `check_history: incoming`: then, as in the row with `incoming`, a merge by bob gets a denial, but so does a rebase of the shared branch by bob ([match.en.md](../../policies/match.en.md#match-and-check_history-in-pathpolicy)).
 
 The denial of bob for new content of `ci.yml` in an ordinary branch:
 
@@ -199,6 +201,6 @@ remote:   the content of ci.yml in commit 76706632a differs both from this branc
 
 After `gitlab-repopolicy validate -f PATHPOLICY`, reproduce alice's CI push in a test branch, followed by bob's conflict-free rebase. It should pass. Have bob add a new line to `ci.yml`: expect `protected_path_violation`.
 
-Do not extend this conclusion to a new `feature-2` branch, a protected branch or a merge into `main`. They have a different baseline or set of changes. `PATHPOLICY` changes also have no such exception: they require a working admin.
+Do not extend this conclusion to a new `feature-2` branch: it has no history of its own, and the content is compared only with the default branch. With `check_history: incoming` there is no exception for known content in any branch. `PATHPOLICY` changes also have no such exception: they require a working admin.
 
 [PATHPOLICY reference](../../policies/pathpolicy.en.md)

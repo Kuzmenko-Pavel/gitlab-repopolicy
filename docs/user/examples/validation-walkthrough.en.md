@@ -37,8 +37,9 @@ The four policy files are the ones of the examples of the documentation:
 ```sh
 cat > PATHPOLICY <<'EOF'
 # The platform team, alice and sre-lead, owns the CI configuration and the
-# deploy scripts in every branch and the production values in main and
-# release branches. Everything else is authorized by GitLab as usual.
+# deploy scripts in every branch, where only new content counts, and the
+# production values in main and release branches, where every commit that
+# enters the branch counts. Everything else is authorized by GitLab as usual.
 version: 1
 
 admins: [alice, sre-lead]
@@ -46,6 +47,7 @@ admins: [alice, sre-lead]
 rules:
   ci-config:
     match: all
+    check_history: new-content
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -59,6 +61,7 @@ rules:
 
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [alice, release-manager]
     message: >-
@@ -70,37 +73,54 @@ EOF
 ```sh
 cat > COMMITPOLICY <<'EOF'
 # Conventional Commits in main and release branches; a stricter type list in
-# release branches. Other branches are not checked.
+# release branches. Every commit that enters these branches is checked, also
+# the commits of a merged branch. Other branches are not checked.
 version: 1
 mode: enforce
 
 rules:
   conventional:
     match: [main, '/^release\//']
+    check_history: incoming
     parser: conventional
     except:
       merge_commit: true
       git_reverts: true
       users: [release-bot]
     checks:
-      type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      scope:             { level: error, value: optional }
-      breaking-bang:     { level: error, value: allow }
-      header-max-length: { level: warn,  value: 100 }
-      subject-case:      { level: error, value: lower-first }
-      subject-full-stop: { level: error, value: forbid }
-      body-required:     { level: error, types: [feat, fix] }
-      pattern:           { level: warn,  location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
-      trailer-required:  { level: error, value: [Signed-off-by] }
+      header-format:
+        conventional: { level: error }
+      header-max-length:
+        limit: { level: warn, value: 100 }
+      type-enum:
+        allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:
+        optional: { level: error, value: optional }
+      breaking-bang:
+        optional: { level: error, value: optional }
+      subject-starts-lowercase:
+        lowercase: { level: error, value: required }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      body-leading-blank-lines:
+        blank-line: { level: error, value: required }
+      body-min-line-length:
+        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      trailer-required:
+        dco: { level: error, value: [Signed-off-by] }
+      pattern:
+        issue-ref: { level: warn, location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits in main and release branches follow Conventional Commits.
       Reword them with git rebase -i or squash the merge request.
 
   release:
     match: ['/^release\//']
+    check_history: incoming
     parser: conventional
     checks:
-      type-enum: { level: error, value: [fix, docs, chore] }
+      type-enum:
+        release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore commits.
 EOF
 ```
@@ -180,9 +200,14 @@ presets:
             merge_commit: true
             git_reverts: true
           checks:
-            type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
-            header-max-length: { level: error, value: 100 }
-            subject-full-stop: { level: error, value: forbid }
+            header-format:
+              conventional: { level: error }
+            header-max-length:
+              limit: { level: error, value: 100 }
+            type-enum:
+              allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
+            subject-trailing-dot:
+              no-dot: { level: error, value: forbidden }
           message: Commits in the default branch follow Conventional Commits.
           help:
             docs_url: https://www.conventionalcommits.org/en/v1.0.0/
@@ -515,15 +540,17 @@ A file with `extends` cannot be checked fully without the server config: the pre
 cat > drafts/org-commits <<'EOF'
 # The commit rules of the organization come from the preset org-commits.
 # This project only warns about long headers and allows a full stop at the
-# end of the subject.
+# end of the subject: value optional lifts the requirement of the preset.
 version: 1
 extends: org-commits
 
 rules:
   conventional:
     checks:
-      header-max-length: { level: warn }
-      subject-full-stop: null
+      header-max-length:
+        limit: { level: warn }
+      subject-trailing-dot:
+        no-dot: { value: optional }
 EOF
 ```
 
@@ -543,8 +570,14 @@ drafts/org-commits: valid
   extends: org-commits
   rule conventional: preset:org-commits, file
     checks: preset:org-commits, file
+    checks.header-format: preset:org-commits
+    checks.header-format.conventional: preset:org-commits
     checks.header-max-length: preset:org-commits, file
+    checks.header-max-length.limit: preset:org-commits, file
+    checks.subject-trailing-dot: preset:org-commits, file
+    checks.subject-trailing-dot.no-dot: preset:org-commits, file
     checks.type-enum: preset:org-commits
+    checks.type-enum.allowed: preset:org-commits
     except: preset:org-commits
     except.git_reverts: preset:org-commits
     except.merge_commit: preset:org-commits
@@ -557,8 +590,8 @@ $ echo $?
 0
 ```
 
-- `checks.header-max-length: preset:org-commits, file` - the file changed only `level` in the check of the preset, `value` stayed from the preset
-- `checks.subject-full-stop` is not in the output: the file removed it with `null`
+- `checks.header-max-length.limit: preset:org-commits, file` - the file changed only `level` in the check of the preset, `value` stayed from the preset
+- `checks.subject-trailing-dot.no-dot: preset:org-commits, file` - the check stayed, the file gave it `value: optional` and so lifted the requirement of the preset. With `null` the check would leave the rule and the output
 - a rule without any field from the file has only `preset:org-commits`
 
 A preset that is not in the config:

@@ -185,7 +185,7 @@ On an instance upgraded to GitLab 18.0 or later, GitLab may have set these limit
 
 ## 4. Configuration
 
-Open `/etc/gitlab-repopolicy/config.yaml` before connecting the hook. The single-node Linux package configuration uses the Workhorse unix socket. Check `mode: audit` and `default_branch`: the package contains `[main]`, which restricts every group project. Use `[]` to start without this global restriction. If Gitaly runs on a separate node, set the HTTPS address of GitLab and, if needed, the CA:
+Open `/etc/gitlab-repopolicy/config.yaml` before connecting the hook. The single-node Linux package configuration uses the Workhorse unix socket. Check `mode: audit` and `default_branch`: the package contains `[main, master]`, which restricts the default branch name of every group project. Use `[]` to start without this global restriction. If Gitaly runs on a separate node, set the HTTPS address of GitLab and, if needed, the CA:
 
 ```yaml
 gitlab_url: https://gitlab.example.com

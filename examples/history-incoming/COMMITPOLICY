@@ -1,0 +1,16 @@
+# Conventional Commits headers in main. Every commit that enters main is
+# checked: also the commits of a merged branch, which no rule checked in that
+# branch.
+version: 1
+
+rules:
+  main:
+    match: [main]
+    check_history: incoming
+    parser: conventional
+    except:
+      merge_commit: true
+    checks:
+      header-format:
+        conventional: { level: error }
+    message: Commits in main follow Conventional Commits.

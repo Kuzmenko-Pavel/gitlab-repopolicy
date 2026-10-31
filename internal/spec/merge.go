@@ -292,7 +292,8 @@ func (r *Resolved) Refs(presets Presets) []module.PresetRef {
 }
 
 // RuleOrigins are the merged rules with the layers of each rule and field;
-// a mapping field such as checks also lists its keys, one level deep.
+// a mapping field also lists its keys two levels deep, such as the type and
+// the name of a check in checks.pattern.no-wip.
 func (r *Resolved) RuleOrigins() []module.RuleOrigin {
 	out := make([]module.RuleOrigin, 0, len(r.Rules()))
 	for _, name := range r.Rules() {
@@ -300,9 +301,17 @@ func (r *Resolved) RuleOrigins() []module.RuleOrigin {
 		rule := r.Rule(name)
 		for _, f := range rule.Keys {
 			o.Fields = append(o.Fields, module.FieldOrigin{Field: f, Layers: r.Origin[name+"."+f]})
-			if v := rule.Fields[f]; v.Kind == strictyaml.Map {
-				for _, k := range v.Keys {
-					o.Fields = append(o.Fields, module.FieldOrigin{Field: f + "." + k, Layers: r.Origin[name+"."+f+"."+k]})
+			v := rule.Fields[f]
+			if v.Kind != strictyaml.Map {
+				continue
+			}
+			for _, k := range v.Keys {
+				o.Fields = append(o.Fields, module.FieldOrigin{Field: f + "." + k, Layers: r.Origin[name+"."+f+"."+k]})
+				if c := v.Fields[k]; c.Kind == strictyaml.Map && f == "checks" {
+					for _, n := range c.Keys {
+						path := f + "." + k + "." + n
+						o.Fields = append(o.Fields, module.FieldOrigin{Field: path, Layers: r.Origin[name+"."+path]})
+					}
 				}
 			}
 		}

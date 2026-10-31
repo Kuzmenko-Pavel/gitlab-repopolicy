@@ -7,7 +7,7 @@ bob changes protected `ci.yml`, then restores its original content in the next c
 
 ## Policy and initial state
 
-This `PATHPOLICY` is already active in the root of default branch `main`. alice is an active Maintainer or Owner; bob is absent from `allow`. Results assume global `enforce` and do not override other GitLab checks.
+This `PATHPOLICY` is already active in the root of default branch `main`. alice is an active Maintainer or Owner; bob is absent from `allow`. Results assume global `enforce` and do not override other GitLab checks. The `incoming` column of the table is for the file below, the `new-content` column for the same file without the line `check_history`.
 
 ```yaml
 version: 1
@@ -15,6 +15,7 @@ admins: [alice]
 rules:
   ci:
     match: all
+    check_history: incoming
     paths: ["ci.yml"]
     allow: [alice]
     message: CI and deploy belong to alice.
@@ -30,18 +31,17 @@ gitGraph
   commit id: "C2: ci.yml = A"
 ```
 
-| Scenario | Result | Why |
-| --- | --- | --- |
-| bob pushes C1 and C2 to main | denied | C1 enters `main`, and the pipeline of C1 would run the changed `ci.yml` |
-| the same to a branch of the `match` list of the rule | denied | in such a branch every commit counts too |
-| C1 and C2 first in an ordinary branch, then a fast-forward of a branch of the list to C2 | denied | the commits enter the branch of the list, even though another branch holds them |
-| a merge into main of a branch with C1 and C2 by bob | denied | the commit C1 enters `main` |
-| the same by alice | allowed | alice is in `allow` |
-| a revert of the file by a force push | denied | the content of the branch before and after the push differs |
+| Scenario | `new-content` | `incoming` | Why |
+| --- | --- | --- | --- |
+| bob pushes C1 and C2 to main | denied | denied | C1 is a new commit with new content of `ci.yml`. Both values check every new commit, not only the difference at the ends of the push: the pipeline of C1 would run the changed `ci.yml` |
+| C1 and C2 are first pushed to another branch, then bob moves `main` to C2 by a fast-forward | allowed | denied | for `new-content` C1 and C2 are no longer new to the repository; `incoming` counts every commit that enters `main` |
+| a merge into main of a branch with C1 and C2 by bob | allowed | denied | the merge brings no new content, and the commit C1 enters `main` only for `incoming` |
+| the same by alice | allowed | allowed | alice is in `allow` |
+| bob rolls `main` back by a force push to a commit where `ci.yml` has the previous content | allowed | denied | there are no new commits; `incoming` also counts the difference of the content of the branch before and after the push |
 
-The resulting file did not change, but every commit of the branch is a state that a pipeline, a tag or a deployment can start from. So in `main` every commit is checked, not only the difference between the ends of the push.
+The resulting file did not change, but every commit of the branch is a state that a pipeline, a tag or a deployment can start from. So a new commit with new content counts with any `check_history`, not only the difference between the ends of the push. `incoming` in addition does not let such commits come into `main` from another branch or the branch be rolled back by a force push: this way the rule guards the history of the branch itself, not only the new commits.
 
-For the row about a branch in a `match` list, use the same file with `match: [main, release/1]` instead of `all`. This explicitly lists two branches where each incoming commit matters. The force-push row assumes that the old and new endpoint states of `ci.yml` differ.
+The force-push row assumes that the old and new endpoint states of `ci.yml` differ.
 
 ## Reproducing it
 

@@ -21,9 +21,14 @@ presets:
             merge_commit: true
             git_reverts: true
           checks:
-            type-enum: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
-            header-max-length: { level: error, value: 100 }
-            subject-full-stop: { level: error, value: forbid }
+            header-format:
+              conventional: { level: error }
+            header-max-length:
+              limit: { level: error, value: 100 }
+            type-enum:
+              allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, test] }
+            subject-trailing-dot:
+              no-dot: { level: error, value: forbidden }
           message: Commits in the default branch follow Conventional Commits.
           help:
             docs_url: https://www.conventionalcommits.org/en/v1.0.0/
@@ -35,18 +40,20 @@ presets:
 # examples/org-commits/COMMITPOLICY
 # The commit rules of the organization come from the preset org-commits.
 # This project only warns about long headers and allows a full stop at the
-# end of the subject.
+# end of the subject: value optional lifts the requirement of the preset.
 version: 1
 extends: org-commits
 
 rules:
   conventional:
     checks:
-      header-max-length: { level: warn }
-      subject-full-stop: null
+      header-max-length:
+        limit: { level: warn }
+      subject-trailing-dot:
+        no-dot: { value: optional }
 ```
 
-`header-max-length` успадковує `value: 100`, змінюючи лише `level`. `subject-full-stop: null` видаляє перевірку повністю. Це відрізняється від `mode: warn`: решта помилок політики й надалі можуть блокувати push.
+Файл звертається до перевірок пресета за типом і ім'ям. `header-max-length.limit` успадковує `value: 100`, змінюючи лише `level`. `subject-trailing-dot.no-dot` отримує `value: optional`: перевірка лишається в правилі, але крапка тепер може бути або не бути. Так само знімається вимога будь-якої перевірки наявності ознаки; `null` потрібен, лише коли перевірку треба прибрати з правила зовсім. Це відрізняється від `mode: warn`: решта помилок політики й надалі можуть блокувати push.
 
 ```text
 $ gitlab-repopolicy validate --config presets.yaml
@@ -54,8 +61,14 @@ COMMITPOLICY: valid
   extends: org-commits
   rule conventional: preset:org-commits, file
     checks: preset:org-commits, file
+    checks.header-format: preset:org-commits
+    checks.header-format.conventional: preset:org-commits
     checks.header-max-length: preset:org-commits, file
+    checks.header-max-length.limit: preset:org-commits, file
+    checks.subject-trailing-dot: preset:org-commits, file
+    checks.subject-trailing-dot.no-dot: preset:org-commits, file
     checks.type-enum: preset:org-commits
+    checks.type-enum.allowed: preset:org-commits
     except: preset:org-commits
     except.git_reverts: preset:org-commits
     except.merge_commit: preset:org-commits

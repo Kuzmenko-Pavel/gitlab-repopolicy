@@ -29,8 +29,14 @@ const ciDenied = "gitlab-repopolicy: you may not change ci/"
 // withCIPolicy creates a project protected by ciPolicy.
 func withCIPolicy(t *testing.T, name string) *project {
 	t.Helper()
+	return withPathPolicy(t, name, ciPolicy)
+}
+
+// withPathPolicy creates a project with the PATHPOLICY in main.
+func withPathPolicy(t *testing.T, name, policy string) *project {
+	t.Helper()
 	p := newProject(t, name)
-	mustCommit(t, user("alice"), p, "main", "", "chore: add path policy", create("PATHPOLICY", ciPolicy))
+	mustCommit(t, user("alice"), p, "main", "", "chore: add path policy", create("PATHPOLICY", policy))
 	return p
 }
 
@@ -136,9 +142,8 @@ func TestOps_ProjectAccessToken(t *testing.T) {
 }
 
 // protectedRelease creates release/1, protected so that Developers may merge
-// into it. The hook checks a protected ref by the net diff, so a merge needs
-// the right of whoever presses merge; a merge into a
-// feature branch brings no new commits and is not checked.
+// into it. With check_history: incoming the hook counts every commit that
+// enters the branch, so a merge needs the right of whoever presses merge.
 func protectedRelease(t *testing.T, p *project) string {
 	t.Helper()
 	createBranch(t, user("alice"), p, "release/1", "main")
@@ -152,7 +157,7 @@ func protectedRelease(t *testing.T, p *project) string {
 // merge, and GitLab shows its GL-HOOK-ERR line in the merge request.
 func TestOps_MergeButton(t *testing.T) {
 	t.Parallel()
-	p := withCIPolicy(t, "merge")
+	p := withPathPolicy(t, "merge", ciIncomingPolicy)
 	alice, bob := user("alice"), user("bob")
 	release := protectedRelease(t, p)
 	mustCommit(t, alice, p, "feature", "main", "ci: change the build", create("ci/build.yml", "build"))
@@ -192,7 +197,7 @@ const sleepCI = `wait:
 // pipeline carries the identity of who set auto-merge.
 func TestOps_AutoMerge(t *testing.T) {
 	t.Parallel()
-	p := withCIPolicy(t, "automerge")
+	p := withPathPolicy(t, "automerge", ciIncomingPolicy)
 	alice, bob := user("alice"), user("bob")
 	mustCommit(t, alice, p, "main", "", "ci: add the pipeline", create(".gitlab-ci.yml", sleepCI))
 	release := protectedRelease(t, p)

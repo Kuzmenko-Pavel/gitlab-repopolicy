@@ -1,11 +1,13 @@
 # The commit rules of the organization come from the preset org-commits.
 # This project only warns about long headers and allows a full stop at the
-# end of the subject.
+# end of the subject: value optional lifts the requirement of the preset.
 version: 1
 extends: org-commits
 
 rules:
   conventional:
     checks:
-      header-max-length: { level: warn }
-      subject-full-stop: null
+      header-max-length:
+        limit: { level: warn }
+      subject-trailing-dot:
+        no-dot: { value: optional }

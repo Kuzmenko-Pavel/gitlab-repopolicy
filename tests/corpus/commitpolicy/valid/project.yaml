@@ -9,13 +9,24 @@ rules:
       merge_commit: true
       git_reverts: true
     checks:
-      type-enum:         { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      scope:             { level: error, value: optional }
-      breaking-bang:     { level: error, value: allow }
-      subject-case:      { level: error, value: lower-first }
-      subject-full-stop: { level: error, value: forbid }
-      header-max-length: { level: error, value: 100 }
-      trailer-required:  { level: error, value: [Signed-off-by] }
+      header-format:
+        conventional: { level: error }
+      header-max-length:
+        limit: { level: error, value: 100 }
+      type-enum:
+        allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:
+        optional: { level: error, value: optional }
+      breaking-bang:
+        optional: { level: error, value: optional }
+      subject-starts-lowercase:
+        lowercase: { level: error, value: required }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      body-leading-blank-lines:
+        blank-line: { level: error, value: required }
+      trailer-required:
+        dco: { level: error, value: [Signed-off-by] }
     message: >-
       Commits follow Conventional Commits and carry a DCO Signed-off-by
       trailer (git commit -s).

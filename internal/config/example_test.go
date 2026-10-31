@@ -21,7 +21,6 @@ func TestExampleConfig(t *testing.T) {
 	want.GitLabURL = socketURL
 	want.Modules = map[string]string{"pathpolicy": ModuleEnabled, "commitpolicy": ModuleEnabled, "tagpolicy": ModuleEnabled, "branchpolicy": ModuleEnabled}
 	no := false
-	want.DefaultBranch = []string{"main"}
 	want.SettingsCheck = SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: &no}
 	for module, presets := range cfg.Presets {
 		assert.Empty(t, presets, "presets are values of an installation, the example has none: %s", module)

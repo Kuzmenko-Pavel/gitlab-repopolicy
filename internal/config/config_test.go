@@ -22,6 +22,11 @@ func TestParse_Defaults(t *testing.T) {
 	ep, err := cfg.Endpoint()
 	require.NoError(t, err)
 	assert.Equal(t, Endpoint{Socket: "/var/opt/gitlab/gitlab-workhorse/sockets/socket", BaseURL: "http://gitlab"}, ep)
+	assert.Equal(t, []string{"main", "master"}, cfg.DefaultBranch)
+
+	cfg, err = Parse([]byte("gitlab_url: " + socketURL + "\ndefault_branch: []\n"))
+	require.NoError(t, err)
+	assert.Empty(t, cfg.DefaultBranch, "[] turns the check off")
 }
 
 func TestParse_Full(t *testing.T) {
@@ -38,7 +43,7 @@ func TestParse_Full(t *testing.T) {
 	assert.True(t, cfg.ModuleEnabled("pathpolicy"))
 	assert.False(t, cfg.ModuleEnabled("commitpolicy"))
 	assert.True(t, cfg.ModuleEnabled("tagpolicy"))
-	assert.Equal(t, []string{"main", "master"}, cfg.DefaultBranch)
+	assert.Equal(t, []string{"trunk"}, cfg.DefaultBranch)
 	require.NotNil(t, cfg.SettingsCheck.JobTokenPush)
 	assert.False(t, *cfg.SettingsCheck.JobTokenPush)
 	assert.Contains(t, cfg.Presets["commitpolicy"], "org-conventional")

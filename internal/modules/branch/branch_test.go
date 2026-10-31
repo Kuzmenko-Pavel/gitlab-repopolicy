@@ -215,6 +215,23 @@ rules:
 	assert.Equal(t, []string{"preset:org-branches", "file"}, res.Violations[0].Source)
 }
 
+// TestDenyWithChecksOff: false turns a check off, so it goes with deny: true,
+// also over a true of the preset; an active true is a conflict after merging.
+func TestDenyWithChecksOff(t *testing.T) {
+	s := settings(t)
+	p := parse(t, s, "version: 1\nrules:\n  r: {match: [x], priority: 1, deny: true, protected: false, user_prefix: false, message: m}\n")
+	require.NoError(t, p.unusable)
+	assert.Equal(t, []string{module.CodeBranchName}, codes(protectedEnv().create(t, p, "x")))
+
+	p = parse(t, s, "version: 1\nextends: org-branches\nrules:\n  release:\n    deny: true\n    protected: false\n")
+	require.NoError(t, p.unusable)
+	assert.Equal(t, []string{module.CodeBranchName}, codes(protectedEnv().create(t, p, "release/v1.0.0")),
+		"the file denies the class and turns off the protection of the preset")
+
+	_, err := Parse([]byte("version: 1\nextends: org-branches\nrules:\n  release:\n    deny: true\n"), s)
+	assert.ErrorContains(t, err, "rule release: protected: true is not allowed with deny: true", "the true of the preset stays active")
+}
+
 func TestStrictMode(t *testing.T) {
 	p := parse(t, settings(t), `version: 1
 extends: org-branches
@@ -280,7 +297,8 @@ func TestCheckMerged(t *testing.T) {
 
 func TestParse_Invalid(t *testing.T) {
 	for name, tc := range map[string]struct{ file, want string }{
-		"deny with protected":  {"version: 1\nrules:\n  r: {match: [x], priority: 1, deny: true, protected: true, message: m}\n", "deny: no protected with deny"},
+		"deny with protected":  {"version: 1\nrules:\n  r: {match: [x], priority: 1, deny: true, protected: true, message: m}\n", "protected: true is not allowed with deny: true"},
+		"deny with prefix":     {"version: 1\nrules:\n  r: {match: [x], priority: 1, deny: true, user_prefix: true, message: m}\n", "user_prefix: true is not allowed with deny: true"},
 		"pattern is gone":      {"version: 1\nrules:\n  r: {match: [x], priority: 1, pattern: x, message: m}\n", `unknown field "pattern"`},
 		"examples are gone":    {"version: 1\nrules:\n  r: {match: [x], priority: 1, examples: {valid: [x]}, message: m}\n", `unknown field "examples"`},
 		"no match":             {"version: 1\nrules:\n  r: {priority: 1, message: m}\n", "match: required"},

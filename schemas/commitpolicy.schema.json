@@ -34,77 +34,171 @@
         "additionalProperties": false,
         "description": "Every rule that matches a branch applies (AND).",
         "properties": {
+          "check_history": {
+            "description": "new-content (the default): the commits that no branch or tag has yet; incoming: every commit that enters the branch.",
+            "enum": [
+              "new-content",
+              "incoming"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "checks": {
             "additionalProperties": false,
-            "description": "Checks of the messages, by name; null removes a check of a preset.",
+            "description": "Checks of the messages by type, then by a name of the check; null removes a type or a check of a preset.",
             "properties": {
-              "body-max-line-length": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+              "body-leading-blank-lines": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has an empty line right after the header: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
                   "null"
                 ]
               },
-              "body-required": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+              "body-max-line-length": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  }
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets.",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "body-min-line-length": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Minimum length of the body text in characters, without the trailer block; 0 makes the body optional. The default is 1.",
+                      "maximum": 10000,
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -112,42 +206,83 @@
                 ]
               },
               "breaking-bang": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has \"!\" after the type or the scope: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "allow",
-                      "forbid"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "header-format": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -155,40 +290,50 @@
                 ]
               },
               "header-max-length": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets.",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -196,110 +341,130 @@
                 ]
               },
               "pattern": {
-                "additionalProperties": false,
-                "properties": {
-                  "keys": {
-                    "description": "Trailer keys to search, for location: trailer; compared case-insensitively.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "keys": {
+                      "description": "Trailer keys to search, for location: trailer; compared case-insensitively.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "location": {
-                    "description": "Required after merging with presets. Where the regex is searched.",
-                    "enum": [
-                      "header",
-                      "body",
-                      "trailer",
-                      "message"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "location": {
+                      "description": "Required after merging with presets. Where the regex is searched.",
+                      "enum": [
+                        "header",
+                        "body",
+                        "trailer",
+                        "message"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. /re/ or /re/i must be found; !/re/ or !/re/i must not be found. RE2, searched anywhere like =~ in GitLab CI.",
+                      "minLength": 1,
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "x-repopolicy-check": "pattern"
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets. /re/ or /re/i must be found; !/re/ or !/re/i must not be found. RE2, searched anywhere like =~ in GitLab CI.",
-                    "minLength": 1,
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "x-repopolicy-check": "pattern"
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "x-repopolicy-check": "pattern-keys"
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
                   "null"
-                ],
-                "x-repopolicy-check": "pattern-keys"
+                ]
               },
               "scope": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has a scope in parentheses after the type: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "optional",
-                      "required",
-                      "forbidden"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -307,130 +472,161 @@
                 ]
               },
               "scope-enum": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
-                  "value": {
-                    "description": "Required after merging with presets. Allowed scopes.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  }
+                    "value": {
+                      "description": "Required after merging with presets. Allowed scopes.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
                   "null"
                 ]
               },
-              "subject-case": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+              "subject-starts-lowercase": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has a lowercase letter as the first character of the subject: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "lower-first",
-                      "sentence",
-                      "any"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
                   "null"
                 ]
               },
-              "subject-full-stop": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+              "subject-trailing-dot": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has \".\" at the end of the subject: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
-                  "value": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "forbid",
-                      "require"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -438,43 +634,53 @@
                 ]
               },
               "trailer-required": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
-                  "value": {
-                    "description": "Required after merging with presets. Trailer keys that every message must have.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  }
+                    "value": {
+                      "description": "Required after merging with presets. Trailer keys that every message must have.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",
@@ -482,43 +688,53 @@
                 ]
               },
               "type-enum": {
-                "additionalProperties": false,
-                "properties": {
-                  "level": {
-                    "description": "Required after merging with presets.",
-                    "enum": [
-                      "error",
-                      "warn"
-                    ],
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "types": {
-                    "description": "Apply the check only to these types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
-                  "value": {
-                    "description": "Required after merging with presets. Allowed types.",
-                    "items": {
-                      "minLength": 1,
-                      "type": "string"
+                    "types": {
+                      "description": "Apply the check only to these types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
                     },
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  }
+                    "value": {
+                      "description": "Required after merging with presets. Allowed types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
                 },
                 "type": [
                   "object",

@@ -69,22 +69,6 @@ func limitName(reason string) string {
 	return "the time of a push (timeouts.total)"
 }
 
-// scopeOf returns the class of the ref as a change scope; it asks GitLab only
-// for refs other than the default branch.
-func (e *evaluation) scopeOf(ctx context.Context, ref string) (module.Scope, module.Status) {
-	if ref == e.in.Refs.Default() {
-		return module.Scope{Class: module.ClassDefault}, module.Confirmed()
-	}
-	class, st := e.in.Refs.Class(ctx, ref)
-	if !st.IsConfirmed() {
-		return module.Scope{}, st
-	}
-	if class == module.ClassProtected {
-		return e.in.Refs.ProtectedScope(ctx)
-	}
-	return module.Scope{Class: class}, module.Confirmed()
-}
-
 // Evaluate checks every branch update of the push. Tags are not checked: the
 // core accepts only tags on commits of branches, and those commits are
 // checked as part of the branches.
@@ -129,13 +113,13 @@ func (e *evaluation) update(ctx context.Context, u module.RefUpdate) error {
 		return nil
 	}
 	if policyTouched {
-		// Invariant 3: a change of PATHPOLICY is checked on every ref.
-		scope, st := e.scopeOf(ctx, u.Ref)
-		if !st.IsConfirmed() {
-			e.unknown(st, "", u.Ref)
-			return nil
+		// Invariant 3: a change of PATHPOLICY is checked on every ref, in the
+		// default branch with every commit that enters it: only there it takes effect.
+		history := module.HistoryNewContent
+		if u.Ref == e.in.Refs.Default() {
+			history = module.HistoryIncoming
 		}
-		paths, err := e.in.Changes.Paths(ctx, u, scope)
+		paths, err := e.in.Changes.Paths(ctx, u, module.HistoryScope(history, u.Ref, e.in.Refs.Default()))
 		if err != nil {
 			return err
 		}
@@ -154,44 +138,24 @@ func (e *evaluation) update(ctx context.Context, u module.RefUpdate) error {
 	return nil
 }
 
-// ruleScope returns the scope of a rule for the branch and whether the rule
-// applies to it. A branch of a match list is checked like a protected branch.
-func (e *evaluation) ruleScope(ctx context.Context, r *rule, u module.RefUpdate) (module.Scope, bool, module.Status) {
+// applies reports whether match selects the branch of the update.
+func (e *evaluation) applies(r *rule, ref string) bool {
 	switch {
-	case r.match.IsList():
-		if !r.protects(u.Ref) {
-			return module.Scope{}, false, module.Confirmed()
-		}
-		return module.Scope{Class: module.ClassProtected, Key: "pathpolicy/" + r.name, Protected: r.protects}, true, module.Confirmed()
+	case r.match.All:
+		return true
 	case r.match.Default:
-		if u.Ref != e.in.Refs.Default() {
-			return module.Scope{}, false, module.Confirmed()
-		}
-		return module.Scope{Class: module.ClassDefault}, true, module.Confirmed()
+		return ref == e.in.Refs.Default()
 	}
-	scope, st := e.scopeOf(ctx, u.Ref)
-	if !st.IsConfirmed() {
-		return module.Scope{}, false, st
-	}
-	return scope, true, module.Confirmed()
-}
-
-// protects reports whether a branch is in the match list of the rule.
-func (r *rule) protects(ref string) bool {
 	name, ok := strings.CutPrefix(ref, "refs/heads/")
 	return ok && r.match.Matches(name)
 }
 
 // rule checks one touched rule on one ref.
 func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) error {
-	scope, applies, st := e.ruleScope(ctx, r, u)
-	if !st.IsConfirmed() {
-		e.unknown(st, r.name, u.Ref)
+	if !e.applies(r, u.Ref) {
 		return nil
 	}
-	if !applies {
-		return nil
-	}
+	scope := module.HistoryScope(r.history, u.Ref, e.in.Refs.Default())
 	paths, err := e.in.Changes.Paths(ctx, u, scope)
 	if err != nil {
 		return err
@@ -209,7 +173,7 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 	}
 	e.res.Touched = true
 	hint := r.advice()
-	if scope.Class == module.ClassOther {
+	if r.history != module.HistoryIncoming {
 		var why string
 		var err error
 		if hit, names, why, err = e.newContent(ctx, u, hit, names); err != nil {
@@ -247,8 +211,8 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 // short is the abbreviated commit SHA of a hint.
 func short(oid string) string { return oid[:min(len(oid), 9)] }
 
-// newContent keeps the paths of a rule that a new commit of an ordinary
-// branch leaves in a state the branch and the default branch never had: a
+// newContent keeps the paths of a rule with check_history: new-content that a
+// new commit leaves in a state the branch and the default branch never had: a
 // rebase, squash or cherry-pick of a change of an allowed person is not a
 // change. PATHPOLICY itself is never exempt. Above the commit limit nothing
 // is exempt, and the paths stay denied.

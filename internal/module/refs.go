@@ -80,6 +80,25 @@ type Scope struct {
 	FirstParent bool
 }
 
+// Values of check_history of a PATHPOLICY or COMMITPOLICY rule.
+const (
+	HistoryNewContent = "new-content"
+	HistoryIncoming   = "incoming"
+)
+
+// HistoryScope is the scope of a rule with check_history on ref: new-content
+// takes the commits that no branch or tag has yet, incoming every commit that
+// enters ref, on create the commits that are not in the default branch.
+func HistoryScope(history, ref, defaultRef string) Scope {
+	switch {
+	case history != HistoryIncoming:
+		return Scope{Class: ClassOther}
+	case ref == defaultRef:
+		return Scope{Class: ClassDefault}
+	}
+	return Scope{Class: ClassProtected, Key: HistoryIncoming}
+}
+
 // RefClassifier classifies refs. Default is local; protected needs the API and
 // is resolved lazily, once per receive.
 type RefClassifier interface {

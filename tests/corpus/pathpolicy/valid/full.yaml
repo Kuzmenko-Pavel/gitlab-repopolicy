@@ -16,11 +16,13 @@ rules:
     message: COMMITPOLICY belongs to dev-lead.
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [platform-lead, release-manager]
     message: Prod values are changed by release managers.
   release:
     match: ['!/^feature\//']
+    check_history: new-content
     paths: ["deploy/**"]
     allow: [release-manager]
     message: Deploy files are changed by the release manager outside feature branches.

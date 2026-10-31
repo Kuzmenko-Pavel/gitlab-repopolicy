@@ -1,0 +1,22 @@
+# Every commit references at least one GitLab issue or merge request, or a
+# task of the Jira projects INFRA and PAY, anywhere in the message. GitLab
+# references are the forms that GitLab crosslinks: #12, project#12,
+# group/project#12, !12 for a merge request and full URLs.
+version: 1
+
+rules:
+  references:
+    match: all
+    parser: conventional
+    except:
+      merge_commit: true
+      git_reverts: true
+    checks:
+      header-format:
+        conventional: { level: error }
+      pattern:
+        issue-or-mr: { level: error, location: message, value: '/(^|[^A-Za-z0-9_])([A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*)?[#!][0-9]+\b|https?:\/\/\S+\/-\/(issues|merge_requests|work_items)\/[0-9]+|\b(INFRA|PAY)-[0-9]+\b/' }
+    message: >-
+      Reference a GitLab issue or merge request, or a Jira task, anywhere in
+      the message, for example "issue: #121", "close: group/project#321" or
+      "jira: INFRA-4390".

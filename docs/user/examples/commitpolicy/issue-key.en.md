@@ -21,9 +21,12 @@ rules:
     except:
       merge_commit: true
     checks:
-      header-max-length: { level: error, value: 72 }
-      subject-full-stop: { level: error, value: forbid }
-      pattern:           { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
+      header-max-length:
+        limit: { level: error, value: 72 }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      pattern:
+        issue-key: { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
     message: Start the header with the issue key, for example PAY-123.
 ```
 
@@ -33,9 +36,9 @@ rules:
 | Message | Result | Why |
 | --- | --- | --- |
 | `PAY-123 Round refunds to cents` | passes | the issue key is at the start |
-| `Round refunds to cents` | denied | `pattern`: no key at the start of the header |
-| `pay-123 round refunds` | denied | `pattern`: the issue key is in capital letters |
-| `PAY-123 Round refunds to cents.` | denied | `subject-full-stop`: with `parser: free` the subject is the whole header |
+| `Round refunds to cents` | denied | `pattern issue-key`: no key at the start of the header |
+| `pay-123 round refunds` | denied | `pattern issue-key`: the issue key is in capital letters |
+| `PAY-123 Round refunds to cents.` | denied | `subject-trailing-dot`: with `parser: free` the subject is the whole header |
 
 Check each message with `gitlab-repopolicy lint-commit -m "PAY-123 Round refunds to cents"`, substituting a table row. A valid row exits 0, a violation exits 1. Under global and policy `enforce`, these errors block the corresponding incoming commits on the default branch.
 

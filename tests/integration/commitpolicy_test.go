@@ -23,15 +23,16 @@ rules:
     parser: conventional
     except: {merge_commit: true, git_reverts: true}
     checks:
-      type-enum: {level: error, value: [feat, fix, chore]}
-      subject-full-stop: {level: error, value: forbid}
+      header-format: {conventional: {level: error}}
+      type-enum: {allowed: {level: error, value: [feat, fix, chore]}}
+      subject-trailing-dot: {no-dot: {level: error, value: forbidden}}
     message: Commits follow Conventional Commits.
 `
-	commitWarn    = "version: 1\nmode: warn\nrules:\n  conventional:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
+	commitWarn    = "version: 1\nmode: warn\nrules:\n  conventional:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
 	commitWeak    = "version: 1\nrules:\n  conventional:\n    match: all\n    parser: free\n    message: m\n"
-	commitMain    = "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
-	commitMerged  = "version: 1\nrules:\n  all:\n    match: ['/.*/']\n    parser: conventional\n    message: m\n    except: {merge_commit: true, merged_commits: true}\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n"
-	commitRelease = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [fix]}\n"
+	commitMain    = "version: 1\nrules:\n  main:\n    match: [main]\n    check_history: incoming\n    parser: conventional\n    message: m\n    checks:\n      header-format: {conventional: {level: error}}\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
+	commitMerged  = "version: 1\nrules:\n  all:\n    match: ['/.*/']\n    check_history: incoming\n    parser: conventional\n    message: m\n    except: {merge_commit: true, merged_commits: true}\n    checks:\n      header-format: {conventional: {level: error}}\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
+	commitRelease = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    check_history: incoming\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {allowed: {level: error, value: [fix]}}\n"
 )
 
 func TestCommitPolicy_Enforce(t *testing.T) {
@@ -41,7 +42,7 @@ func TestCommitPolicy_Enforce(t *testing.T) {
 	s.Commit("WIP stuff.", map[string]string{"a": "2"})
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertDenied(t, r, "COMMITPOLICY rule \"conventional\", branch main: 1 commit message does not follow the format", `"WIP stuff."`,
-		`header: expected "type(scope): subject"`, "how to fix: reword the commit")
+		`header-format conventional: expected "type(scope): subject"`, "how to fix: reword the commit")
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	last := ev[len(ev)-1]
@@ -86,12 +87,19 @@ func mergeBranch(s *Stand, messages ...string) {
 	s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'main'", "feature")
 }
 
+// TestCommitPolicy_MergeWithoutSquash: check_history decides whether the
+// commits of a merged branch are checked again in main.
 func TestCommitPolicy_MergeWithoutSquash(t *testing.T) {
-	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": commitPolicy})
+	s, _ := mainWith(t, map[string]string{"COMMITPOLICY": strings.Replace(commitPolicy, "    match: all\n", "    match: all\n    check_history: incoming\n", 1)})
 	mergeBranch(s, "feat: good", "bad message")
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertDenied(t, r, `"bad message"`)
 	assert.NotContains(t, r.Output, "Merge branch", "the merge commit is excepted")
+
+	s, _ = mainWith(t, map[string]string{"COMMITPOLICY": commitPolicy})
+	mergeBranch(s, "feat: good", "bad message")
+	// new-content: the commits of feature are not new to the repository.
+	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 }
 
 func TestCommitPolicy_MergedCommits(t *testing.T) {
@@ -124,7 +132,7 @@ func TestCommitPolicy_CreateProtectedFromFeature(t *testing.T) {
 	s.Commit("feat: not allowed on release", map[string]string{"a": "1"})
 	s.Seed("HEAD:refs/heads/feature")
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature2"))
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY rule \"release\", branch release/1", `type-enum: "feat"`)
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/release/1"), "COMMITPOLICY rule \"release\", branch release/1", `type-enum allowed: "feat"`)
 }
 
 func TestCommitPolicy_WarnVsEnforce(t *testing.T) {
@@ -133,7 +141,7 @@ func TestCommitPolicy_WarnVsEnforce(t *testing.T) {
 	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertAllowed(t, r)
 	assert.Contains(t, r.Output, "gitlab-repopolicy: push accepted with 1 warning")
-	assert.Contains(t, r.Output, `type-enum: "chore" is not one of feat, fix`)
+	assert.Contains(t, r.Output, `type-enum allowed: "chore" is not one of feat, fix`)
 	ev := Events(s.Audit(), "decision")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "warn", ev[len(ev)-1]["decision"])
@@ -182,10 +190,10 @@ func TestLintCommit(t *testing.T) {
 	require.NoError(t, os.WriteFile(policy, []byte(commitPolicy), 0o600))
 	out, code := s.binary(s.Work, "lint-commit", "--range", base+"..HEAD", "-f", policy)
 	assert.Equal(t, 1, code, out)
-	assert.Contains(t, out, `[conventional] error: header: expected "type(scope): subject"`)
+	assert.Contains(t, out, `[conventional] error: header-format conventional: expected "type(scope): subject"`)
 	assert.NotContains(t, out, "feat: good")
 	hook := s.Push(alice, "HEAD:refs/heads/main")
-	assertDenied(t, hook, `header: expected "type(scope): subject"`)
+	assertDenied(t, hook, `header-format conventional: expected "type(scope): subject"`)
 
 	bot := "49699333+dependabot[bot]@users.noreply.github.com"
 	s.git(s.Work, "commit", "-q", "--allow-empty", "--author", "dependabot[bot] <"+bot+">", "-m", "build(deps): Bump x from 1 to 2")
@@ -201,7 +209,7 @@ func TestLintCommit(t *testing.T) {
 	assert.Equal(t, 0, code, out)
 	out, code = s.binary(s.Work, "lint-commit", "-m", "fix: ok.", "-f", policy)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, out, "subject-full-stop")
+	assert.Contains(t, out, "subject-trailing-dot no-dot")
 }
 
 func TestCorpus(t *testing.T) {

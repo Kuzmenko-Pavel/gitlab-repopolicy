@@ -136,13 +136,13 @@ gitlab-repopolicy lint-commit (-m MSG | --range A..B [--skip-author EMAIL]...) [
 - `--skip-author` without `--range` - exit code 2
 - an unknown name in `--rule` - exit code 1 with the list of rules of the file
 
-Exit code 0 - no violations of level `error`, 1 - there are. Violations go to stdout, one line each: `<commit>: [<rule>] error|warning: <check>: <what is wrong>`.
+Exit code 0 - no violations of level `error`, 1 - there are. Violations go to stdout, one line each: `<commit>: [<rule>] error|warning: <check type> <check name>: <what is wrong>`.
 
 ```text
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
-message: [conventional] error: header: expected "type(scope): subject"
-message: [conventional] error: trailer-required: missing Signed-off-by in the trailer block
-message: [release] error: header: expected "type(scope): subject"
+message: [conventional] error: header-format conventional: expected "type(scope): subject"
+message: [conventional] error: body-leading-blank-lines blank-line: an empty line must follow the header
+message: [conventional] error: trailer-required dco: missing Signed-off-by in the trailer block
 ```
 
 To check messages before committing or in CI, use the [lint-commit examples](../policies/commitpolicy.en.md#checking-without-a-push).

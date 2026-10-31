@@ -8,7 +8,10 @@ rules:
     except:
       merge_commit: true
     checks:
-      header-max-length: { level: error, value: 72 }
-      subject-full-stop: { level: error, value: forbid }
-      pattern:           { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
+      header-max-length:
+        limit: { level: error, value: 72 }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      pattern:
+        issue-key: { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
     message: Start the header with the issue key, for example PAY-123.

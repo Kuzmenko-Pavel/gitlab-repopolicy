@@ -39,12 +39,13 @@ var ruleSpec = &spec.Spec{Type: spec.Object, Check: "rule",
 	}}
 
 var checks = spec.Checks{
-	// rule: a forbidden class has nothing to check.
+	// rule: a forbidden class has nothing to check; false turns a check off
+	// and is allowed, also over a true of a preset.
 	"rule": func(v *strictyaml.Value) error {
-		if d, ok := v.Fields["deny"]; ok && d.Bool {
+		if d, ok := v.Fields["deny"]; ok && d.Kind == strictyaml.Bool && d.Bool {
 			for _, f := range []string{"user_prefix", "protected"} {
-				if x, ok := v.Fields[f]; ok && x.Kind != strictyaml.Null {
-					return errors.New("deny: no " + f + " with deny")
+				if x, ok := v.Fields[f]; ok && x.Kind == strictyaml.Bool && x.Bool {
+					return errors.New(f + ": true is not allowed with deny: true")
 				}
 			}
 		}

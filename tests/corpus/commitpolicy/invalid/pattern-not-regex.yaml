@@ -4,5 +4,6 @@ rules:
     match: all
     parser: free
     checks:
-      pattern: { level: error, location: header, value: 'PAY-1' }
+      pattern:
+        issue-key: { level: error, location: header, value: 'PAY-1' }
     message: m

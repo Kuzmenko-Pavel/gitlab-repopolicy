@@ -21,9 +21,12 @@ rules:
     except:
       merge_commit: true
     checks:
-      header-max-length: { level: error, value: 72 }
-      subject-full-stop: { level: error, value: forbid }
-      pattern:           { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
+      header-max-length:
+        limit: { level: error, value: 72 }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      pattern:
+        issue-key: { level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ \S/' }
     message: Start the header with the issue key, for example PAY-123.
 ```
 
@@ -33,9 +36,9 @@ rules:
 | Повідомлення | Результат | Чому |
 | --- | --- | --- |
 | `PAY-123 Round refunds to cents` | проходить | ключ задачі на початку |
-| `Round refunds to cents` | відмова | `pattern`: немає ключа на початку header |
-| `pay-123 round refunds` | відмова | `pattern`: ключ задачі великими літерами |
-| `PAY-123 Round refunds to cents.` | відмова | `subject-full-stop`: з `parser: free` subject - це весь header |
+| `Round refunds to cents` | відмова | `pattern issue-key`: немає ключа на початку header |
+| `pay-123 round refunds` | відмова | `pattern issue-key`: ключ задачі великими літерами |
+| `PAY-123 Round refunds to cents.` | відмова | `subject-trailing-dot`: з `parser: free` subject - це весь header |
 
 Перевірте кожне повідомлення через `gitlab-repopolicy lint-commit -m "PAY-123 Round refunds to cents"`, підставляючи рядок таблиці. Коректний рядок дає код 0, порушення - 1. У глобальному `enforce` і policy `enforce` такі помилки блокують відповідні вхідні коміти основної гілки.
 

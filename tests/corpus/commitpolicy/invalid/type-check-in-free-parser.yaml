@@ -4,5 +4,6 @@ rules:
     match: all
     parser: free
     checks:
-      type-enum: { level: error, value: [feat] }
+      type-enum:
+        allowed: { level: error, value: [feat] }
     message: m

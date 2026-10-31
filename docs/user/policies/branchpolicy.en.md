@@ -56,13 +56,13 @@ After a denial the branch is not on the server, only on your machine. Rename it 
 | `rules` | no | rules, up to 50: rule name → rule |
 | `rules.<name>.match` | yes | the names of branches of the class ([match.en.md](match.en.md)). There is no `default` here |
 | `rules.<name>.priority` | yes | the order of the rules, an integer from 0 to 1 000 000. A new branch falls into the rule with the lowest `priority` whose `match` matched. Unique after the merge with presets |
-| `rules.<name>.deny` | no | `true` forbids branch creation; `false` (the default) adds no such prohibition. With `deny: true`, omit `user_prefix` and `protected`, even if their value would be `false` |
+| `rules.<name>.deny` | no | `true` forbids branch creation; `false` (the default) adds no such prohibition. A forbidden branch has nothing to check, so with `deny: true` the fields `user_prefix` and `protected` cannot be `true`; `false` is allowed |
 | `rules.<name>.user_prefix` | no | `true` requires an active GitLab username before the first `/`; `false` (the default) disables the prefix check |
 | `rules.<name>.protected` | no | `true` requires the new branch to be protected in GitLab (Settings > Repository > Protected branches); `false` (the default) does not require that status |
 | `rules.<name>.message` | yes | text in a denial, up to 1000 characters. An example of a right name, and for `protected` which roles to set |
 | `rules.<name>.help` | no | `contact` and `docs_url`, as in [PATHPOLICY](pathpolicy.en.md#field-reference) |
 
-Defaults apply to the rule after merging with presets. A parameter omitted from the file is inherited; explicit `false` disables the corresponding preset requirement. `protected: false` does not change branch protection settings in GitLab.
+Defaults apply to the rule after merging with presets. A parameter omitted from the file is inherited; explicit `false` disables the corresponding preset requirement. The conflict with `deny: true` is checked after merging: if a preset sets `protected: true` and the file forbids the class, the file writes `deny: true` and `protected: false`, without `null`. `protected: false` does not change branch protection settings in GitLab.
 
 Checks of the list of rules after the merge with presets, at the acceptance of a new version and in `validate`:
 - `priority` does not repeat: otherwise the order of the rules would be random

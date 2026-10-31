@@ -14,6 +14,7 @@ import (
 
 type fakeChanges struct {
 	paths    map[string][]string // by ref
+	scopes   []module.Scope
 	err      error
 	changes  []module.PathChange
 	known    map[string][]module.PathState
@@ -25,7 +26,8 @@ func (f *fakeChanges) CandidatePaths(_ context.Context, u module.RefUpdate) ([]s
 	return f.paths[u.Ref], f.err
 }
 
-func (f *fakeChanges) Paths(_ context.Context, u module.RefUpdate, _ module.Scope) ([]string, error) {
+func (f *fakeChanges) Paths(_ context.Context, u module.RefUpdate, s module.Scope) ([]string, error) {
+	f.scopes = append(f.scopes, s)
 	return f.paths[u.Ref], f.err
 }
 
@@ -224,7 +226,7 @@ func TestEvaluate_MatchList(t *testing.T) {
 
 	e = newEnv("bob", map[string][]string{"refs/heads/feature": {".gitlab-ci.yml"}})
 	e.in.Refs = &fakeRefs{status: module.Unknown("503")}
-	assert.Equal(t, []string{module.CodeAuthorizationBackend}, codes(e.evaluate(t, basePolicy)), "match all needs the class: fail closed")
+	assert.Equal(t, []string{module.CodeProtectedPath}, codes(e.evaluate(t, basePolicy)), "match all does not ask GitLab about the branch")
 }
 
 func TestEvaluate_TagsNotChecked(t *testing.T) {
@@ -288,14 +290,35 @@ func TestEvaluate_KnownContentInOrdinaryBranch(t *testing.T) {
 	}
 }
 
-func TestEvaluate_KnownContentOnlyInOrdinaryBranches(t *testing.T) {
+// TestEvaluate_CheckHistory: check_history, not match or the class of the
+// branch, decides which commits count and whether known content is exempt.
+func TestEvaluate_CheckHistory(t *testing.T) {
 	alice := module.PathState{Mode: "100644", OID: strings.Repeat("1", 40)}
-	e := newEnv("bob", map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}})
-	e.in.Changes = &fakeChanges{paths: map[string][]string{"refs/heads/main": {"helm/app/values-prod.yaml"}},
-		changes: []module.PathChange{{Commit: strings.Repeat("c", 40), Path: "helm/app/values-prod.yaml", State: alice}},
-		known:   map[string][]module.PathState{"helm/app/values-prod.yaml": {alice}}}
-	res := e.evaluate(t, basePolicy)
-	assert.Equal(t, module.Deny, res.Decision, "a branch of a match list counts every change")
+	run := func(policy, ref string) (*module.Result, []module.Scope) {
+		e := newEnv("bob", map[string][]string{ref: {"helm/app/values-prod.yaml"}})
+		changes := &fakeChanges{paths: map[string][]string{ref: {"helm/app/values-prod.yaml"}},
+			changes: []module.PathChange{{Commit: strings.Repeat("c", 40), Path: "helm/app/values-prod.yaml", State: alice}},
+			known:   map[string][]module.PathState{"helm/app/values-prod.yaml": {alice}}}
+		e.in.Changes = changes
+		e.in.Refs = &fakeRefs{class: module.ClassProtected, status: ok}
+		res := e.evaluate(t, policy)
+		return res, changes.scopes
+	}
+	res, scopes := run(basePolicy, "refs/heads/main")
+	assert.Equal(t, module.Allow, res.Decision, "new-content exempts known content in the default branch too")
+	assert.Equal(t, []module.Scope{{Class: module.ClassOther}}, scopes)
+
+	incoming := strings.Replace(basePolicy, "    paths: [\"helm/**/values-prod.yaml\"]", "    check_history: incoming\n    paths: [\"helm/**/values-prod.yaml\"]", 1)
+	res, scopes = run(incoming, "refs/heads/main")
+	assert.Equal(t, module.Deny, res.Decision, "incoming counts every change")
+	assert.Equal(t, []module.Scope{{Class: module.ClassDefault}}, scopes)
+	res, scopes = run(incoming, "refs/heads/release/1")
+	assert.Equal(t, module.Deny, res.Decision)
+	assert.Equal(t, []module.Scope{{Class: module.ClassProtected, Key: module.HistoryIncoming}}, scopes)
+
+	all := strings.Replace(incoming, "    match: [main, '/^release\\//']", "    match: ['/./']", 1)
+	res, _ = run(all, "refs/heads/release/1")
+	assert.Equal(t, module.Deny, res.Decision, "a list that selects every branch checks like match: all")
 }
 
 // TestEvaluate_KnownStatesFail: over the commit limit the known states do

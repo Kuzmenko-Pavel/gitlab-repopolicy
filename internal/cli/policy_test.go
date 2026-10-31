@@ -15,7 +15,7 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
 )
 
-const goodPolicy = "version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat]}\n"
+const goodPolicy = "version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {types: {level: error, value: [feat]}}\n"
 
 func inDir(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -32,7 +32,7 @@ func TestValidate(t *testing.T) {
 		"COMMITPOLICY": goodPolicy,
 		"bad.yaml":     "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {typo: {level: error}}}\n",
 		"broken.yaml":  "version: 1\nrules:\n  r: {match: all}\n",
-		"config.yaml":  "gitlab_url: https://gitlab.example.com\npresets: {commitpolicy: {org: {rules: {r: {match: all, parser: conventional, message: m, checks: {type-enum: {level: error, value: [fix]}}}}}}}\n",
+		"config.yaml":  "gitlab_url: https://gitlab.example.com\npresets: {commitpolicy: {org: {rules: {r: {match: all, parser: conventional, message: m, checks: {type-enum: {types: {level: error, value: [fix]}}}}}}}}\n",
 		"extends.yaml": "version: 1\nextends: org\n",
 	})
 	code, out, _ := run(t, "validate")
@@ -95,7 +95,7 @@ func TestLintCommit_Usage(t *testing.T) {
 	assert.Empty(t, out)
 	code, out, _ = run(t, "lint-commit", "-m", "fix: no")
 	assert.Equal(t, ExitError, code)
-	assert.Equal(t, "message: [r] error: type-enum: \"fix\" is not one of feat\n", out)
+	assert.Equal(t, "message: [r] error: type-enum types: \"fix\" is not one of feat\n", out)
 	code, _, errOut = run(t, "lint-commit", "-m", "feat: ok", "-f", "missing")
 	assert.Equal(t, ExitError, code)
 	assert.Contains(t, errOut, "missing")
@@ -110,8 +110,8 @@ func TestLintCommit_Usage(t *testing.T) {
 }
 
 func TestLintCommit_Rule(t *testing.T) {
-	policy := "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {level: error, value: [feat, fix]}\n" +
-		"  all:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      header-max-length: {level: error, value: 20}\n"
+	policy := "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {types: {level: error, value: [feat, fix]}}\n" +
+		"  all:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      header-max-length: {short: {level: error, value: 20}}\n"
 	inDir(t, map[string]string{"COMMITPOLICY": policy})
 	code, out, _ := run(t, "lint-commit", "-m", "chore: a header longer than twenty")
 	assert.Equal(t, ExitError, code)
@@ -130,11 +130,11 @@ func TestLintCommit_Rule(t *testing.T) {
 func TestLintCommit_PresetsOnlyConfig(t *testing.T) {
 	inDir(t, map[string]string{
 		"COMMITPOLICY": "version: 1\nextends: org\n",
-		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\npresets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all, parser: conventional, message: m, checks: {type-enum: {level: error, value: [feat]}}}\n",
+		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\npresets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all, parser: conventional, message: m, checks: {type-enum: {types: {level: error, value: [feat]}}}}\n",
 	})
 	code, out, errOut := run(t, "lint-commit", "--config", "config.yaml", "-m", "fix: no")
 	assert.Equal(t, ExitError, code, errOut)
-	assert.Contains(t, out, `type-enum: "fix" is not one of feat`, "the preset applies, the rest of the config is not read")
+	assert.Contains(t, out, `type-enum types: "fix" is not one of feat`, "the preset applies, the rest of the config is not read")
 	code, out, _ = run(t, "validate", "--config", "config.yaml")
 	assert.Equal(t, ExitOK, code)
 	assert.Contains(t, out, "COMMITPOLICY: valid")

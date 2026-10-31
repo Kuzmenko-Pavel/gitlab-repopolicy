@@ -132,6 +132,7 @@ func TestParse_Limits(t *testing.T) {
 		"version: 1\nadmins: [a]\ndeny: [x]\n":                                     `unknown field "deny"`,
 		head + rule("R", ""):                                                       `rule name "R" must match`,
 		head + rule("r", ", refs: protected"):                                      `rule r: unknown field "refs"`,
+		head + rule("r", ", check_history: all"):                                   `check_history: "all" is not one of new-content, incoming`,
 		head + "  r: {paths: [x], allow: [a], message: m}\n":                       "rule r: match: required",
 		head + "  r: {match: all, paths: [x], allow: [a]}\n":                       "rule r: message: required",
 		head + "  r: {match: protected, paths: [x], allow: [a], message: m}\n":     `"protected" is not all, default or a list`,

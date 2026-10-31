@@ -4,5 +4,6 @@ rules:
     match: all
     parser: conventional
     checks:
-      type-enum: { level: off, value: [feat] }
+      type-enum:
+        allowed: { level: off, value: [feat] }
     message: m

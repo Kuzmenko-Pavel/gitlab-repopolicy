@@ -419,7 +419,9 @@ func TestCLI_ValidateBranchOnline(t *testing.T) {
 
 // TestCLI_Test: gitlab-repopolicy test decides like the hook without a push.
 func TestCLI_Test(t *testing.T) {
-	s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+	// incoming: the candidate commit is already in the repository, like the
+	// commits of a merge request.
+	s, base := pathStand(t, ciHistory("incoming"), map[string]string{"ci.yml": "v1"})
 	head := s.Commit("change ci", map[string]string{"ci.yml": "v2"})
 	run := func(args ...string) CLI {
 		return s.Run(nil, append([]string{"test", "--config", s.config, "--repo", s.Bare, "--project", "acme/platform/app"}, args...)...)
@@ -451,7 +453,7 @@ func TestCLI_Test(t *testing.T) {
 	r = run("--old", head, "--new", app, "--ref", "refs/heads/candidate", "--user", "bob", "--gl-id", "user-3")
 	require.Equal(t, 0, r.Code, r.Stderr)
 	assert.Contains(t, r.Stderr, "allowed: no rule was touched, 1 new commits")
-	r = run("--old", zeroOID, "--new", "candidate", "--ref", "refs/heads/copy", "--user", "bob", "--gl-id", "user-3")
+	r = run("--old", zeroOID, "--new", "candidate", "--ref", "refs/heads/copy", "--user", "alice")
 	require.Equal(t, 0, r.Code, r.Stderr)
 	assert.Contains(t, r.Stderr, "run test in a mirror copy of the project", "a new branch whose commits are on other branches")
 

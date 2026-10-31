@@ -32,6 +32,7 @@ rules:
 
   kubernetes-agents:
     match: default
+    check_history: incoming
     paths: [".gitlab/agents/**"]
     allow: [alice]
     message: >-

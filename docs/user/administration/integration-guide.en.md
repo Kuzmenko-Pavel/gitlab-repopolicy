@@ -54,7 +54,7 @@ What to look at in audit:
 - `authorization_backend_failure` - groups without the service account, token problems
 - `duration_ms` and `api_calls` - the cost of the hook under your load
 - `invalid_policy` and `decision` with `code: invalid_policy_update` - policies that block a project in `enforce`
-- `decision` with `code: default_branch_not_allowed`, if `default_branch` is set ([configuration.en.md](configuration.en.md#default_branch)) - projects whose default branch has another name; in `enforce` pushes to them will be denied
+- `decision` with `code: default_branch_not_allowed`, if `default_branch` is not empty, and by default it is `[main, master]` ([configuration.en.md](configuration.en.md#default_branch)) - projects whose default branch has another name; in `enforce` pushes to them will be denied
 - `decision` with `code: tag_not_on_branch` - who puts tags on commits outside of branches. This check applies to every group project, even without policy files ([tagpolicy.en.md](../examples/tagpolicy/tag-on-branch.en.md)). Before `enforce` agree with the teams that tags are pushed together with the branch (`git push --follow-tags`)
 
 ## 4. COMMITPOLICY in a few projects

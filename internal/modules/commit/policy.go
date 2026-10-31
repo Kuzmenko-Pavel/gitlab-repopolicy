@@ -18,15 +18,16 @@ const (
 	maxExceptUsers = 50
 )
 
-// ruleYAML is a merged rule; checks stay raw so that a check of a newer
+// ruleYAML is a merged rule; checks stay raw so that a check type of a newer
 // version is skipped on the anchor instead of breaking the whole policy.
 type ruleYAML struct {
-	Match   any                       `yaml:"match"`
-	Parser  string                    `yaml:"parser"`
-	Except  exceptYAML                `yaml:"except"`
-	Checks  map[string]map[string]any `yaml:"checks"`
-	Message string                    `yaml:"message"`
-	Help    module.Help               `yaml:"help"`
+	Match        any            `yaml:"match"`
+	CheckHistory string         `yaml:"check_history"`
+	Parser       string         `yaml:"parser"`
+	Except       exceptYAML     `yaml:"except"`
+	Checks       map[string]any `yaml:"checks"`
+	Message      string         `yaml:"message"`
+	Help         module.Help    `yaml:"help"`
 }
 
 type exceptYAML struct {
@@ -58,6 +59,7 @@ type Policy struct {
 type rule struct {
 	name         string
 	match        module.Match
+	history      string
 	conventional bool
 	except       exceptYAML
 	checks       []*check
@@ -67,8 +69,9 @@ type rule struct {
 	source       []string
 }
 
-// check is a check of the catalogue in a rule.
+// check is a named check of a type of the catalogue in a rule.
 type check struct {
+	def      checkDef
 	name     string
 	level    level
 	types    []string
@@ -133,18 +136,29 @@ func newRule(name string, y ruleYAML, source []string) (*rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("match: %w", err)
 	}
-	r := &rule{name: name, match: m, except: y.Except, message: strings.TrimSpace(y.Message),
+	r := &rule{name: name, match: m, history: y.CheckHistory, except: y.Except, message: strings.TrimSpace(y.Message),
 		conventional: y.Parser == "conventional", help: y.Help, source: source}
-	for _, cname := range slices.Sorted(maps.Keys(y.Checks)) {
-		if _, known := catalogue[cname]; !known {
-			r.unknown = append(r.unknown, cname)
+	for _, typ := range slices.Sorted(maps.Keys(y.Checks)) {
+		if _, known := checkDefOf(typ); !known {
+			r.unknown = append(r.unknown, typ)
+		}
+	}
+	for _, d := range catalogue {
+		raw, ok := y.Checks[d.name]
+		if !ok {
 			continue
 		}
-		c, err := newCheck(cname, y.Checks[cname], r.conventional)
-		if err != nil {
-			return nil, fmt.Errorf("checks.%s: %w", cname, err)
+		var named map[string]map[string]any
+		if err := strictyaml.DecodeValue(raw, &named, module.DefaultMaxPolicySize); err != nil {
+			return nil, fmt.Errorf("checks.%s: %w", d.name, err)
 		}
-		r.checks = append(r.checks, c)
+		for _, cname := range slices.Sorted(maps.Keys(named)) {
+			c, err := newCheck(d, cname, named[cname], r.conventional)
+			if err != nil {
+				return nil, fmt.Errorf("checks.%s.%s: %w", d.name, cname, err)
+			}
+			r.checks = append(r.checks, c)
+		}
 	}
 	return r, nil
 }
@@ -161,8 +175,8 @@ type checkYAML struct {
 	Keys     []string `yaml:"keys"`
 }
 
-// newCheck builds a check that the check spec of the catalogue accepted.
-func newCheck(name string, raw map[string]any, conventional bool) (*check, error) {
+// newCheck builds a check that the spec of its type accepted.
+func newCheck(d checkDef, name string, raw map[string]any, conventional bool) (*check, error) {
 	var y checkYAML
 	if err := strictyaml.DecodeValue(raw, &y, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
@@ -170,14 +184,19 @@ func newCheck(name string, raw map[string]any, conventional bool) (*check, error
 	if len(y.Types) > 0 && !conventional {
 		return nil, errors.New("types: needs parser: conventional")
 	}
-	c := &check{name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys}
+	c := &check{def: d, name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys}
 	var err error
-	switch name {
+	switch d.name {
 	case "type-enum", "scope-enum", "trailer-required":
 		err = strictyaml.DecodeValue(y.Value, &c.list, module.DefaultMaxPolicySize)
 	case "header-max-length", "body-max-line-length":
 		err = strictyaml.DecodeValue(y.Value, &c.number, module.DefaultMaxPolicySize)
-	case "scope", "breaking-bang", "subject-case", "subject-full-stop":
+	case "body-min-line-length":
+		c.number = 1
+		if y.Value != nil {
+			err = strictyaml.DecodeValue(y.Value, &c.number, module.DefaultMaxPolicySize)
+		}
+	case "scope", "breaking-bang", "subject-starts-lowercase", "subject-trailing-dot", "body-leading-blank-lines":
 		err = strictyaml.DecodeValue(y.Value, &c.enum, module.DefaultMaxPolicySize)
 	case "pattern":
 		var src string
@@ -190,6 +209,9 @@ func newCheck(name string, raw map[string]any, conventional bool) (*check, error
 	}
 	return c, nil
 }
+
+// label names the check in findings: its type and its name.
+func (c *check) label() string { return c.def.name + " " + c.name }
 
 // helpOf is the help of a rule for its violation, nil without one.
 func (r *rule) helpOf() []module.Help {

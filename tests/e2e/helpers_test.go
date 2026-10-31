@@ -33,6 +33,10 @@ rules:
     message: CI belongs to alice.
 `
 
+// ciIncomingPolicy is ciPolicy that counts every commit entering a branch, so
+// that a merge of a branch already in the repository is checked.
+var ciIncomingPolicy = strings.Replace(ciPolicy, "    match: all\n", "    match: all\n    check_history: incoming\n", 1)
+
 // user returns a user created by the bootstrap.
 func user(name string) *standUser { return gl.state.Users[name] }
 

@@ -84,8 +84,8 @@ func TestGolden(t *testing.T) {
 			{Code: module.CodeCommitFormat, Rule: "conventional", Ref: "refs/heads/main", Title: "2 commit messages do not follow the format",
 				Facts: []string{"required: type(scope): subject, for example feat(api): add refunds", "types: feat, fix"},
 				Items: []module.Item{
-					{Name: `3f2a9c1aa "Fix deploy."`, Commit: true, Details: []string{`type-enum: "Fix" is not one of feat, fix`, "subject-full-stop: the subject must not end with a full stop"}},
-					{Name: `9b1d2e3ff "wip"`, Commit: true, Details: []string{`header: expected "type(scope): subject"`}},
+					{Name: `3f2a9c1aa "Fix: deploy."`, Commit: true, Details: []string{`type-enum types: "Fix" is not one of feat, fix`, "subject-trailing-dot no-dot: the subject must not end with a full stop"}},
+					{Name: `9b1d2e3ff "wip"`, Commit: true, Details: []string{`header-format conventional: expected "type(scope): subject"`}},
 				},
 				Message: "Commits follow Conventional Commits.",
 				Hint:    "how to fix: git rebase -i and reword these commits, then push again"},
@@ -111,7 +111,7 @@ func TestGolden(t *testing.T) {
 		out := Rejection([]Section{
 			{Name: "PATHPOLICY", Violations: []module.Violation{branch, tag}},
 			{Name: "COMMITPOLICY", Violations: []module.Violation{{Code: module.CodeCommitFormat, Rule: "protected", Ref: "refs/heads/main",
-				Items: []module.Item{{Name: `3f2a9c1 "Fix deploy"`, Commit: true, Details: []string{`header: expected "type(scope): subject"`}}}}}},
+				Items: []module.Item{{Name: `3f2a9c1 "Fix deploy"`, Commit: true, Details: []string{`header-format conventional: expected "type(scope): subject"`}}}}}},
 		}, onMain)
 		assert.Contains(t, out, "(2 problems)", "the same problem on a branch and a tag is one block")
 		golden(t, "aggregated", out)

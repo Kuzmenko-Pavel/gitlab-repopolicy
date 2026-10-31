@@ -56,6 +56,7 @@ func (s *stand) bootstrap(ctx context.Context) error {
 		run  func(context.Context) error
 	}{
 		{"root token", s.ensureRootToken},
+		{"background jobs", s.waitBackgroundJobs},
 		{"application settings", s.ensureSettings},
 		{"users", s.ensureUsers},
 		{"service account", s.ensureServiceAccount},
@@ -107,6 +108,37 @@ func (s *stand) ensureRootToken(ctx context.Context) error {
 		return errors.New("the created root token is not accepted by the API")
 	}
 	return nil
+}
+
+// waitBackgroundJobs waits until the Sidekiq queue of a reused stand is empty
+// once: jobs left from an earlier run delay the access refresh of new projects.
+func (s *stand) waitBackgroundJobs(ctx context.Context) error {
+	const timeout = 15 * time.Minute
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var reported time.Time
+	for {
+		var stats struct {
+			Jobs struct {
+				Enqueued int `json:"enqueued"`
+			} `json:"jobs"`
+		}
+		if err := s.root(ctx, http.MethodGet, "/sidekiq/job_stats", nil, &stats); err != nil {
+			return err
+		}
+		if stats.Jobs.Enqueued == 0 {
+			return nil
+		}
+		if time.Since(reported) >= time.Minute {
+			fmt.Fprintf(os.Stderr, "e2e stand: %d background jobs enqueued, waiting\n", stats.Jobs.Enqueued)
+			reported = time.Now()
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%d jobs still enqueued after %v", stats.Jobs.Enqueued, timeout)
+		case <-time.After(5 * time.Second):
+		}
+	}
 }
 
 // ensureSettings turns off outgoing traffic and self sign-up.
@@ -332,21 +364,26 @@ func (s *stand) waitMemberAccess(ctx context.Context, projectID int) error {
 		}
 	}
 	path := fmt.Sprintf("/projects/%d", projectID)
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	for _, token := range tokens {
 		for {
 			err := s.api(ctx, token, http.MethodGet, path, nil, nil)
-			if !isStatus(err, http.StatusNotFound) {
-				if err != nil {
-					return err
-				}
+			if err == nil {
 				break
+			}
+			wait := 2 * time.Second
+			switch {
+			case isStatus(err, http.StatusTooManyRequests):
+				// The project API limit of GitLab counts per user, and parallel tests share the service account.
+				wait = 15 * time.Second
+			case !isStatus(err, http.StatusNotFound):
+				return err
 			}
 			select {
 			case <-ctx.Done():
 				return fmt.Errorf("project %d is still not visible to a member: %w", projectID, ctx.Err())
-			case <-time.After(2 * time.Second):
+			case <-time.After(wait):
 			}
 		}
 	}

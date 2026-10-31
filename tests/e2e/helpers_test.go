@@ -106,7 +106,7 @@ func addMember(t *testing.T, p *project, u *standUser, access int) {
 	t.Helper()
 	require.NoError(t, gl.root(t.Context(), http.MethodPost, p.api("/members"),
 		map[string]any{"user_id": u.ID, "access_level": access}, nil))
-	waitUntil(t, time.Minute, u.Username+" sees "+p.Path, func() bool {
+	waitUntil(t, 5*time.Minute, u.Username+" sees "+p.Path, func() bool {
 		return gl.api(t.Context(), u.Token, http.MethodGet, p.api(""), nil, nil) == nil
 	})
 }

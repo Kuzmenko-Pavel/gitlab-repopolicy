@@ -185,7 +185,7 @@ curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X PUT "$GITLAB/api/v4/applicat
 
 ## 4. Конфігурація
 
-Відкрийте `/etc/gitlab-repopolicy/config.yaml` перед підключенням hook. Для Linux package на одній ноді поставка використовує unix socket Workhorse. Перевірте `mode: audit` і `default_branch`: поставка містить `[main]`, що обмежує всі групові проєкти. Для запуску без цього глобального обмеження використайте `[]`. Якщо Gitaly на окремій ноді, вкажіть HTTPS-адресу GitLab і за потреби CA:
+Відкрийте `/etc/gitlab-repopolicy/config.yaml` перед підключенням hook. Для Linux package на одній ноді поставка використовує unix socket Workhorse. Перевірте `mode: audit` і `default_branch`: поставка містить `[main, master]`, що обмежує ім'я основної гілки всіх групових проєктів. Для запуску без цього глобального обмеження використайте `[]`. Якщо Gitaly на окремій ноді, вкажіть HTTPS-адресу GitLab і за потреби CA:
 
 ```yaml
 gitlab_url: https://gitlab.example.com

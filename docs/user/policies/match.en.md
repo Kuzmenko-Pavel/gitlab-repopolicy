@@ -17,7 +17,7 @@ rules:
 
 This is a fragment of PATHPOLICY, the other fields of the rules are left out.
 
-Branches and tags are different kinds of Git reference (`ref`). A branch has a full name such as `refs/heads/main`, a tag `refs/tags/v1.0.0`; `match` uses short names `main` and `v1.0.0`. It selects where a rule applies rather than granting access by itself.
+Branches and tags are different kinds of Git reference (`ref`). A branch has a full name such as `refs/heads/main`, a tag `refs/tags/v1.0.0`; `match` uses short names `main` and `v1.0.0`. It selects where a rule applies rather than granting access by itself. Which commits to check in the selected branches is set by a separate field `check_history` in PATHPOLICY and COMMITPOLICY ([below](#match-and-check_history-in-pathpolicy)).
 
 ## Values
 
@@ -90,7 +90,9 @@ GitLab CI has its own expression restrictions and unexpected substring compariso
 | Several rules match | all apply: a change is allowed only when the person is in the `allow` of each | all apply: an error of any of them is a denial | the first by `priority` applies | all apply: only a key in the `signers` of each may sign the tag |
 | No rule matches | the file is not protected | commits are not checked | the name is not checked | the tag is not checked |
 
-## `match: all` and a list in PATHPOLICY
+## `match` and `check_history` in PATHPOLICY
+
+`match` only selects branches. How changes of a protected file are checked in the selected branches is set by the rule field `check_history`, `new-content` by default. The difference shows on one rebase.
 
 alice is responsible for `ci.yml`, while bob works on application code. bob may not change that file, but needs to update his working branch through rebase.
 
@@ -107,7 +109,7 @@ rules:
     message: Only alice may change ci.yml.
 ```
 
-In this example, `feature` is not protected in GitLab settings. Global mode is `enforce`, and GitLab permissions and other policies allow the pushes described here.
+The rule does not set `check_history`, so `new-content` applies. Global mode is `enforce`, and GitLab permissions and other policies allow the pushes described here.
 
 ### What happens during rebase
 
@@ -140,29 +142,30 @@ gitGraph
   commit id: "A': ci.yml v2" type: HIGHLIGHT
 ```
 
-### Why match changes the result
+### Why check_history changes the result
 
-**With `match: all`, bob's push is allowed.** The hook sees that v2 was already present on this working branch before the push. Commit **A'**, with the same file state, does not require alice's permission again.
+**With `check_history: new-content`, bob's push is allowed.** The hook checks commits that no branch or tag has yet and sees that v2 was already present on this working branch before the push. Commit **A'**, with the same file state, does not require alice's permission again.
 
-Now compare the same push against a different rule: the active PATHPOLICY uses a list instead of `match: all`:
+Now compare the same push with another value in the same rule:
 
 ```yaml
-match: [feature]
+check_history: incoming
 ```
 
-This rule also applies to `feature`, but **bob's push is denied**. For a listed branch, the hook checks protected-file changes in every commit entering its history. Commit **A'** is new to `feature` and changes `ci.yml` relative to its parent **M**: v1 → v2. Someone in `allow` must push such a commit. Naming alice as the commit author does not give bob that permission.
+**bob's push is denied.** `incoming` checks protected-file changes in every commit entering the history of the branch, and with them the difference of the branch before and after the push. Commit **A'** is new to `feature` and changes `ci.yml` relative to its parent **M**: v1 → v2. Someone in `allow` must push such a commit. Naming alice as the commit author does not give bob that permission.
 
-| bob's action in this example | `match: all` | `match: [feature]` |
+| bob's action in this example | `check_history: new-content` | `check_history: incoming` |
 | --- | --- | --- |
 | Rebase without editing `ci.yml`: the file remains at v2 | Allowed: v2 was already on `feature` | Denied: new commit A' changes `ci.yml` |
 | A new commit changes only `app.go` | Allowed: the rule protects `ci.yml` | Allowed: the rule protects `ci.yml` |
 | A new commit changes `ci.yml` to a new v3 that has never been on `feature` or `main` | Denied: bob is not in `allow` | Denied: bob is not in `allow` |
+| A merge into `main` of a branch that was already pushed, with a change of `ci.yml` from alice | Allowed: the commits of the branch are not new to the repository, the merge brings no new content | Denied: the commit of alice enters `main` with the merge |
 
-For CI files on working branches, use `all` when collaboration and rebasing already accepted changes should be possible. Use a list when bringing commits with protected-file changes into particular branches should require `allow` permission, even if that content was already present on the branch.
+`new-content` fits CI files on working branches: it allows collaboration and rebasing already accepted changes. `incoming` is needed when every commit with a protected-file change that enters a branch of the rule must be pushed by someone in `allow`, even if that content was already present on another branch. This way a rule with the list `[main, '/^release\//']` also checks a merge request from a working branch where the rule itself does not apply ([production values](../examples/pathpolicy/production-values.en.md)).
 
-This rebase exception under `all` applies only to ordinary working branches. On the default branch and branches protected in GitLab, the hook checks changes in commits even with `match: all`. A regex list such as `match: ['/./']` also retains list behavior, although it selects every branch.
+`check_history` works the same in every branch that `match` selects: in the default branch, in branches protected in GitLab and in ordinary ones. `match: all` and `match: ['/./']` with the same `check_history` give the same result. Branch protection in GitLab decides who may push changes and does not affect `check_history`.
 
-Other operations on already accepted changes are covered in the [shared branch, rebase and squash scenario](../examples/pathpolicy/shared-branch.en.md).
+Squash, merge, fast-forward and rollback with both values are compared in the example [`new-content` and `incoming`](../examples/pathpolicy/check-history.en.md). Other operations on already accepted changes are covered in the [shared branch, rebase and squash scenario](../examples/pathpolicy/shared-branch.en.md).
 
 ## Common mistakes
 

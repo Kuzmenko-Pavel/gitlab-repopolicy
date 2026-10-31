@@ -62,8 +62,9 @@ gitlab-repopolicy перевіряє зміну на сервері, тому б
 ```yaml
 # examples/ci-config/PATHPOLICY
 # The platform team, alice and sre-lead, owns the CI configuration and the
-# deploy scripts in every branch and the production values in main and
-# release branches. Everything else is authorized by GitLab as usual.
+# deploy scripts in every branch, where only new content counts, and the
+# production values in main and release branches, where every commit that
+# enters the branch counts. Everything else is authorized by GitLab as usual.
 version: 1
 
 admins: [alice, sre-lead]
@@ -71,6 +72,7 @@ admins: [alice, sre-lead]
 rules:
   ci-config:
     match: all
+    check_history: new-content
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -84,6 +86,7 @@ rules:
 
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [alice, release-manager]
     message: >-
@@ -147,7 +150,7 @@ sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
 
-У редакторі змініть `mode` до виконання наступних команд. Також перевірте `default_branch: [main]` у поставці: це обмеження імені основної гілки для всіх групових проєктів, навіть без policy. Для початкового спостереження без цього обмеження задайте `default_branch: []`.
+У редакторі змініть `mode` до виконання наступних команд. Також перевірте `default_branch: [main, master]` у поставці: це обмеження імені основної гілки для всіх групових проєктів, навіть без policy. Для початкового спостереження без цього обмеження задайте `default_branch: []`.
 
 Після виконання команд:
 

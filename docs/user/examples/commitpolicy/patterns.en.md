@@ -5,7 +5,7 @@
 
 An issue key in the header, a list in the body and a reference in a trailer are different requirements. Searching the entire message can allow an unwanted format because another part happens to match.
 
-## One requirement per rule
+## One `pattern` check
 
 For the first table row, create this complete `COMMITPOLICY` in the current directory:
 
@@ -16,11 +16,12 @@ rules:
     match: all
     parser: free
     checks:
-      pattern: {level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ /'}
+      pattern:
+        issue-key: {level: error, location: header, value: '/^[A-Z][A-Z0-9]+-[0-9]+ /'}
     message: Start the header with an issue key.
 ```
 
-Run `gitlab-repopolicy validate -f COMMITPOLICY`, then `lint-commit -m "PAY-12 Round refunds"`. For each following row, replace `checks.pattern` with that row's `location`, `value` and nonempty `keys`. Keep the rest of the file unchanged. Each row is a separate experiment.
+Run `gitlab-repopolicy validate -f COMMITPOLICY`, then `lint-commit -m "PAY-12 Round refunds"`. For each following row, replace the fields `location`, `value` and nonempty `keys` of `checks.pattern.issue-key` with that row's values. Keep the rest of the file unchanged. Each row is a separate experiment.
 
 An empty `keys` cell means the field is omitted. A `keys` list is supported only with `location: trailer`; without it, the regex is searched in the values of all trailers.
 
@@ -43,6 +44,6 @@ In table messages, `\n` represents an actual line break. Save the message in `me
 
 `!` before a regex forbids a match, `i` ignores case, and `(?m)` changes line boundaries for `^` and `$`. Trailer matching examines the value without the key; `keys` selects which keys to consider. The `password` example checks a text pattern, not every possible secret.
 
-A common mistake is writing a normal paragraph such as `See #12 in the tracker` and expecting a trailer. Every line of the last paragraph must be a trailer. To require two `pattern` conditions simultaneously, create two rules with the same `match`.
+A common mistake is writing a normal paragraph such as `See #12 in the tracker` and expecting a trailer. Every line of the last paragraph must be a trailer. To require two `pattern` conditions simultaneously, add two `pattern` checks with different names to the same rule ([multiple requirements](multiple-requirements.en.md)).
 
 [COMMITPOLICY reference](../../policies/commitpolicy.en.md)

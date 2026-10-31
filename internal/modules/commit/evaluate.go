@@ -91,26 +91,19 @@ func (e *evaluation) warn(v module.Violation) {
 
 // rule applies one rule to one branch.
 func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) error {
-	scope := module.Scope{Class: module.ClassOther, FirstParent: r.except.MergedCommits}
-	name := strings.TrimPrefix(u.Ref, "refs/heads/")
 	switch {
 	case r.match.All:
-		// A merge into the default branch brings every commit of the merged
-		// branch; on other branches only commits that no ref has yet are new.
-		if u.Ref == e.in.Refs.Default() {
-			scope.Class = module.ClassDefault
-		}
 	case r.match.Default:
 		if u.Ref != e.in.Refs.Default() {
 			return nil
 		}
-		scope.Class = module.ClassDefault
 	default:
-		if !r.match.Matches(name) {
+		if !r.match.Matches(strings.TrimPrefix(u.Ref, "refs/heads/")) {
 			return nil
 		}
-		scope.Class, scope.Key, scope.Protected = module.ClassProtected, "commitpolicy/"+r.name, r.listed
 	}
+	scope := module.HistoryScope(r.history, u.Ref, e.in.Refs.Default())
+	scope.FirstParent = r.except.MergedCommits
 	commits, err := e.in.Changes.EnteringCommits(ctx, u, scope, MaxEnteringCommits)
 	if done, err := e.listFailed(r, u, err); done {
 		return err
@@ -124,12 +117,6 @@ func (e *evaluation) rule(ctx context.Context, r *rule, u module.RefUpdate) erro
 	}
 	e.res.Touched = e.res.Touched || len(commits) > 0
 	return e.report(ctx, r, u, findings)
-}
-
-// listed reports whether a branch is in the match list of the rule.
-func (r *rule) listed(ref string) bool {
-	name, ok := strings.CutPrefix(ref, "refs/heads/")
-	return ok && r.match.Matches(name)
 }
 
 // listFailed turns the limit of entering commits into a violation.
@@ -308,7 +295,7 @@ func (r *rule) format() []string {
 	}
 	out := []string{"required: type(scope): subject, for example feat(api): add refunds"}
 	for _, c := range r.checks {
-		switch c.name {
+		switch c.def.name {
 		case "type-enum":
 			out = append(out, "types: "+strings.Join(c.list, ", "))
 		case "scope-enum":

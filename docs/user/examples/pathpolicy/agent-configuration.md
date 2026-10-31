@@ -32,6 +32,7 @@ rules:
 
   kubernetes-agents:
     match: default
+    check_history: incoming
     paths: [".gitlab/agents/**"]
     allow: [alice]
     message: >-
@@ -42,10 +43,10 @@ rules:
 | Хто | Що робить | Результат | Чому |
 | --- | --- | --- | --- |
 | bob | змінює `.gitlab/agents/prod/config.yaml` у `feature` | дозволено | правило діє лише в default branch |
-| bob | мержить `feature` у `main` | відмова | зміну в `main` вносить bob |
+| bob | мержить `feature` у `main` | відмова | зміну в `main` вносить bob; `check_history: incoming` перевіряє коміт, який уже був у `feature` |
 | alice | мержить `feature` у `main` | дозволено | alice є в `allow` |
 
-У таблиці `main` є основною гілкою, глобальний режим - `enforce`; штатна авторизація GitLab та інші політики мають дозволяти дію. Під час merge перевіряється користувач, який приймає зміну, незалежно від автора комітів.
+У таблиці `main` є основною гілкою, глобальний режим - `enforce`; штатна авторизація GitLab та інші політики мають дозволяти дію. Під час merge перевіряється користувач, який приймає зміну, незалежно від автора комітів. `check_history: incoming` тут обов'язковий для задуму: коміт bob з'явився в репозиторії ще в `feature`, де правило не діє, і з `new-content` його merge у `main` не перевірявся б.
 
 ## Як перевірити результат
 

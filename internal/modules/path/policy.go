@@ -24,11 +24,12 @@ const (
 )
 
 type ruleYAML struct {
-	Match   any         `yaml:"match"`
-	Paths   []string    `yaml:"paths"`
-	Allow   []string    `yaml:"allow"`
-	Message string      `yaml:"message"`
-	Help    module.Help `yaml:"help"`
+	Match        any         `yaml:"match"`
+	CheckHistory string      `yaml:"check_history"`
+	Paths        []string    `yaml:"paths"`
+	Allow        []string    `yaml:"allow"`
+	Message      string      `yaml:"message"`
+	Help         module.Help `yaml:"help"`
 }
 
 // Policy is a parsed PATHPOLICY merged with its presets.
@@ -42,6 +43,7 @@ type Policy struct {
 type rule struct {
 	name    string
 	match   module.Match
+	history string
 	paths   []string
 	allow   []string
 	message string
@@ -84,7 +86,7 @@ func Parse(data []byte, s *Settings) (*Policy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: match: %w", name, err)
 		}
-		p.rules = append(p.rules, &rule{name: name, match: m, paths: y.Paths, allow: y.Allow,
+		p.rules = append(p.rules, &rule{name: name, match: m, history: y.CheckHistory, paths: y.Paths, allow: y.Allow,
 			message: strings.TrimSpace(y.Message), help: y.Help, source: res.Origin[name]})
 	}
 	return p, nil

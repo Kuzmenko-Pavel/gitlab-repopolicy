@@ -90,6 +90,7 @@ func TestTrust_NoAnchor(t *testing.T) {
 // repository may create a branch other than the one HEAD names.
 func TestTrust_EmptyRepositoryOtherBranch(t *testing.T) {
 	s := NewStand(t)
+	s.AddConfig("default_branch: []\n") // the default [main, master] asks for main first
 	s.Commit("feat: first", map[string]string{"a": "1"})
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/dev"))
 }

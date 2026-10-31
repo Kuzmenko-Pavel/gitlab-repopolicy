@@ -3,6 +3,7 @@ mode: warn
 rules:
   commits:
     match: [main, '/^feature\//', '!feature/legacy']
+    check_history: incoming
     parser: conventional
     except:
       merge_commit: true
@@ -10,17 +11,34 @@ rules:
       merged_commits: true
       users: [release-bot]
     checks:
-      type-enum:            { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
-      scope:                { level: error, value: optional }
-      scope-enum:           { level: warn,  value: [api, ui] }
-      breaking-bang:        { level: error, value: allow }
-      header-max-length:    { level: warn,  value: 100 }
-      subject-case:         { level: error, value: lower-first }
-      subject-full-stop:    { level: error, value: forbid }
-      body-required:        { level: error, types: [feat, fix] }
-      body-max-line-length: { level: warn,  value: 120 }
-      trailer-required:     { level: error, value: [Signed-off-by] }
-      pattern:              { level: error, location: trailer, keys: [Issue, Refs], value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
+      header-format:
+        conventional: { level: error }
+      header-max-length:
+        soft: { level: warn, value: 72 }
+        hard: { level: error, value: 100 }
+      type-enum:
+        allowed: { level: error, value: [feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test] }
+      scope:
+        optional: { level: error, value: optional }
+      scope-enum:
+        components: { level: warn, value: [api, ui] }
+      breaking-bang:
+        optional: { level: error, value: optional }
+      subject-starts-lowercase:
+        lowercase: { level: error, value: required }
+      subject-trailing-dot:
+        no-dot: { level: error, value: forbidden }
+      body-leading-blank-lines:
+        blank-line: { level: error, value: required }
+      body-min-line-length:
+        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      body-max-line-length:
+        wrap: { level: warn, value: 120 }
+      trailer-required:
+        dco: { level: error, value: [Signed-off-by] }
+      pattern:
+        issue-ref: { level: error, location: trailer, keys: [Issue, Refs], value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
+        no-wip: { level: error, location: header, value: '!/^(WIP|fixup!)/i' }
     message: >-
       Commits follow Conventional Commits.
     help:
@@ -28,19 +46,25 @@ rules:
       docs_url: https://wiki.example/commits
   release:
     match: ['/^release\//']
+    check_history: new-content
     parser: conventional
     checks:
-      type-enum: { level: error, value: [fix, docs, chore] }
+      type-enum:
+        release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore.
   no-wip:
     match: all
     parser: free
     checks:
-      pattern: { level: warn, location: header, value: '!/^(WIP|fixup!)/i' }
+      pattern:
+        no-wip: { level: warn, location: header, value: '!/^(WIP|fixup!)/i' }
     message: Squash WIP and fixup commits before the merge.
   default-only:
     match: default
     parser: free
     checks:
-      subject-full-stop: { level: warn, value: forbid }
+      subject-trailing-dot:
+        no-dot: { level: warn, value: forbidden }
+      body-min-line-length:
+        optional: { level: error, value: 0 }
     message: m

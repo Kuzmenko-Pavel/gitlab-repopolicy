@@ -20,13 +20,13 @@ gitlab_url: http+unix://%2Fvar%2Fopt%2Fgitlab%2Fgitlab-workhorse%2Fsockets%2Fsoc
 
 The configuration loader supplies the remaining values. It expects the token in `/etc/gitlab-repopolicy/token` and the log in `/var/log/gitlab-repopolicy/audit.log`; all four modules are enabled. Prepare files and permissions following the [installation guide](install.en.md). Minimal YAML does not create the service account, token or directories.
 
-`audit` is explicit because the program default for `mode` is `enforce`. Omitting `default_branch` leaves default branch names unrestricted. On a separate Gitaly node, replace `gitlab_url` with your GitLab HTTPS address and add `ca_file` if needed.
+`audit` is explicit because the program default for `mode` is `enforce`. An omitted `default_branch` equals `[main, master]`: the default branch of a group project must be called `main` or `master`, otherwise the push is rejected. On a separate Gitaly node, replace `gitlab_url` with your GitLab HTTPS address and add `ca_file` if needed.
 
 ### Before copying the packaged configuration
 
-The supplied file below is a full example, rather than a minimal first-run configuration. Its `default_branch: [main]` is active: in `enforce` it rejects pushes to group projects with another default branch name, even without policies. `settings_check` also contains example expectations that the command immediately applies.
+The supplied file below is a full example, rather than a minimal first-run configuration. Its `default_branch: [main, master]` is the same as the program default: in `enforce` it rejects pushes to group projects with another default branch name, even without policies. `settings_check` also contains example expectations that the command immediately applies.
 
-Before connecting the hook, set `mode: audit`, choose allowed branch names or leave `default_branch: []`, and agree on `settings_check` expectations with project owners. Do not narrow an existing production branch list without checking audit results.
+Before connecting the hook, set `mode: audit`, check that `[main, master]` fits the instance, or set your own names or `default_branch: []`, and agree on `settings_check` expectations with project owners. Do not narrow an existing production branch list without checking audit results.
 
 ## Full configuration
 
@@ -83,10 +83,9 @@ modules:
 
 # Allowed names of the default branch, used by the hook and by settings-check.
 # The hook rejects every push to a project whose default branch has another
-# name; it applies to every project of the instance, so turn it on with
-# mode: audit first. Empty turns the check off. [main] is an example; the
-# default is empty.
-default_branch: [main]
+# name; it applies to every project of the instance, so check it with
+# mode: audit first. [] turns the check off. [main, master] is the default.
+default_branch: [main, master]
 
 # What settings-check expects of the projects with policy files. Empty values
 # are not checked and are the default; ["v*"] and false below are examples.
@@ -131,7 +130,7 @@ presets:
 | `timeouts.http` | `3s` | one API request. Not more than `timeouts.total` |
 | `max_api_calls` | `30` | API calls per push. Exceeding it is `limit_exceeded` |
 | `modules.<name>` | `enabled` | `enabled` or `disabled` for `pathpolicy`, `commitpolicy`, `tagpolicy`, `branchpolicy` |
-| `default_branch` | Empty list (`[]`) | allowed default branch names for the hook and `settings-check`; an empty list disables the name restriction |
+| `default_branch` | `[main, master]` | allowed default branch names for the hook and `settings-check`; an empty list disables the name restriction |
 | `settings_check.protected_tags` | Empty list (`[]`) | tag protection patterns expected by `settings-check` in projects with PATHPOLICY and TAGPOLICY; an empty list skips this comparison |
 | `settings_check.job_token_push` | Not set | expected state of push through `CI_JOB_TOKEN` in projects with PATHPOLICY: `true` or `false`. Omitting the key skips this comparison |
 | `help.contact` | `""` (empty string) | who to ask, for example `#gitlab-support`; an empty string adds no server contact |
@@ -146,7 +145,7 @@ All parameters except `gitlab_url` may be omitted to use the loader values in th
 | `gitlab_url` | Linux package Workhorse socket | check the path or use HTTPS for a separate node |
 | `token_file` | `/etc/gitlab-repopolicy/token` | create the token file and check readability as git |
 | `modules` | all `enabled` | retain unless deliberately disabling a policy across the instance |
-| `default_branch` | `[main]` | choose allowed names or `[]` for no restriction |
+| `default_branch` | `[main, master]` | keep it if the default branches are called `main` or `master`; otherwise set your own names or `[]` for no restriction |
 | `settings_check.protected_tags` | `["v*"]` | define only expectations shared by relevant projects |
 | `settings_check.job_token_push` | `false` | an explicit expectation rather than an omitted check |
 | `presets` | empty mappings for four modules | add only your organization's rule sets |
@@ -187,11 +186,12 @@ The hook does not load a disabled module: its policy file becomes an ordinary fi
 
 ## `default_branch`
 
-The list of allowed names of the default branch. An empty list (the default) turns the check off. Names are short, as GitLab shows them, without `refs/heads/` and without `*`.
+The list of allowed names of the default branch, `[main, master]` by default: both common names are allowed without configuration. An empty list turns the check off. Names are short, as GitLab shows them, without `refs/heads/` and without `*`.
 
 ```yaml
+default_branch: [main, master]    # the default
 default_branch: [main]            # every project has the default branch main
-default_branch: [main, master]    # during the move from master to main
+default_branch: []                # no restriction of the name
 ```
 
 The hook reads every policy file from the default branch. In Settings > Repository > Branch defaults a Maintainer can make a branch without policies the default one, and the next push would pass without rules. So the hook denies every push to a project whose default branch has a name outside the list, with the code `default_branch_not_allowed`. The modules do not run then.
@@ -303,9 +303,14 @@ presets:
           match: default
           parser: conventional
           checks:
-            type-enum: { level: error, value: [feat, fix, docs, chore] }
-            header-max-length: { level: error, value: 100 }
-            subject-full-stop: { level: error, value: forbid }
+            header-format:
+              conventional: { level: error }
+            header-max-length:
+              limit: { level: error, value: 100 }
+            type-enum:
+              allowed: { level: error, value: [feat, fix, docs, chore] }
+            subject-trailing-dot:
+              no-dot: { level: error, value: forbidden }
           message: Commits in the default branch follow Conventional Commits.
     team-strict:
       rules:
@@ -313,8 +318,10 @@ presets:
           match: default
           parser: conventional
           checks:
-            header-max-length: { level: error, value: 72 }
-            body-required: { level: error, types: [feat, fix] }
+            header-max-length:
+              limit: { level: error, value: 72 }
+            body-min-line-length:
+              feat-fix: { level: error, value: 1, types: [feat, fix] }
           message: Commits of the payments team follow Conventional Commits with a body.
           help:
             contact: "#payments-team"
@@ -330,8 +337,10 @@ extends: [org-commits, team-strict]
 rules:
   conventional:
     checks:
-      header-max-length: { level: warn }
-      subject-full-stop: null
+      header-max-length:
+        limit: { level: warn }
+      subject-trailing-dot:
+        no-dot: { value: optional }
 EOF
 ```
 
@@ -341,9 +350,16 @@ COMMITPOLICY: valid
   extends: org-commits, team-strict
   rule conventional: preset:org-commits, preset:team-strict, file
     checks: preset:org-commits, preset:team-strict, file
+    checks.header-format: preset:org-commits
+    checks.header-format.conventional: preset:org-commits
     checks.header-max-length: preset:org-commits, preset:team-strict, file
+    checks.header-max-length.limit: preset:org-commits, preset:team-strict, file
+    checks.subject-trailing-dot: preset:org-commits, file
+    checks.subject-trailing-dot.no-dot: preset:org-commits, file
     checks.type-enum: preset:org-commits
-    checks.body-required: preset:team-strict
+    checks.type-enum.allowed: preset:org-commits
+    checks.body-min-line-length: preset:team-strict
+    checks.body-min-line-length.feat-fix: preset:team-strict
     match: preset:team-strict
     message: preset:team-strict
     parser: preset:team-strict
@@ -352,17 +368,17 @@ COMMITPOLICY: valid
 ```
 
 How to read it:
-- `checks.header-max-length` went through all three layers. `value: 72` of `team-strict` won over `100` of `org-commits`, because `team-strict` comes later in `extends`. `level: warn` of the file won over `error`
-- `checks.subject-full-stop` is not in the output: the file removed it with `null`
+- checks merge by type and name. `checks.header-max-length.limit` went through all three layers. `value: 72` of `team-strict` won over `100` of `org-commits`, because `team-strict` comes later in `extends`. `level: warn` of the file won over `error`
+- `checks.subject-trailing-dot.no-dot` stayed in the rule, but the file gave it `value: optional`: a full stop at the end of the subject may be there or not. To remove the check completely, the file would write `no-dot: null`, and the line `checks.subject-trailing-dot.no-dot` would not be in the output
 - `match`, `message` and `parser` come from `team-strict`: the later layer replaced the values of `org-commits`. For `match` and `parser` they are the same, and `message` became the text of the team
-- `checks.type-enum` is only in `org-commits`, `checks.body-required` only in `team-strict`, and both apply
+- `checks.type-enum` is only in `org-commits`, `checks.body-min-line-length` only in `team-strict`, and both apply
 
 A check of a message against the merged rules:
 
 ```console
 $ gitlab-repopolicy lint-commit --config presets.yaml -m "fix: round refunds to cents in the payment service and in the monthly reports"
-message: [conventional] error: body-required: the message needs a body
-message: [conventional] warning: header-max-length: the header is 77 characters, the limit is 72
+message: [conventional] warning: header-max-length limit: the header is 77 characters, the limit is 72
+message: [conventional] error: body-min-line-length feat-fix: the message needs a body
 ```
 
 ### A broken or missing preset
@@ -397,7 +413,7 @@ Configuration changes affect subsequent invocations on that node. They are not a
 
 | Change | Effect | Verification and rollback |
 | --- | --- | --- |
-| Enable or narrow `default_branch` | can reject every push to group projects with other default branch names | start in `audit`, inspect `default_branch_not_allowed`; restore the previous list |
+| The first connection of the hook or narrowing `default_branch` | can reject every push to group projects whose default branch is not called `main` or `master` or not as in the new list | start in `audit`, inspect `default_branch_not_allowed`; restore the previous list |
 | Switch `audit` → `enforce` | starts applying recorded denials, including broken policies | review all `deny` and `invalid_policy` events; return to `audit` |
 | `modules.*: disabled` | removes that module's checks and file acceptance; disabling PATHPOLICY removes its ownership controls | inspect projects before re-enabling; restore the previous module set |
 | Change or remove a preset | affects all projects using its `extends`; broken PATHPOLICY and TAGPOLICY presets can block changes | run `validate --config` on consumers before delivery; restore a consistent preset on every node |

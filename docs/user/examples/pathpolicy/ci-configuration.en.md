@@ -12,8 +12,9 @@ Save this as `PATHPOLICY` in the repository root. Check it with `gitlab-repopoli
 ```yaml
 # examples/ci-config/PATHPOLICY
 # The platform team, alice and sre-lead, owns the CI configuration and the
-# deploy scripts in every branch and the production values in main and
-# release branches. Everything else is authorized by GitLab as usual.
+# deploy scripts in every branch, where only new content counts, and the
+# production values in main and release branches, where every commit that
+# enters the branch counts. Everything else is authorized by GitLab as usual.
 version: 1
 
 admins: [alice, sre-lead]
@@ -21,6 +22,7 @@ admins: [alice, sre-lead]
 rules:
   ci-config:
     match: all
+    check_history: new-content
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -34,6 +36,7 @@ rules:
 
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [alice, release-manager]
     message: >-
@@ -41,7 +44,7 @@ rules:
       release-manager. Propose the change in your branch and ask them to merge it.
 ```
 
-`ci-config` uses `match: all` to cover every branch. `allow` identifies whoever pushes the change, rather than its commit author. `prod-values` separately restricts production files and grants no additional access to CI.
+`ci-config` uses `match: all` to cover every branch. `check_history: new-content` is written explicitly, although it is the default: the team works on CI together in work branches, and a rebase, a squash or a merge of a change that alice or sre-lead already pushed does not need them again. A new content of CI files is still pushed only by them. `allow` identifies whoever pushes the change, rather than its commit author. `prod-values` separately restricts production files with `check_history: incoming`: in `main` and release branches a change from a work branch must be accepted by a person from `allow` ([the difference of the values](check-history.en.md)).
 
 | Who | What | Result | Why |
 | --- | --- | --- | --- |

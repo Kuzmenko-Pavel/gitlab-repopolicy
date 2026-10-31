@@ -42,6 +42,13 @@ func Match(desc string, withDefault bool) *Spec {
 	}}
 }
 
+// CheckHistory is the check_history field of a rule: which commits of a push
+// the rule checks; empty is new-content.
+func CheckHistory(newContent, incoming string) *Spec {
+	return &Spec{Type: String, Enum: []string{module.HistoryNewContent, module.HistoryIncoming}, Nullable: true,
+		Desc: "new-content (the default): " + newContent + "; incoming: " + incoming + "."}
+}
+
 // Message is the message field of a rule, shown to the pusher it denies.
 func Message() *Spec {
 	return &Spec{Type: String, MinLength: 1, MaxLength: MaxMessage, Nullable: true,

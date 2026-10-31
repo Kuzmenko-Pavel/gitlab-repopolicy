@@ -1,0 +1,9 @@
+version: 1
+rules:
+  no-release:
+    match: ['/^release\//']
+    priority: 10
+    deny: true
+    protected: false
+    user_prefix: false
+    message: This project has no release branches.

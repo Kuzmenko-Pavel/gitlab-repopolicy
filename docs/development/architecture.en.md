@@ -202,7 +202,7 @@ Root creates the grant on the Gitaly node for at most 24 hours. The hook checks 
 
 ### 4. Global default branch restriction
 
-If the server's `default_branch` list is nonempty, the project's default branch name must be in it. Otherwise the core produces `default_branch_not_allowed` without loading policies. This prevents switching the default to an arbitrary branch without rules, but also affects projects without policies.
+If the server's `default_branch` list is nonempty (by default `[main, master]`), the project's default branch name must be in it. Otherwise the core produces `default_branch_not_allowed` without loading policies. This prevents switching the default to an arbitrary branch without rules, but also affects projects without policies.
 
 In an empty repository with no branches or tags, a push that creates its first branches must include the branch named by `HEAD`. An empty `default_branch` list disables these checks. A tag-only push does not violate the first-branch check, but the following tag reachability check still applies.
 
@@ -230,7 +230,7 @@ The first PATHPOLICY also undergoes acceptance: it must have at least one active
 
 `modules.Default` defines the order: PATHPOLICY, COMMITPOLICY, TAGPOLICY, BRANCHPOLICY. PATHPOLICY checks its own administrators and access to other modules' files; subsequent modules check commit messages, tag signatures and branch creation. One module cannot override another's denial, and a denial does not stop the collection of other violations.
 
-Modules request only the data they need. PATHPOLICY and COMMITPOLICY select different sets of changes depending on the branch and `match`; one shared formula would be inaccurate. See [path change rules](../user/policies/pathpolicy.en.md#what-counts-as-a-change) and [commit selection](../user/policies/commitpolicy.en.md#which-commits-are-checked). TAGPOLICY checks created and moved tags; BRANCHPOLICY checks only created branches other than the default.
+Modules request only the data they need. `match` of a PATHPOLICY or COMMITPOLICY rule only selects branches, and the set of changes is set by `check_history` of the rule: `new-content` takes the commits new to the repository, `incoming` every commit that enters the branch. The status of a branch in GitLab does not change this set. What exactly a module counts as a change in each set differs between the two modules. See [path change rules](../user/policies/pathpolicy.en.md#what-counts-as-a-change) and [commit selection](../user/policies/commitpolicy.en.md#which-commits-are-checked). TAGPOLICY checks created and moved tags; BRANCHPOLICY checks only created branches other than the default.
 
 PATHPOLICY and TAGPOLICY signature checks deny under uncertainty (**fail-closed**). COMMITPOLICY and BRANCHPOLICY skip checks with warnings in documented cases (**fail-open**). A failed TAGPOLICY `protected` lookup also produces a warning. This does not apply to acceptance of new invalid policy files.
 
@@ -296,8 +296,8 @@ Actors, bypasses and what is out of scope are described in [threat-model.en.md](
 ## Known limitations
 
 - The hook sees only changes of branches and tags. A Maintainer changes project settings (the CI configuration path, the default branch, protected branches, push with `CI_JOB_TOKEN`) around it; `settings-check` only detects them on its schedule. The exception is the default branch: if `default_branch` is set, a push to a project with another default branch is denied at once
-- A merge into an ordinary branch under `match: all` brings only content the repository already has. PATHPOLICY checks only new content, COMMITPOLICY only the merge commit itself (unless `except.merge_commit` is on), not the merged commits. A merge into the default branch and branches of a `match` list is checked fully by both modules ([commitpolicy.en.md](../user/policies/commitpolicy.en.md#which-commits-are-checked))
-- Tags do not undergo PATHPOLICY or COMMITPOLICY checks; reachability is checked globally and TAGPOLICY checks signatures when required. New branches select changes by class and `match`; a commit existing in another branch is not a universal exemption
+- With `check_history: new-content` a merge into any branch, the default branch too, brings only content and commits the repository already has. PATHPOLICY checks only new content, COMMITPOLICY only new commits, the merge commit itself among them (unless `except.merge_commit` is on), not the merged commits. Rules with `check_history: incoming` check the merged commits fully ([commitpolicy.en.md](../user/policies/commitpolicy.en.md#which-commits-are-checked))
+- Tags do not undergo PATHPOLICY or COMMITPOLICY checks; reachability is checked globally and TAGPOLICY checks signatures when required. New branches select changes by `check_history` of the rule; a commit existing in another branch is not a universal exemption
 - A username can become free after a rename or deletion of a user and be taken by another person. `settings-check` reports principals that no longer exist
 - The service account token does not see blocked or banned users. A personal project of such a user is treated as a group project (fail closed)
 - Web operations (the merge button) hold a Puma worker while the hook calls back into Rails. Under peak load on one node this can give `authorization_backend_failure` by timeout

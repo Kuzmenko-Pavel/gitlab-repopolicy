@@ -34,6 +34,7 @@ admins: [alice]
 rules:
   release-ci:
     match: ['/^release\//']
+    check_history: incoming
     paths: [ci.yml]
     allow: [alice]
     message: CI of release branches belongs to alice.
@@ -246,11 +247,17 @@ func TestPathPolicy_MergeIntoReleaseByNonOwner(t *testing.T) {
 	assertAllowed(t, s.Push(alice, "HEAD:refs/heads/release/1"))
 }
 
+// policyEdit commits a change of PATHPOLICY: alice, an admin, may push it to
+// main once GitLab confirms her role, the first question to the API.
+func policyEdit(s *Stand) {
+	s.Commit("chore: policy", map[string]string{"PATHPOLICY": pathPolicy + "# reviewed\n"})
+}
+
 func TestIdentity_ProjectNotVisible(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.Status(404))
-	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	r := s.Push(alice, "HEAD:refs/heads/feature")
+	policyEdit(s)
+	r := s.Push(alice, "HEAD:refs/heads/main")
 	assertDenied(t, r, "this project is not connected to gitlab-repopolicy correctly")
 	assert.NotContains(t, r.Output, "project_not_visible", "API details stay in audit")
 	ev := Events(s.Audit(), "authorization_backend_failure")
@@ -262,11 +269,11 @@ func TestIdentity_ProjectNotVisible(t *testing.T) {
 // push and names the audit event, which the alert on an expired token watches.
 func TestIdentity_TokenRejected(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
-	s.API.Handle("GET", "/api/v4/projects/1/protected_branches?per_page=100&page=1", gitlabtest.Status(401))
-	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(bob, "HEAD:refs/heads/feature"), "this project is not connected to gitlab-repopolicy correctly")
+	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.Status(401))
+	policyEdit(s)
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "this project is not connected to gitlab-repopolicy correctly")
 	ev := Events(s.Audit(), "authorization_backend_failure")
-	require.Len(t, ev, 1)
+	require.NotEmpty(t, ev, "the policy in main and the new version each ask GitLab")
 	assert.Equal(t, "pathpolicy", ev[0]["module"])
 	assert.Equal(t, "authorization_backend_failure", ev[0]["code"])
 	assert.NotEmpty(t, ev[0]["receive_id"])
@@ -275,8 +282,8 @@ func TestIdentity_TokenRejected(t *testing.T) {
 func TestIdentity_RoleBelowMaintainer(t *testing.T) {
 	s, _ := pathStand(t, pathPolicy, nil)
 	s.API.Handle("GET", "/api/v4/projects/1", gitlabtest.OK(map[string]any{"permissions": map[string]any{"group_access": map[string]any{"access_level": 30}}}))
-	s.Commit("feat: ci", map[string]string{"ci.yml": "x"})
-	assertDenied(t, s.Push(alice, "HEAD:refs/heads/feature"), "this project is not connected to gitlab-repopolicy correctly")
+	policyEdit(s)
+	assertDenied(t, s.Push(alice, "HEAD:refs/heads/main"), "this project is not connected to gitlab-repopolicy correctly")
 	ev := Events(s.Audit(), "authorization_backend_failure")
 	require.NotEmpty(t, ev)
 	assert.Equal(t, "role_below_maintainer", ev[0]["reason"])
@@ -325,6 +332,11 @@ func TestLimits_NewCommits(t *testing.T) {
 	assert.Equal(t, "limit_exceeded", ev[len(ev)-1]["code"])
 }
 
+// ciHistory is pathPolicy with check_history of the rule ci.
+func ciHistory(history string) string {
+	return strings.Replace(pathPolicy, "    match: all\n    paths: [ci.yml", "    match: all\n    check_history: "+history+"\n    paths: [ci.yml", 1)
+}
+
 // changeAndRevert commits a change of ci.yml and its revert: the push has no
 // net diff of ci.yml.
 func changeAndRevert(s *Stand) {
@@ -333,8 +345,8 @@ func changeAndRevert(s *Stand) {
 }
 
 // TestPathPolicy_ChangedAndReverted: a protected file changed and reverted in
-// one push is still a change of the default branch and of a branch of a
-// match list, also when the commits are in another branch first.
+// one push is still a change; with check_history: incoming also when the
+// commits are in another branch first, and a rollback by a force push is one.
 func TestPathPolicy_ChangedAndReverted(t *testing.T) {
 	t.Run("main", func(t *testing.T) {
 		s, _ := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
@@ -356,7 +368,7 @@ func TestPathPolicy_ChangedAndReverted(t *testing.T) {
 		assertDenied(t, s.Push(bob, "HEAD:refs/heads/release/1"), `PATHPOLICY rule "release-ci", branch release/1`)
 	})
 	t.Run("merge into main", func(t *testing.T) {
-		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s, base := pathStand(t, ciHistory("incoming"), map[string]string{"ci.yml": "v1"})
 		s.git(s.Work, "checkout", "-q", "-b", "feature")
 		changeAndRevert(s)
 		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/feature"))
@@ -366,10 +378,16 @@ func TestPathPolicy_ChangedAndReverted(t *testing.T) {
 		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 	})
 	t.Run("rollback by a force push", func(t *testing.T) {
-		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s, base := pathStand(t, ciHistory("incoming"), map[string]string{"ci.yml": "v1"})
 		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
 		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 		assertDenied(t, s.Push(bob, "+"+base+":refs/heads/main"), `PATHPOLICY rule "ci", branch main`)
+	})
+	t.Run("rollback by a force push with new-content", func(t *testing.T) {
+		s, base := pathStand(t, pathPolicy, map[string]string{"ci.yml": "v1"})
+		s.Commit("ci: v2", map[string]string{"ci.yml": "v2"})
+		assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
+		assertAllowed(t, s.Push(bob, "+"+base+":refs/heads/main")) // no new commit, v1 is known content
 	})
 }
 
@@ -523,7 +541,7 @@ func TestPathPolicy_SharedBranch(t *testing.T) {
 			name = "squash-merge"
 		}
 		t.Run(name+" into main", func(t *testing.T) {
-			s, _ := aliceBranch(t)
+			s, _ := aliceBranchWith(t, ciHistory("incoming"))
 			s.git(s.Work, "checkout", "-q", "main")
 			if squash {
 				s.git(s.Work, "merge", "-q", "--squash", "feature")
@@ -535,6 +553,19 @@ func TestPathPolicy_SharedBranch(t *testing.T) {
 			assertAllowed(t, s.Push(alice, "HEAD:refs/heads/main"))
 		})
 	}
+	t.Run("merge into main with new-content", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "checkout", "-q", "main")
+		s.git(s.Work, "merge", "-q", "--no-ff", "-m", "Merge branch 'feature' into 'main'", "feature")
+		assertAllowed(t, s.Push(bob, "HEAD:refs/heads/main")) // the commits of alice are not new, the merge brings no new content
+	})
+	t.Run("squash-merge into main with new-content", func(t *testing.T) {
+		s, _ := aliceBranch(t)
+		s.git(s.Work, "checkout", "-q", "main")
+		s.git(s.Work, "merge", "-q", "--squash", "feature")
+		s.git(s.Work, "commit", "-q", "-m", "ci: v2")
+		assertDenied(t, s.Push(bob, "HEAD:refs/heads/main"), `PATHPOLICY rule "ci", branch main`) // the squash commit is new, v2 is new for main
+	})
 	t.Run("more commits than the limit", func(t *testing.T) {
 		s, _ := aliceBranch(t)
 		s.fastImport(s.Rev("HEAD"), "refs/heads/many", 50_001)
@@ -543,15 +574,16 @@ func TestPathPolicy_SharedBranch(t *testing.T) {
 }
 
 // TestPathPolicy_AllAndList: match: all and a list of the same branches
-// differ in what a change is. A branch of a list counts every commit that
-// enters it, an ordinary branch only new content.
+// select the same branches and check them the same way; check_history
+// decides what a change is.
 func TestPathPolicy_AllAndList(t *testing.T) {
 	for _, tc := range []struct {
-		match string
-		allow bool
-	}{{"all", true}, {"['/./']", false}} {
-		t.Run(tc.match, func(t *testing.T) {
-			s, _ := aliceBranchWith(t, strings.Replace(pathPolicy, "    match: all\n    paths: [ci.yml", "    match: "+tc.match+"\n    paths: [ci.yml", 1))
+		match, history string
+		allow          bool
+	}{{"all", "new-content", true}, {"['/./']", "new-content", true}, {"all", "incoming", false}, {"['/./']", "incoming", false}} {
+		t.Run(tc.match+" "+tc.history, func(t *testing.T) {
+			policy := strings.Replace(ciHistory(tc.history), "    match: all\n    check_history", "    match: "+tc.match+"\n    check_history", 1)
+			s, _ := aliceBranchWith(t, policy)
 			s.git(s.Work, "rebase", "-q", "main")
 			r := s.Push(bob, "+HEAD:refs/heads/feature")
 			if tc.allow {

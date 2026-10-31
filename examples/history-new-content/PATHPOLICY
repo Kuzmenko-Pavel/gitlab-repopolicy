@@ -1,0 +1,14 @@
+# ci.yml belongs to alice in every branch, and only new content counts: a
+# rebase, a squash or a merge of a change that alice pushed passes, a version
+# of the file that no branch had is pushed by alice.
+version: 1
+
+admins: [alice]
+
+rules:
+  ci:
+    match: all
+    check_history: new-content
+    paths: ["ci.yml"]
+    allow: [alice]
+    message: ci.yml is changed by alice.

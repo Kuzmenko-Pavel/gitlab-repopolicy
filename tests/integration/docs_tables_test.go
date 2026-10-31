@@ -136,7 +136,8 @@ func TestDocsCommitTables(t *testing.T) {
 			case kind == "lint-commit" && len(args) > 0 && args[0] == "parser=conventional":
 				dir := t.TempDir()
 				policy := filepath.Join(dir, "COMMITPOLICY")
-				require.NoError(t, os.WriteFile(policy, []byte("version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n"), 0o600))
+				require.NoError(t, os.WriteFile(policy, []byte("version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n"+
+					"    checks:\n      header-format: {conventional: {level: error}}\n"), 0o600))
 				out := lint(t, s, where, policy, nil, row[0], "deny")
 				assert.Contains(t, out, row[1], "%s: %q", where, row[0])
 			case kind == "lint-commit":
@@ -149,7 +150,7 @@ func TestDocsCommitTables(t *testing.T) {
 				dir := t.TempDir()
 				policy := filepath.Join(dir, "COMMITPOLICY")
 				require.NoError(t, os.WriteFile(policy, []byte("version: 1\nrules:\n  r:\n    match: all\n    parser: free\n    message: m\n"+
-					"    checks:\n      pattern: {level: error, location: "+row[0]+", value: '"+row[1]+"'"+keys+"}\n"), 0o600))
+					"    checks:\n      pattern: {x: {level: error, location: "+row[0]+", value: '"+row[1]+"'"+keys+"}}\n"), 0o600))
 				lint(t, s, where, policy, nil, row[3], verdict(t, row[4]))
 			default:
 				t.Fatalf("%s: unknown check %q", tb.doc, kind)

@@ -12,8 +12,9 @@
 ```yaml
 # examples/ci-config/PATHPOLICY
 # The platform team, alice and sre-lead, owns the CI configuration and the
-# deploy scripts in every branch and the production values in main and
-# release branches. Everything else is authorized by GitLab as usual.
+# deploy scripts in every branch, where only new content counts, and the
+# production values in main and release branches, where every commit that
+# enters the branch counts. Everything else is authorized by GitLab as usual.
 version: 1
 
 admins: [alice, sre-lead]
@@ -21,6 +22,7 @@ admins: [alice, sre-lead]
 rules:
   ci-config:
     match: all
+    check_history: new-content
     paths:
       - ".gitlab-ci.yml"
       - ".gitlab/ci/**"
@@ -34,6 +36,7 @@ rules:
 
   prod-values:
     match: [main, '/^release\//']
+    check_history: incoming
     paths: ["helm/**/values-prod.yaml"]
     allow: [alice, release-manager]
     message: >-
@@ -41,7 +44,7 @@ rules:
       release-manager. Propose the change in your branch and ask them to merge it.
 ```
 
-`ci-config` використовує `match: all`, щоб охопити кожну гілку. `allow` визначає того, хто надсилає зміну, а не автора коміту. `prod-values` є окремим обмеженням production-файлів і не розширює доступ до CI.
+`ci-config` використовує `match: all`, щоб охопити кожну гілку. `check_history: new-content` записано явно, хоча це значення за замовчуванням: над CI команда працює разом у робочих гілках, і rebase, squash чи merge зміни, яку вже надіслали alice або sre-lead, не потребує їх повторно. Новий вміст CI-файлів так само пушать лише вони. `allow` визначає того, хто надсилає зміну, а не автора коміту. `prod-values` є окремим обмеженням production-файлів з `check_history: incoming`: у `main` і release-гілках зміну з робочої гілки має прийняти людина з `allow` ([різниця значень](check-history.md)).
 
 | Хто | Що робить | Результат | Чому |
 | --- | --- | --- | --- |

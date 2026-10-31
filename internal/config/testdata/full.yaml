@@ -12,7 +12,7 @@ max_api_calls: 20
 modules:
   pathpolicy: enabled
   commitpolicy: disabled
-default_branch: [main, master]
+default_branch: [trunk]
 settings_check:
   protected_tags: ["v*"]
   job_token_push: false

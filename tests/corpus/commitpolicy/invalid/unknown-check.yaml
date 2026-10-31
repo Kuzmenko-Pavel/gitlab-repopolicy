@@ -4,5 +4,6 @@ rules:
     match: all
     parser: conventional
     checks:
-      typo-enum: { level: error, value: [feat] }
+      typo-enum:
+        allowed: { level: error, value: [feat] }
     message: m

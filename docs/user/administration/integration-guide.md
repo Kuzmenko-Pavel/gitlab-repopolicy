@@ -54,7 +54,7 @@
 - `authorization_backend_failure` - групи без service account, проблеми з токеном
 - `duration_ms` і `api_calls` - вартість hook на вашому навантаженні
 - `invalid_policy` і `decision` з `code: invalid_policy_update` - policy, які в `enforce` заблокують проєкт
-- `decision` з `code: default_branch_not_allowed`, якщо задано `default_branch` ([configuration.md](configuration.md#default_branch)) - проєкти, де default branch названа інакше; у `enforce` push у них відхилятимуться
+- `decision` з `code: default_branch_not_allowed`, якщо `default_branch` не порожній, а за замовчуванням це `[main, master]` ([configuration.md](configuration.md#default_branch)) - проєкти, де default branch названа інакше; у `enforce` push у них відхилятимуться
 - `decision` з `code: tag_not_on_branch` - хто ставить теги на коміти поза гілками. Ця перевірка діє в усіх групових проєктах, навіть без файлів політик ([tagpolicy.md](../examples/tagpolicy/tag-on-branch.md)). Перед `enforce` домовтеся з командами, що теги пушать разом з гілкою (`git push --follow-tags`)
 
 ## 4. COMMITPOLICY у кількох проєктах

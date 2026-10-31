@@ -32,6 +32,7 @@ rules:
 
   kubernetes-agents:
     match: default
+    check_history: incoming
     paths: [".gitlab/agents/**"]
     allow: [alice]
     message: >-
@@ -42,10 +43,10 @@ rules:
 | Who | What | Result | Why |
 | --- | --- | --- | --- |
 | bob | changes `.gitlab/agents/prod/config.yaml` in `feature` | allowed | the rule applies only to the default branch |
-| bob | merges `feature` into `main` | denied | bob makes the change in `main` |
+| bob | merges `feature` into `main` | denied | bob makes the change in `main`; `check_history: incoming` checks the commit that was already in `feature` |
 | alice | merges `feature` into `main` | allowed | alice is in `allow` |
 
-The table assumes default branch `main` and global `enforce`; GitLab permissions and other policies must permit the action. A merge checks whoever accepts the change, regardless of commit authorship.
+The table assumes default branch `main` and global `enforce`; GitLab permissions and other policies must permit the action. A merge checks whoever accepts the change, regardless of commit authorship. `check_history: incoming` is essential here: the commit of bob appeared in the repository already in `feature`, where the rule does not apply, and with `new-content` its merge into `main` would not be checked.
 
 ## Verifying the result
 

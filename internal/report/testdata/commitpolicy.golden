@@ -4,11 +4,11 @@ COMMITPOLICY rule "conventional", branch main: 2 commit messages do not follow t
   required: type(scope): subject, for example feat(api): add refunds
   types: feat, fix
   commits:
-    3f2a9c1aa "Fix deploy."
-      - type-enum: "Fix" is not one of feat, fix
-      - subject-full-stop: the subject must not end with a full stop
+    3f2a9c1aa "Fix: deploy."
+      - type-enum types: "Fix" is not one of feat, fix
+      - subject-trailing-dot no-dot: the subject must not end with a full stop
     9b1d2e3ff "wip"
-      - header: expected "type(scope): subject"
+      - header-format conventional: expected "type(scope): subject"
   Commits follow Conventional Commits.
   how to fix: git rebase -i and reword these commits, then push again
 

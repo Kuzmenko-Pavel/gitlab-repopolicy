@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Operational contract for AI and code agents working in this repository. Product documentation lives in [README.md](README.md) and [docs/](docs/); this file does not repeat it.
+Operational contract for AI and code agents working in this repository. Product documentation lives in [README.md](README.md) and [docs/](docs); this file does not repeat it.
 
 ## Project
 
-`gitlab-repopolicy` is a Go binary for the global `pre-receive.d` hook of GitLab Gitaly. It enforces repository-local policies from `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY` and `BRANCHPOLICY` on every push. Architecture: [docs/architecture.md](docs/architecture.md).
+`gitlab-repopolicy` is a Go binary for the global `pre-receive.d` hook of GitLab Gitaly. It enforces repository-local policies from `PATHPOLICY`, `COMMITPOLICY`, `TAGPOLICY` and `BRANCHPOLICY` on every push. Architecture: [docs/development/architecture.md](docs/development/architecture.md).
 
 ## Commands
 

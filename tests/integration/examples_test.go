@@ -45,20 +45,16 @@ func TestExamples(t *testing.T) {
 	}
 }
 
-// exampleBlock is a fenced YAML block of the documentation that quotes an
-// example: its first line names the file, the rest is the file as it is.
-var exampleBlock = regexp.MustCompile("(?s)```yaml\n# (examples/[^\n]+)\n(.*?)```")
+// exampleBlock quotes an example or shipped config: the first line names
+// the source file and the rest must equal it exactly.
+var exampleBlock = regexp.MustCompile("(?s)```yaml\n# ((?:examples|config)/[^\n]+)\n(.*?)```")
 
 // TestDocsQuoteExamples keeps policy examples of the documentation equal to
 // examples/, which the corpus checks.
 func TestDocsQuoteExamples(t *testing.T) {
 	repo := filepath.Join("..", "..")
-	docs, err := filepath.Glob(filepath.Join(repo, "docs", "*.md"))
-	require.NoError(t, err)
-	readmes, err := filepath.Glob(filepath.Join(repo, "*.md"))
-	require.NoError(t, err)
 	quoted := 0
-	for _, doc := range append(readmes, docs...) {
+	for _, doc := range docs(t) {
 		data, err := os.ReadFile(doc)
 		require.NoError(t, err)
 		for _, m := range exampleBlock.FindAllStringSubmatch(string(data), -1) {
@@ -75,5 +71,59 @@ func TestDocsQuoteExamples(t *testing.T) {
 			}
 		}
 	}
+	assert.Positive(t, quoted, "documentation must quote tested examples")
 	t.Logf("%d quoted examples", quoted)
+}
+
+// TestDocsPolicyBlocks also validates complete inline policies that are not
+// quotes of examples/. Fragments without a version are intentionally partial.
+func TestDocsPolicyBlocks(t *testing.T) {
+	repo, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+	checked := 0
+	for _, doc := range docs(t) {
+		module := ""
+		for _, name := range policyModules {
+			if strings.Contains(filepath.ToSlash(doc), "/"+name+"/") || strings.HasPrefix(filepath.Base(doc), name+".") {
+				module = name
+				break
+			}
+		}
+		data, err := os.ReadFile(doc)
+		require.NoError(t, err)
+		config := filepath.Join(repo, "examples", "presets.yaml")
+		for _, block := range fencedBlock.FindAllStringSubmatch(string(data), -1) {
+			if block[1] == "yaml" && strings.HasPrefix(block[2], "presets:\n") {
+				config = filepath.Join(t.TempDir(), "presets.yaml")
+				require.NoError(t, os.WriteFile(config, []byte(block[2]), 0o600))
+			}
+		}
+		for _, block := range fencedBlock.FindAllStringSubmatch(string(data), -1) {
+			if block[1] != "yaml" || !strings.Contains("\n"+block[2], "\nversion: 1\n") {
+				continue
+			}
+			blockModule := module
+			if blockModule == "" {
+				switch {
+				case strings.Contains(block[2], "\nadmins:"):
+					blockModule = "pathpolicy"
+				case strings.Contains(block[2], "\nkeys:"):
+					blockModule = "tagpolicy"
+				case strings.Contains(block[2], "    parser:"):
+					blockModule = "commitpolicy"
+				case strings.Contains(block[2], "    priority:"):
+					blockModule = "branchpolicy"
+				}
+			}
+			require.NotEmpty(t, blockModule, "%s: a complete inline policy needs an identifiable module", doc)
+			dir := t.TempDir()
+			file := filepath.Join(dir, "policy.yaml")
+			require.NoError(t, os.WriteFile(file, []byte(block[2]), 0o600))
+			out, code := (&Stand{t: t}).binary(dir, "validate", "-f", file, "--module", blockModule, "--config", config)
+			assert.Equal(t, 0, code, "%s inline %s:\n%s", doc, blockModule, out)
+			checked++
+		}
+	}
+	require.GreaterOrEqual(t, checked, 56, "complete policies from both languages must remain covered")
+	t.Logf("%d complete inline policies checked", checked)
 }

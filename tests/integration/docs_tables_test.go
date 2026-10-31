@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,6 +18,18 @@ import (
 // comment "<!-- check: KIND ARGS -->" right above the table.
 var checkMarker = regexp.MustCompile(`(?m)^<!-- check: (.+?) -->\n`)
 
+// TestDocsTableMarkers prevents a misspelled marker from silently losing coverage.
+func TestDocsTableMarkers(t *testing.T) {
+	for _, doc := range docs(t) {
+		data, err := os.ReadFile(doc)
+		require.NoError(t, err)
+		for _, m := range checkMarker.FindAllStringSubmatch(string(data), -1) {
+			kind := strings.Fields(m[1])[0]
+			assert.Contains(t, []string{"lint-commit", "pattern", "branch-push", "tag-rules"}, kind, "%s: unknown table marker", doc)
+		}
+	}
+}
+
 // docTable is a marked table: the marker and its rows without the header,
 // each row split into cells with code spans unwrapped.
 type docTable struct {
@@ -25,15 +38,18 @@ type docTable struct {
 	rows   [][]string
 }
 
-func docTables(t *testing.T, names ...string) []docTable {
+func docTables(t *testing.T, kinds ...string) []docTable {
 	t.Helper()
 	var out []docTable
-	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join("..", "..", "docs", name))
+	for _, name := range docs(t) {
+		data, err := os.ReadFile(name)
 		require.NoError(t, err)
 		text := string(data)
 		for _, m := range checkMarker.FindAllStringSubmatchIndex(text, -1) {
 			tb := docTable{doc: name, marker: strings.Fields(text[m[2]:m[3]])}
+			if !slices.Contains(kinds, tb.marker[0]) {
+				continue
+			}
 			lines := strings.Split(text[m[1]:], "\n")
 			for i, line := range lines {
 				if !strings.HasPrefix(line, "|") {
@@ -48,6 +64,7 @@ func docTables(t *testing.T, names ...string) []docTable {
 			out = append(out, tb)
 		}
 	}
+	require.NotEmpty(t, out, "no documentation tables for %v", kinds)
 	return out
 }
 
@@ -109,7 +126,9 @@ func TestDocsCommitTables(t *testing.T) {
 	repo, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 	s := NewStand(t)
-	for _, tb := range docTables(t, "commitpolicy.md", "commitpolicy.en.md") {
+	tables := docTables(t, "lint-commit", "pattern")
+	require.GreaterOrEqual(t, len(tables), 12, "preserve the original six COMMITPOLICY tables in each language")
+	for _, tb := range tables {
 		kind, args := tb.marker[0], tb.marker[1:]
 		for _, row := range tb.rows {
 			where := tb.doc + " " + strings.Join(tb.marker, " ")
@@ -148,7 +167,9 @@ var pushers = map[string]User{"alice": alice, "bob": bob}
 func TestDocsBranchTables(t *testing.T) {
 	presets, err := os.ReadFile(filepath.Join("..", "..", "examples", "presets.yaml"))
 	require.NoError(t, err)
-	for _, tb := range docTables(t, "branchpolicy.md", "branchpolicy.en.md") {
+	tables := docTables(t, "branch-push")
+	require.GreaterOrEqual(t, len(tables), 6, "preserve the original three BRANCHPOLICY tables in each language")
+	for _, tb := range tables {
 		require.Equal(t, "branch-push", tb.marker[0], tb.doc)
 		policy, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(tb.marker[1])))
 		require.NoError(t, err)
@@ -179,7 +200,9 @@ func TestDocsTagTables(t *testing.T) {
 	repo, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 	s := NewStand(t)
-	for _, tb := range docTables(t, "tagpolicy.md", "tagpolicy.en.md") {
+	tables := docTables(t, "tag-rules")
+	require.GreaterOrEqual(t, len(tables), 4, "preserve the original two TAGPOLICY tables in each language")
+	for _, tb := range tables {
 		require.Equal(t, "tag-rules", tb.marker[0], tb.doc)
 		for _, row := range tb.rows {
 			out, code := s.binary(t.TempDir(), "validate", "-f", filepath.Join(repo, filepath.FromSlash(tb.marker[1])), "--module", "tagpolicy", "--tag", row[0])

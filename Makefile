@@ -45,6 +45,8 @@ unexport GO_MODULE LDFLAGS
 BASE_REF       ?= origin/main
 # git for integration: system git or the git bundled with Gitaly.
 GIT_BIN        ?= git
+# Optional Mermaid CLI arguments, for example a local Puppeteer configuration.
+MERMAID_FLAGS  ?=
 # Tests run from their package directories, so a path in GIT_BIN is made absolute.
 GIT_BIN_ABS     = $(if $(findstring /,$(GIT_BIN)),$(abspath $(GIT_BIN)),$(GIT_BIN))
 # gitlab/gitlab-ce image for e2e.
@@ -209,6 +211,19 @@ clean:
 test-unit:
 	go test -race -shuffle=on ./...
 	go -C tools/release-notes test -race -shuffle=on ./...
+
+.PHONY: test-docs
+## Check documentation links, language pairs, examples, tables and CLI output.
+test-docs:
+	GIT_BIN="$(GIT_BIN_ABS)" go test -count=1 -race -tags integration ./tests/integration/... -run '^Test(Docs|MatchDocs|CLIDocs|ValidateGuide|Examples|PathPolicyExamples)'
+
+.PHONY: test-docs-mermaid
+## Render documentation diagrams; requires mmdc (Mermaid CLI) in PATH.
+test-docs-mermaid:
+	find docs -name '*.md' -exec grep -l '^```mermaid' {} + | while IFS= read -r doc; do \
+		mkdir -p "bin/docs-mermaid/$$(dirname "$$doc")"; \
+		mmdc --input "$$doc" --output "bin/docs-mermaid/$$doc" $(MERMAID_FLAGS); \
+	done
 
 .PHONY: test-integration
 ## Run integration tests on a real git receive-pack with GIT_BIN.

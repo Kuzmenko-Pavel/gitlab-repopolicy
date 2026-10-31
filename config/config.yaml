@@ -71,7 +71,7 @@ help:
   docs_url: ""
 
 # Presets for "extends:" in the policy files, by module. A preset holds only
-# rules; examples are in docs/configuration.md.
+# rules; examples are in docs/user/administration/configuration.md.
 presets:
   pathpolicy: {}
   commitpolicy: {}

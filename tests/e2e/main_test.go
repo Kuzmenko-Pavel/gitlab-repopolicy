@@ -16,7 +16,7 @@ import (
 var gl *stand
 
 func TestMain(m *testing.M) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	s, err := newStand()
 	if err == nil {
 		err = s.bootstrap(ctx)

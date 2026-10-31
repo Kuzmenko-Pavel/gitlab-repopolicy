@@ -20,7 +20,7 @@ var matchRow = regexp.MustCompile("(?m)^\\| `(\\[.*\\])` \\| `([^`]+)` \\| (та
 // validate --branch, the matcher of all four modules.
 func TestMatchDocs(t *testing.T) {
 	s := NewStand(t)
-	for _, doc := range []string{"match.md", "match.en.md"} {
+	for _, doc := range []string{"user/policies/match.md", "user/policies/match.en.md"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
 		require.NoError(t, err)
 		rows := matchRow.FindAllStringSubmatch(string(data), -1)

@@ -16,12 +16,12 @@ We confirm receipt, agree with you on the timeline of the fix and the publicatio
 
 ## Supported versions
 
-Security fixes come out for the latest minor version. Upgrade to it: new versions accept the same policy files, because the `version: 1` schemas are frozen ([docs/operations.en.md](docs/operations.en.md#upgrade-and-rollback)).
+Security fixes come out for the latest minor version. Upgrade to it: PATHPOLICY and TAGPOLICY `version: 1` schemas are frozen, and the operations guide explains how unknown COMMITPOLICY checks are handled ([docs/operations.en.md](docs/user/administration/operations.en.md#upgrade-and-rollback)).
 
 ## What counts as a vulnerability
 
-Any way to change a protected path, weaken a policy for one's own push, bypass the check of commit format or tag signature, or make the hook decide by anything other than the policy from the default branch - yes. Known limitations described in [docs/threat-model.en.md](docs/threat-model.en.md) (project settings, personal namespaces, actions of an Owner and an administrator) - no, but ideas on how to reduce them are welcome in an issue.
+Any way to change a protected path, weaken a policy for one's own push, bypass the check of commit format or tag signature, or make the hook decide by anything other than the policy from the default branch - yes. Known limitations described in [docs/threat-model.en.md](docs/user/administration/threat-model.en.md) (project settings, personal namespaces, actions of an Owner and an administrator) - no, but ideas on how to reduce them are welcome in an issue.
 
 ## Verifying releases
 
-Release artifacts are signed keyless with cosign and have an SBOM and SLSA provenance. How to verify - [docs/install.en.md](docs/install.en.md#1-download-and-verify-the-release).
+The release procedure produces a cosign keyless signature, SBOM and SLSA provenance. The [installation guide](docs/user/administration/install.en.md#1-prepare-and-verify-artifacts) explains verification of a signed artifact bundle.

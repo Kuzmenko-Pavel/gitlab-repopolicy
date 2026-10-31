@@ -1,0 +1,10 @@
+# Read by osv-scanner and the Scorecard Vulnerabilities check, for go.mod of
+# this directory only.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Only github.com/sigstore/rekor/pkg/pki/pgp imports golang.org/x/crypto/openpgp, for Rekor entries of PGP keys. The release signs and verifies blobs keylessly with a Sigstore bundle."
+
+[[IgnoredVulns]]
+id = "GO-2026-6225"
+reason = "Only cmd/cosign/cli/options imports the Azure ACR credential helper, for OCI registries. The release signs and verifies blobs and does not use a registry."

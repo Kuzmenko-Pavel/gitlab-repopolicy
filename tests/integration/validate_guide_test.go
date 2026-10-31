@@ -34,12 +34,24 @@ func TestValidateGuide(t *testing.T) {
 	for _, tc := range []struct {
 		doc      string
 		examples bool
-	}{{"validate.md", true}, {"validate.en.md", true}, {"configuration.md", false}, {"configuration.en.md", false}} {
+	}{
+		{"user/examples/validation-walkthrough.md", true},
+		{"user/examples/validation-walkthrough.en.md", true},
+		{"user/administration/configuration.md", false},
+		{"user/administration/configuration.en.md", false},
+		{"user/reference/validate.md", false},
+		{"user/reference/validate.en.md", false},
+	} {
 		doc := tc.doc
 		t.Run(doc, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
 			require.NoError(t, err)
 			demo := t.TempDir()
+			if strings.HasPrefix(doc, "user/reference/") {
+				data, err := os.ReadFile(filepath.Join("..", "..", "examples", "ci-config", "PATHPOLICY"))
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(demo, "PATHPOLICY"), data, 0o644))
+			}
 			cwd, code, commands := demo, 0, 0
 			for _, block := range fencedBlock.FindAllStringSubmatch(string(data), -1) {
 				switch block[1] {

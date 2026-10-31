@@ -7,19 +7,31 @@
 [![Coverage](https://codecov.io/gh/Kuzmenko-Pavel/gitlab-repopolicy/graph/badge.svg?branch=main)](https://codecov.io/gh/Kuzmenko-Pavel/gitlab-repopolicy)
 [![Release](https://img.shields.io/github/v/release/Kuzmenko-Pavel/gitlab-repopolicy?sort=semver&include_prereleases)](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases)
 [![License](https://img.shields.io/github/license/Kuzmenko-Pavel/gitlab-repopolicy)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-latest-blue)](#документація)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](docs/README.md)
 
 # gitlab-repopolicy
 
-Серверна перевірка правил репозиторію для GitLab Self-Managed. Глобальний `pre-receive` hook Gitaly перевіряє push у репозиторії проєктів за policy-файлами, які лежать у самому репозиторії. Якщо push порушує правила, GitLab його відхиляє і показує, що не так і як виправити.
+**gitlab-repopolicy** — це застосунок для GitLab Self-Managed, який реалізує серверний Git-хук і дозволяє впроваджувати політики керування репозиторіями безпосередньо в проєктах GitLab.
+
+За допомогою політик можна визначати, хто має право змінювати певні файли, встановлювати правила іменування гілок, вимоги до повідомлень комітів та умови створення тегів.
+
+Правила описуються у YAML-файлах, які зберігаються безпосередньо в репозиторії разом із кодом проєкту.
+
+Під час надсилання змін до GitLab застосунок перевіряє їх на відповідність встановленим політикам. Якщо зміни порушують правила, GitLab може відхилити їх із поясненням причини та рекомендаціями щодо виправлення.
 
 ## З чого почати
 
-| Хто ви | Що вам потрібно | Куди дивитися |
-| --- | --- | --- |
-| розробник, якому GitLab відхилив push | зрозуміти відмову і виправити коміт, тег чи гілку | документ політики з рядка відмови: [COMMITPOLICY](docs/commitpolicy.md), [TAGPOLICY](docs/tagpolicy.md), [BRANCHPOLICY](docs/branchpolicy.md), [PATHPOLICY](docs/pathpolicy.md) |
-| Maintainer проєкту | написати policy-файл, перевірити його локально і ввімкнути без зупинки роботи команди | ті самі документи політик, [validate.md](docs/validate.md), потім [integration-guide.md](docs/integration-guide.md) |
-| адміністратор GitLab | встановити hook, налаштувати сервер, стежити за audit | [install.md](docs/install.md), [configuration.md](docs/configuration.md), [operations.md](docs/operations.md), [integration-guide.md](docs/integration-guide.md) |
+Застосунок перевіряє репозиторії групових проєктів. Адміністратор підключає hook один раз на вузлах Gitaly, а власники проєктів зберігають потрібні політики разом із кодом.
+
+| Хочу | Наступний крок |
+| --- | --- |
+| Зрозуміти можливості й межі захисту | Огляд [політик](#політики) та [модель загроз](docs/user/administration/threat-model.md) |
+| Установити застосунок | [Перший запуск](#перший-запуск) і [повна інструкція](docs/user/administration/install.md) |
+| Налаштувати політику | Обрати файл у таблиці [політик](#політики), почати з його короткого прикладу |
+| Подивитися готові рішення | Каталоги [файлів](docs/user/policies/pathpolicy.md#приклади), [комітів](docs/user/policies/commitpolicy.md#приклади), [тегів](docs/user/policies/tagpolicy.md#приклади) і [гілок](docs/user/policies/branchpolicy.md#приклади) |
+| Перевірити конфігурацію до push | [Локальна перевірка policy](docs/user/reference/validate.md) або [серверний selftest](docs/user/reference/cli.md#selftest) |
+| Розібратися у відмові | Розділ "Відмови" policy з повідомлення; для серверних збоїв - [діагностика](docs/user/administration/operations.md#типові-проблеми) |
+| Узяти участь у розробці | [Документація розробника](docs/development/README.md) і [CONTRIBUTING](CONTRIBUTING.md) |
 
 ## Політики
 
@@ -27,14 +39,14 @@
 
 | Файл | Що вирішує |
 | --- | --- |
-| [PATHPOLICY](docs/pathpolicy.md) | хто може змінювати певні файли: CI-конфігурацію, deploy-логіку, prod-значення |
-| [COMMITPOLICY](docs/commitpolicy.md) | яким має бути формат commit messages |
-| [TAGPOLICY](docs/tagpolicy.md) | хто може випускати релізи: тег приймається лише з підписом дозволеного ключа OpenPGP або SSH |
-| [BRANCHPOLICY](docs/branchpolicy.md) | як називаються нові гілки і які з них мають бути захищені в GitLab |
+| [PATHPOLICY](docs/user/policies/pathpolicy.md) | хто може змінювати певні файли: CI-конфігурацію, deploy-логіку, prod-значення |
+| [COMMITPOLICY](docs/user/policies/commitpolicy.md) | яким має бути формат commit messages |
+| [TAGPOLICY](docs/user/policies/tagpolicy.md) | хто може випускати релізи: тег приймається лише з підписом дозволеного ключа OpenPGP або SSH |
+| [BRANCHPOLICY](docs/user/policies/branchpolicy.md) | як називаються нові гілки і які з них мають бути захищені в GitLab |
 
 ## Навіщо
 
-У GitLab немає способу дозволити зміну конкретних файлів лише конкретним людям на будь-якому шляху зміни. Protected branches захищають цілу гілку, Code Owners працюють лише в merge request і обходяться прямим push, push rules є лише в Premium і не знають, хто вносить зміну. Клієнтські перевірки (commitlint, pre-commit) обходяться `--no-verify` і не бачать merge кнопкою та Web IDE.
+Політика файлів потрібна, коли доступ до гілки ширший, ніж доступ до її CI-конфігурації або deployment-скриптів. Наприклад, розробники можуть змінювати код у своїх гілках, але CI має залишатися під контролем команди платформи. Серверна перевірка застосовує цю вимогу незалежно від налаштувань локальних Git-хуків.
 
 gitlab-repopolicy перевіряє зміну на сервері, тому байдуже, як її внесли: push по HTTPS чи SSH, merge кнопкою, auto-merge, Web IDE, API, push із CI. Правила версіонуються і проходять review разом з кодом. Hook може лише відмовити, права GitLab він не розширює.
 
@@ -43,7 +55,7 @@ gitlab-repopolicy перевіряє зміну на сервері, тому б
 - push у репозиторії wiki, design і snippets
 - у конфігурації сервера `mode: off`
 
-З `mode: audit` hook перевіряє все, але лише записує рішення в audit і нікому не відмовляє ([configuration.md](docs/configuration.md#mode)).
+З `mode: audit` hook виконує ті самі перевірки й записує рішення в журнал, але не блокує push через порушення політик. Помилки запуску можуть призвести до відмови; докладніше про це й інші режими - у [конфігурації](docs/user/administration/configuration.md#mode).
 
 Приклад від файлу до виправлення. Команда платформи (alice і sre-lead) хоче, щоб CI-конфігурацію змінювала лише вона, у будь-якій гілці:
 
@@ -105,38 +117,49 @@ git commit --amend --no-edit
 git push --force-with-lease origin feature
 ```
 
-Як читати відмову рядок за рядком - [pathpolicy.md](docs/pathpolicy.md#відмови).
+[Розбір відмови PATHPOLICY](docs/user/policies/pathpolicy.md#відмови) пояснює кожний рядок повідомлення та способи виправлення.
 
 ## Передумови
 
 Перед встановленням мають бути:
 - GitLab Self-Managed, CE або EE, з версіями з таблиці нижче
 - права root на кожній ноді, де працює Gitaly
-- instance service account з токеном (`read_api`, `self_rotate`), Maintainer у кожній top-level групі ([install.md](docs/install.md#3-service-account-і-токен))
+- instance service account з токеном (`read_api`, `self_rotate`), Maintainer у кожній top-level групі ([install.md](docs/user/administration/install.md#3-service-account-і-токен))
 - `custom_hooks_dir` у конфігурації Gitaly, наприклад `/var/opt/gitlab/gitaly/custom_hooks` у `gitlab.rb` і `gitlab-ctl reconfigure`. Без нього Gitaly не запускає глобальні hooks
-- пакет `.deb` або `.rpm` з [GitHub Releases](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases) з перевіреним підписом ([install.md](docs/install.md#1-завантажити-й-перевірити-реліз))
+- підготовлений пакет `.deb` або `.rpm`. Для локальної перевірки його збирає `make release-snapshot`; порядок перевірки підписаних артефактів наведено у [встановленні](docs/user/administration/install.md#1-підготувати-й-перевірити-артефакти)
 
 ## Перший запуск
 
-Коротко для Linux package на одній ноді. Docker, окремі ноди Gitaly і всі кроки докладно - [docs/install.md](docs/install.md).
+Нижче наведено приклад встановлення та першого запуску gitlab-repopolicy для GitLab Self-Managed, встановленого через Linux package (Omnibus) на одному сервері.
+
+Перед початком необхідно створити instance service account у GitLab, отримати токен доступу та налаштувати `custom_hooks_dir` у Gitaly. Пакет має бути підготовлений за [інструкцією встановлення](docs/user/administration/install.md#1-підготувати-й-перевірити-артефакти). `1.0.0` нижче позначає версію прикладу; замініть ім'я пакета на фактичне ім'я зібраного артефакту.
+
+Для першого запуску на робочому сервері рекомендується використовувати режим `audit`. У цьому режимі застосунок перевіряє зміни та записує результати в журнал, але не блокує push через порушення політик. Після встановлення пакета, але перед підключенням hook, відкрийте конфігурацію й установіть `mode: audit`.
+
+Встановлення та запуск можуть виглядати так:
 
 ```sh
 sudo apt install ./gitlab-repopolicy_1.0.0_linux_amd64.deb
-sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # токен service account, Enter, Ctrl-D
+sudoedit /etc/gitlab-repopolicy/config.yaml
+sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'
 sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git
 sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
 
-Що має вийти:
-- пакет ставить бінарник `/usr/bin/gitlab-repopolicy`, конфігурацію `/etc/gitlab-repopolicy/config.yaml` і вимкнені таймери
-- `cat` нічого не друкує, токен лягає у файл з правами 0440
-- `install-hook` друкує `.../pre-receive.d/50-gitlab-repopolicy: created`. З цієї миті hook перевіряє push
-- `selftest` друкує рядки `ok`, `info` або `warn`, а будь-який `FAIL` дає код виходу 1. Від root і від `git` результат має бути однаковий, бо hook працює від `git`
+У редакторі змініть `mode` до виконання наступних команд. Також перевірте `default_branch: [main]` у поставці: це обмеження імені основної гілки для всіх групових проєктів, навіть без policy. Для початкового спостереження без цього обмеження задайте `default_branch: []`.
 
-Для робочого інстансу перед `install-hook` поставте в конфігурації `mode: audit`. Тоді hook нікому не відмовляє, а лише пише, кому відмовив би ([integration-guide.md](docs/integration-guide.md)).
+Після виконання команд:
 
-Перевірити, що hook справді працює, можна на тестовому проєкті. Додайте в нього PATHPOLICY і зробіть push, який її порушує ([pathpolicy.md](docs/pathpolicy.md)). Відмова видна у виводі `git push`, рішення - у `/var/log/gitlab-repopolicy/audit.log`.
+- Пакет встановить застосунок, створить необхідні каталоги та конфігураційні файли
+- `sudoedit` дасть змогу змінити режим до підключення hook
+- Команда `cat` збереже токен service account у `/etc/gitlab-repopolicy/token`. Після введення токена натисніть Enter, а потім Ctrl+D. Для нового файлу `umask` задає права 0440
+- `install-hook` створить wrapper у `pre-receive.d/`, надасть користувачу `git` доступ до конфігурації, токена й журналу. З цього моменту Gitaly запускатиме перевірку змін
+- `selftest` перевірить встановлення та налаштування. Виконайте перевірку від `root` і `git`, оскільки Gitaly запускає hook від `git`. Будь-який рядок `FAIL` означає код завершення 1
+
+Успішна перевірка підтверджує доступ до API й локальних файлів, але не виклик wrapper самим Gitaly і не охоплення всіх груп. Усуньте помилки `selftest`, перевірте групи командою `coverage` і виконайте контрольний push у тестовий проєкт. У режимі `audit` очікувану відмову шукайте в `/var/log/gitlab-repopolicy/audit.log` з `"enforced": false`. Помилки запуску, зокрема нечитабельна конфігурація, можуть блокувати push навіть у `audit`.
+
+Це приклад базового встановлення на одному сервері. Докладні інструкції, включно з перевіркою релізу, налаштуванням service account, встановленням у Docker та конфігурацією окремих вузлів Gitaly, наведено в [документації зі встановлення](docs/user/administration/install.md). Перехід від спостереження до блокування описано в [порядку інтеграції](docs/user/administration/integration-guide.md).
 
 ## Підтримувані версії GitLab
 
@@ -158,7 +181,7 @@ Hook працює всередині push, тому push з ним довший.
 | --- | --- | --- |
 | без policy-файлів, один коміт | 274 / 329 (+55) | 372 / 400 (+28) |
 | PATHPOLICY, коміт не змінює файли правила | 297 / 315 (+18) | 379 / 405 (+25) |
-| PATHPOLICY, коміт змінює файл правила, автор в `allow` | 297 / 448 (+151) | 376 / 600 (+223) |
+| PATHPOLICY, коміт змінює файл правила, користувач push є в `allow` | 297 / 448 (+151) | 376 / 600 (+223) |
 | COMMITPOLICY, один коміт | 278 / 328 (+51) | 385 / 414 (+29) |
 | COMMITPOLICY, нова гілка з 50 комітами | 309 / 342 (+33) | 385 / 441 (+55) |
 | BRANCHPOLICY, нова гілка за `match` | 285 / 302 (+16) | 375 / 388 (+14) |
@@ -170,7 +193,7 @@ Hook працює всередині push, тому push з ним довший.
 
 Що з цього видно:
 - коли hook-у не потрібен API GitLab, push довший на 14-55 мс. Сам hook, за полем `duration_ms` в audit, працює 12-46 мс (медіана)
-- помітно довше там, де hook питає GitLab. Коли коміт змінює файл правила PATHPOLICY, hook запитує учасників проєкту, щоб перевірити `allow`, це +150-220 мс. Для `protected: true` у BRANCHPOLICY і TAGPOLICY hook запитує захищені гілки або теги проєкту, це +90-115 мс
+- помітно довше там, де hook питає GitLab. Коли коміт змінює файл правила PATHPOLICY, hook запитує учасників проєкту, щоб перевірити `allow`, це +151-223 мс. Для `protected: true` у BRANCHPOLICY і TAGPOLICY hook запитує захищені гілки або теги проєкту, це +93-115 мс
 - по SSH hook ще перевіряє, що ключ особистий, а не deploy key. Тому SSH дорожчий у сценаріях з `user_prefix` і з усіма політиками
 
 Паралельне навантаження. 10 клієнтів одночасно, кожен робить 30 push у свої гілки одного проєкту з усіма чотирма політиками, кожен десятий push - з підписаним тегом.
@@ -219,27 +242,11 @@ Policy-файли не мають розширення, тому редакто�
 
 Після цього IDE підсвічує невідомі ключі й неправильні значення і показує підказки з описів полів.
 
-Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate` ([validate.md](docs/validate.md)), повідомлення комітів - `gitlab-repopolicy lint-commit`. Редактор знає лише схему, а `validate` перевіряє ще й злиття з пресетами, регулярні вирази, порядок правил BRANCHPOLICY і ключі TAGPOLICY.
-
-## Документація
-
-| Документ | Про що |
-| --- | --- |
-| [install.md](docs/install.md) | встановлення за типами інсталяцій, перевірка релізу, service account |
-| [configuration.md](docs/configuration.md) | `config.yaml` сервера |
-| [operations.md](docs/operations.md) | audit і алерти, recovery, break-glass, ротація токена, `settings-check`, оновлення, типові проблеми |
-| [pathpolicy.md](docs/pathpolicy.md), [commitpolicy.md](docs/commitpolicy.md), [tagpolicy.md](docs/tagpolicy.md), [branchpolicy.md](docs/branchpolicy.md) | довідник policy-файлів |
-| [match.md](docs/match.md) | поле `match`: для яких гілок і тегів діє правило; позначення діаграм |
-| [validate.md](docs/validate.md) | перевірка файлів політик без push, покроково |
-| [cli.md](docs/cli.md) | усі команди і прапорці |
-| [integration-guide.md](docs/integration-guide.md) | порядок увімкнення на робочому інстансі |
-| [architecture.md](docs/architecture.md) | як влаштовано |
-| [threat-model.md](docs/threat-model.md) | від чого захищає і від чого ні |
-| [development.md](docs/development.md), [release.md](docs/release.md) | розробка і випуск релізу |
+Перевірити файл локально тим самим кодом, що й hook, можна командою `gitlab-repopolicy validate` ([validate.md](docs/user/reference/validate.md)), повідомлення комітів - `gitlab-repopolicy lint-commit`. Редактор знає лише схему, а `validate` перевіряє ще й злиття з пресетами, регулярні вирази, порядок правил BRANCHPOLICY і ключі TAGPOLICY.
 
 ## Участь
 
-[CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Про вразливості - приватно, за [SECURITY.md](SECURITY.md).
+Перед внеском прочитайте [правила розробки й review](CONTRIBUTING.md) та [кодекс поведінки](CODE_OF_CONDUCT.md). Про вразливості повідомляйте приватно за [процедурою SECURITY](SECURITY.md).
 
 ## Ліцензія
 

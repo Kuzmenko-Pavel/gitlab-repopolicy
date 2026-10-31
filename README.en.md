@@ -7,19 +7,31 @@
 [![Coverage](https://codecov.io/gh/Kuzmenko-Pavel/gitlab-repopolicy/graph/badge.svg?branch=main)](https://codecov.io/gh/Kuzmenko-Pavel/gitlab-repopolicy)
 [![Release](https://img.shields.io/github/v/release/Kuzmenko-Pavel/gitlab-repopolicy?sort=semver&include_prereleases)](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases)
 [![License](https://img.shields.io/github/license/Kuzmenko-Pavel/gitlab-repopolicy)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-latest-blue)](#documentation)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](docs/README.en.md)
 
 # gitlab-repopolicy
 
-Server-side checks of repository rules for GitLab Self-Managed. A global `pre-receive` hook of Gitaly checks pushes to project repositories against policy files that live in the repository itself. If a push breaks the rules, GitLab rejects it and shows what is wrong and how to fix it.
+**gitlab-repopolicy** is an application for GitLab Self-Managed that implements a server-side Git hook and lets teams define repository management policies directly in their GitLab projects.
+
+Policies determine who may change particular files, set branch naming rules, define commit message requirements and control tag creation.
+
+Rules are written in YAML files stored in the repository alongside the project code.
+
+When changes are sent to GitLab, the application checks them against the configured policies. If changes violate the rules, GitLab can reject them with an explanation and guidance on how to fix the problem.
 
 ## Where to start
 
-| Who you are | What you need | Where to look |
-| --- | --- | --- |
-| a developer whose push GitLab rejected | understand the denial and fix the commit, tag or branch | the policy document named in the denial: [COMMITPOLICY](docs/commitpolicy.en.md), [TAGPOLICY](docs/tagpolicy.en.md), [BRANCHPOLICY](docs/branchpolicy.en.md), [PATHPOLICY](docs/pathpolicy.en.md) |
-| a project Maintainer | write a policy file, check it locally and turn it on without stopping the team | the same policy documents, [validate.en.md](docs/validate.en.md), then [integration-guide.en.md](docs/integration-guide.en.md) |
-| a GitLab administrator | install the hook, configure the server, watch the audit | [install.en.md](docs/install.en.md), [configuration.en.md](docs/configuration.en.md), [operations.en.md](docs/operations.en.md), [integration-guide.en.md](docs/integration-guide.en.md) |
+The application checks group project repositories. An administrator connects the hook on Gitaly nodes; project owners then keep the policies they need alongside their code.
+
+| I want to | Next step |
+| --- | --- |
+| Understand capabilities and protection boundaries | [Policy overview](#policies) and [threat model](docs/user/administration/threat-model.en.md) |
+| Install the application | [First run](#first-run) and [full instructions](docs/user/administration/install.en.md) |
+| Configure a policy | Choose a file in the [policy table](#policies) and start with its short example |
+| Find a worked solution | Catalogs for [files](docs/user/policies/pathpolicy.en.md#examples), [commits](docs/user/policies/commitpolicy.en.md#examples), [tags](docs/user/policies/tagpolicy.en.md#examples) and [branches](docs/user/policies/branchpolicy.en.md#examples) |
+| Check configuration before pushing | [Local policy validation](docs/user/reference/validate.en.md) or [server selftest](docs/user/reference/cli.en.md#selftest) |
+| Understand a denial | The named policy's "Denials" section; for server failures, [diagnosis](docs/user/administration/operations.en.md#common-problems) |
+| Contribute to development | [Developer documentation](docs/development/README.en.md) and [CONTRIBUTING](CONTRIBUTING.en.md) |
 
 ## Policies
 
@@ -27,14 +39,14 @@ Each policy is a separate YAML file in the root of the repository.
 
 | File | What it decides |
 | --- | --- |
-| [PATHPOLICY](docs/pathpolicy.en.md) | who may change certain files: CI configuration, deploy logic, prod values |
-| [COMMITPOLICY](docs/commitpolicy.en.md) | what format commit messages must have |
-| [TAGPOLICY](docs/tagpolicy.en.md) | who may release: a tag is accepted only with a signature of an allowed OpenPGP or SSH key |
-| [BRANCHPOLICY](docs/branchpolicy.en.md) | how new branches are named and which of them must be protected in GitLab |
+| [PATHPOLICY](docs/user/policies/pathpolicy.en.md) | who may change certain files: CI configuration, deploy logic, prod values |
+| [COMMITPOLICY](docs/user/policies/commitpolicy.en.md) | what format commit messages must have |
+| [TAGPOLICY](docs/user/policies/tagpolicy.en.md) | who may release: a tag is accepted only with a signature of an allowed OpenPGP or SSH key |
+| [BRANCHPOLICY](docs/user/policies/branchpolicy.en.md) | how new branches are named and which of them must be protected in GitLab |
 
 ## Why
 
-GitLab has no way to let only specific people change specific files on every way a change can arrive. Protected branches protect a whole branch, Code Owners work only in a merge request and are bypassed by a direct push, push rules exist only in Premium and do not know who makes the change. Client-side checks (commitlint, pre-commit) are bypassed with `--no-verify` and do not see the merge button and the Web IDE.
+File policies are useful when branch access is broader than access to its CI configuration or deployment scripts. For example, developers may change code in their branches while CI remains under platform team control. Server-side checks apply that requirement independently of local Git-hook settings.
 
 gitlab-repopolicy checks a change on the server, so it does not matter how it was made: a push over HTTPS or SSH, the merge button, auto-merge, the Web IDE, the API, a push from CI. The rules are versioned and reviewed together with the code. The hook can only deny, it does not extend GitLab permissions.
 
@@ -43,7 +55,7 @@ When the hook checks nothing:
 - a push to wiki, design and snippet repositories
 - `mode: off` in the server configuration
 
-With `mode: audit` the hook checks everything, but only writes the decision to the audit log and denies nobody ([configuration.en.md](docs/configuration.en.md#mode)).
+With `mode: audit` the hook runs the same checks and logs its decisions, but policy violations do not block a push. Startup errors can still cause rejection; see [configuration](docs/user/administration/configuration.en.md#mode) for details and other modes.
 
 An example from the file to the fix. The platform team (alice and sre-lead) wants only themselves to change the CI configuration, in any branch:
 
@@ -105,38 +117,49 @@ git commit --amend --no-edit
 git push --force-with-lease origin feature
 ```
 
-How to read the denial line by line - [pathpolicy.en.md](docs/pathpolicy.en.md#denials).
+[The PATHPOLICY denial guide](docs/user/policies/pathpolicy.en.md#denials) explains each line of the message and how to resolve the problem.
 
 ## Prerequisites
 
 Before the installation you need:
 - GitLab Self-Managed, CE or EE, of a version from the table below
 - root on every node where Gitaly runs
-- an instance service account with a token (`read_api`, `self_rotate`), Maintainer in every top-level group ([install.en.md](docs/install.en.md#3-service-account-and-token))
+- an instance service account with a token (`read_api`, `self_rotate`), Maintainer in every top-level group ([install.en.md](docs/user/administration/install.en.md#3-service-account-and-token))
 - `custom_hooks_dir` in the Gitaly configuration, for example `/var/opt/gitlab/gitaly/custom_hooks` in `gitlab.rb` and `gitlab-ctl reconfigure`. Without it Gitaly does not run global hooks
-- a `.deb` or `.rpm` package from [GitHub Releases](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/releases) with a verified signature ([install.en.md](docs/install.en.md#1-download-and-verify-the-release))
+- a prepared `.deb` or `.rpm` package. Build one for local checks with `make release-snapshot`; [installation](docs/user/administration/install.en.md#1-prepare-and-verify-artifacts) explains verification of signed artifacts
 
 ## First run
 
-In short, for the Linux package on one node. Docker, separate Gitaly nodes and all the steps in detail - [docs/install.en.md](docs/install.en.md).
+This example installs and starts gitlab-repopolicy on a single server running GitLab Self-Managed from the Linux package (Omnibus).
+
+Before starting, create an instance service account in GitLab, obtain its access token and configure `custom_hooks_dir` in Gitaly. Prepare the package following the [installation instructions](docs/user/administration/install.en.md#1-prepare-and-verify-artifacts). `1.0.0` below is an example version; substitute the actual filename of your built package.
+
+For the first run on a production server, use `audit` mode. It checks changes and logs results without blocking pushes for policy violations. After installing the package and before connecting the hook, open the configuration and set `mode: audit`.
+
+The installation and first checks can look like this:
 
 ```sh
 sudo apt install ./gitlab-repopolicy_1.0.0_linux_amd64.deb
-sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'     # service account token, Enter, Ctrl-D
+sudoedit /etc/gitlab-repopolicy/config.yaml
+sudo sh -c 'umask 337; cat > /etc/gitlab-repopolicy/token'
 sudo gitlab-repopolicy install-hook --hooks-dir /var/opt/gitlab/gitaly/custom_hooks --user git
 sudo gitlab-repopolicy selftest
 sudo -u git gitlab-repopolicy selftest
 ```
 
-What you should get:
-- the package installs the binary `/usr/bin/gitlab-repopolicy`, the configuration `/etc/gitlab-repopolicy/config.yaml` and disabled timers
-- `cat` prints nothing, the token goes to a file with mode 0440
-- `install-hook` prints `.../pre-receive.d/50-gitlab-repopolicy: created`. From this moment the hook checks pushes
-- `selftest` prints `ok`, `info` or `warn` lines, and any `FAIL` gives exit code 1. The result must be the same as root and as `git`, because the hook runs as `git`
+Change `mode` in the editor before running the remaining commands. Also review the shipped `default_branch: [main]`: it restricts the default branch name of every group project, including those without policies. Set `default_branch: []` to start observing without this restriction.
 
-For a production instance set `mode: audit` in the configuration before `install-hook`. Then the hook denies nobody and only writes whom it would have denied ([integration-guide.en.md](docs/integration-guide.en.md)).
+After these commands:
 
-To check that the hook really works, use a test project. Add a PATHPOLICY to it and make a push that breaks it ([pathpolicy.en.md](docs/pathpolicy.en.md)). The denial is visible in the output of `git push`, the decision in `/var/log/gitlab-repopolicy/audit.log`.
+- The package installs the application and creates the required directories and configuration files
+- `sudoedit` lets you change the mode before connecting the hook
+- `cat` saves the service account token in `/etc/gitlab-repopolicy/token`. Enter the token, press Enter, then Ctrl+D. For a new file, `umask` sets mode 0440
+- `install-hook` creates the wrapper in `pre-receive.d/` and gives the `git` user access to the configuration, token and log. Gitaly starts invoking the checks from this point
+- `selftest` checks installation and configuration. Run it as both `root` and `git`, because Gitaly runs the hook as `git`. Any `FAIL` line means exit code 1
+
+A successful check confirms access to the API and local files. It does not prove that Gitaly invokes the wrapper or that all groups are covered. Fix any `selftest` failures, check group coverage with `coverage` and make a control push in a test project. In `audit` mode, look for the expected denial in `/var/log/gitlab-repopolicy/audit.log` with `"enforced": false`. Startup failures, including an unreadable configuration, can still block a push in `audit` mode.
+
+This is a basic single-server installation. The [installation guide](docs/user/administration/install.en.md) covers release verification, service account setup, Docker and separate Gitaly nodes. Follow the [integration guide](docs/user/administration/integration-guide.en.md) to move from observation to enforcement.
 
 ## Supported GitLab versions
 
@@ -158,7 +181,7 @@ How it was measured. GitLab CE 19.4.2 in Docker and the git client on one machin
 | --- | --- | --- |
 | no policy files, one commit | 274 / 329 (+55) | 372 / 400 (+28) |
 | PATHPOLICY, the commit does not change the files of a rule | 297 / 315 (+18) | 379 / 405 (+25) |
-| PATHPOLICY, the commit changes a file of a rule, the author is in `allow` | 297 / 448 (+151) | 376 / 600 (+223) |
+| PATHPOLICY, the commit changes a file of a rule, the pusher is in `allow` | 297 / 448 (+151) | 376 / 600 (+223) |
 | COMMITPOLICY, one commit | 278 / 328 (+51) | 385 / 414 (+29) |
 | COMMITPOLICY, a new branch with 50 commits | 309 / 342 (+33) | 385 / 441 (+55) |
 | BRANCHPOLICY, a new branch by `match` | 285 / 302 (+16) | 375 / 388 (+14) |
@@ -170,7 +193,7 @@ How it was measured. GitLab CE 19.4.2 in Docker and the git client on one machin
 
 What this shows:
 - when the hook does not need the GitLab API, a push takes 14-55 ms longer. The hook itself, by the `duration_ms` field of the audit, runs 12-46 ms (median)
-- it takes noticeably longer where the hook asks GitLab. When a commit changes a file of a PATHPOLICY rule, the hook requests the members of the project to check `allow`, that is +150-220 ms. For `protected: true` in BRANCHPOLICY and TAGPOLICY the hook requests the protected branches or tags of the project, that is +90-115 ms
+- it takes noticeably longer where the hook asks GitLab. When a commit changes a file of a PATHPOLICY rule, the hook requests the members of the project to check `allow`, that is +151-223 ms. For `protected: true` in BRANCHPOLICY and TAGPOLICY the hook requests the protected branches or tags of the project, that is +93-115 ms
 - over SSH the hook also checks that the key is a personal key and not a deploy key. That is why SSH costs more in the scenarios with `user_prefix` and with all policies
 
 Parallel load. 10 clients at once, each makes 30 pushes to its own branches of one project with all four policies, every tenth push with a signed tag.
@@ -219,27 +242,11 @@ Policy files have no extension, so the editor has to be told that they are YAML 
 
 After that the IDE highlights unknown keys and wrong values and shows hints from the descriptions of the fields.
 
-Check a file locally with the same code as the hook with `gitlab-repopolicy validate` ([validate.en.md](docs/validate.en.md)), commit messages with `gitlab-repopolicy lint-commit`. The editor knows only the schema, while `validate` also checks the merge with presets, regular expressions, the order of the rules of BRANCHPOLICY and the keys of TAGPOLICY.
-
-## Documentation
-
-| Document | About |
-| --- | --- |
-| [install.en.md](docs/install.en.md) | installation by installation type, release verification, service account |
-| [configuration.en.md](docs/configuration.en.md) | the server `config.yaml` |
-| [operations.en.md](docs/operations.en.md) | audit and alerts, recovery, break-glass, token rotation, `settings-check`, upgrades, common problems |
-| [pathpolicy.en.md](docs/pathpolicy.en.md), [commitpolicy.en.md](docs/commitpolicy.en.md), [tagpolicy.en.md](docs/tagpolicy.en.md), [branchpolicy.en.md](docs/branchpolicy.en.md) | policy file reference |
-| [match.en.md](docs/match.en.md) | the field `match`: which branches and tags a rule applies to; the notation of the diagrams |
-| [validate.en.md](docs/validate.en.md) | checking policy files without a push, step by step |
-| [cli.en.md](docs/cli.en.md) | all commands and flags |
-| [integration-guide.en.md](docs/integration-guide.en.md) | the order of turning it on in a production instance |
-| [architecture.en.md](docs/architecture.en.md) | how it works |
-| [threat-model.en.md](docs/threat-model.en.md) | what it protects from and what not |
-| [development.en.md](docs/development.en.md), [release.en.md](docs/release.en.md) | development and releasing |
+Check a file locally with the same code as the hook with `gitlab-repopolicy validate` ([validate.en.md](docs/user/reference/validate.en.md)), commit messages with `gitlab-repopolicy lint-commit`. The editor knows only the schema, while `validate` also checks the merge with presets, regular expressions, the order of the rules of BRANCHPOLICY and the keys of TAGPOLICY.
 
 ## Contributing
 
-[CONTRIBUTING.en.md](CONTRIBUTING.en.md), [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md). Report vulnerabilities privately, see [SECURITY.en.md](SECURITY.en.md).
+Before contributing, read the [development and review requirements](CONTRIBUTING.en.md) and the [code of conduct](CODE_OF_CONDUCT.en.md). Report vulnerabilities privately using the [SECURITY procedure](SECURITY.en.md).
 
 ## License
 

@@ -3,12 +3,12 @@
 
 # Contributing
 
-Thank you for wanting to help. Bugs and ideas go to [issues](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/issues), changes come as pull requests. Report vulnerabilities privately, see [SECURITY.en.md](SECURITY.en.md), not in an issue.
+Report bugs or propose changes in [issues](https://github.com/Kuzmenko-Pavel/gitlab-repopolicy/issues). Open a pull request for a fix. Report vulnerabilities privately following [SECURITY](SECURITY.en.md).
 
 ## Before a pull request
 
 - Discuss a larger change (a new module, a new COMMITPOLICY rule, a change of hook behaviour) in an issue first
-- How to work with the code, tests and the e2e stand - [docs/development.en.md](docs/development.en.md). Everything goes through `make`, the entry point is `make help`. GNU make 4 or newer is required
+- Prepare tools using the [development guide](docs/development/development.en.md). GNU make 4 or newer is required; `make help` lists available operations
 - A change is done when `make code-lint test-unit test-integration` pass. Changes to identity, the GitLab API client or installation also need `make test-e2e`; label such a pull request `e2e`. ci and e2e run manually on any branch: Actions > e2e > Run workflow
 
 ## Commits
@@ -29,13 +29,15 @@ A pull request is merged with squash: the PR title becomes the header of the com
 
 - Code, comments, godoc and the output of the binary are in English
 - A new Go dependency only with a written justification in the pull request: every dependency ends up in a binary that runs on GitLab servers
-- The package map and the dependency rules between packages - [docs/architecture.en.md](docs/architecture.en.md); the linter checks them
+- Follow the [package responsibilities](docs/development/architecture.en.md#main-components); the linter checks dependencies
 - The PATHPOLICY and TAGPOLICY `version: 1` schemas are frozen, denial codes and the audit event format are a public contract
 - `tests/corpus/*/valid/` only grows: every next version must accept these files
 
 ## Documentation
 
-Documentation is in Ukrainian (`<name>.md`) with an English translation next to it (`<name>.en.md`). A change of a document updates both files in the same pull request; `make test-integration` checks that the pairs are in place, that relative links lead to existing files and that policy examples in documents match `examples/` word for word.
+Write documentation in Ukrainian (`<name>.md`) with an English translation alongside it (`<name>.en.md`). Update both files in the same pull request and check that conditions, examples and expected results agree.
+
+Use `make test-docs` for a short feedback cycle. It recursively checks language pairs, relative links and anchors, complete policy blocks and configuration quotes, and executes marked tables and CLI examples. A quote starting with `# examples/...` or `# config/...` must exactly match that file. For diagrams, run `make test-docs-mermaid` with Mermaid CLI (`mmdc`) installed. Run the complete required checks before review too.
 
 ## Review
 

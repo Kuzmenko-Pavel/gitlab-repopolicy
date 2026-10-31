@@ -45,7 +45,7 @@ func TestCLIDocs(t *testing.T) {
 		}
 	}
 	require.Contains(t, commands, "validate")
-	for _, doc := range []string{"cli.md", "cli.en.md"} {
+	for _, doc := range []string{"user/reference/cli.md", "user/reference/cli.en.md"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "docs", doc))
 		require.NoError(t, err)
 		sections := map[string]string{}

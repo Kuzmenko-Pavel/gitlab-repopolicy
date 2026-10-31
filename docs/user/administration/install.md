@@ -162,6 +162,27 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 
 `coverage` друкує top-level групи без service account і проєкти з policy-файлами в них; код виходу 1, якщо такі є.
 
+### Ліміти API GitLab
+
+Hook ходить в API одним service account на весь інстанс. GitLab обмежує частину запитів API кількістю на одного користувача за хвилину, тому всі push інстансу ділять ці ліміти service account. До API hook звертається не в кожному push, а лише коли правилу потрібна відповідь GitLab: зміна файлів правила PATHPOLICY, `protected: true`, перевірка SSH-ключа. Скільки запитів зробив push, видно в полі `api_calls` подій audit.
+
+| Запит hook | Налаштування GitLab | За замовчуванням, на хвилину | Розділ в Admin > Settings > Network |
+| --- | --- | --- | --- |
+| `GET /projects/:id`, один раз на push із запитами до API | `project_api_limit` | 400 | Projects API rate limits |
+| `GET /projects/:id/members/all`, учасники для `allow` | `project_members_api_limit` | 200 | Projects API rate limits |
+| `GET /users/:id/keys/:key_id`, чи ключ SSH особистий | `users_api_limit_ssh_key` | 120 | Users API rate limit |
+
+Коли ліміт спрацьовує, GitLab відповідає 429, і hook вважає, що API не відповів. Push отримує ту саму відмову, що й при недоступному API: `could not check permissions: the GitLab API did not answer`. У полі `reason` події audit буде `HTTP 429`, а в `/var/log/gitlab/gitlab-rails/auth.log` - запис `Application_Rate_Limiter_Request` з `username` service account.
+
+Ліміти задаються на весь інстанс, окремо для service account їх не змінити. Якщо push із запитами до API за хвилину більше, ніж ці ліміти, підніміть їх в Admin > Settings > Network або через API. Значення `0` вимикає ліміт для всіх користувачів:
+
+```sh
+curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X PUT "$GITLAB/api/v4/application/settings" \
+  --data project_api_limit=2000 --data project_members_api_limit=1000 --data users_api_limit_ssh_key=1000
+```
+
+На інстансі, оновленому до GitLab 18.0 або новішого, GitLab міг сам поставити цим лімітам `0`. Поточні значення показує `GET /api/v4/application/settings`.
+
 ## 4. Конфігурація
 
 Відкрийте `/etc/gitlab-repopolicy/config.yaml` перед підключенням hook. Для Linux package на одній ноді поставка використовує unix socket Workhorse. Перевірте `mode: audit` і `default_branch`: поставка містить `[main]`, що обмежує всі групові проєкти. Для запуску без цього глобального обмеження використайте `[]`. Якщо Gitaly на окремій ноді, вкажіть HTTPS-адресу GitLab і за потреби CA:

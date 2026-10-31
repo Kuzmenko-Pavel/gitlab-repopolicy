@@ -162,6 +162,27 @@ sudo gitlab-repopolicy coverage --token-file /root/admin-token
 
 `coverage` prints the top-level groups without the service account and the projects with policy files in them; the exit code is 1 if there are any.
 
+### GitLab API rate limits
+
+The hook calls the API with one service account for the whole instance. GitLab limits some API requests by a number per user per minute, so all pushes of the instance share these limits of the service account. The hook calls the API not on every push, only when a rule needs an answer from GitLab: a change to the files of a PATHPOLICY rule, `protected: true`, a check of an SSH key. How many requests a push made is shown in the `api_calls` field of the audit events.
+
+| Request of the hook | GitLab setting | Default, per minute | Section in Admin > Settings > Network |
+| --- | --- | --- | --- |
+| `GET /projects/:id`, once per push with API requests | `project_api_limit` | 400 | Projects API rate limits |
+| `GET /projects/:id/members/all`, the members for `allow` | `project_members_api_limit` | 200 | Projects API rate limits |
+| `GET /users/:id/keys/:key_id`, whether an SSH key is personal | `users_api_limit_ssh_key` | 120 | Users API rate limit |
+
+When a limit is hit, GitLab answers 429 and the hook treats it as an API that did not answer. The push gets the same denial as with an unavailable API: `could not check permissions: the GitLab API did not answer`. The `reason` field of the audit event has `HTTP 429`, and `/var/log/gitlab/gitlab-rails/auth.log` has an `Application_Rate_Limiter_Request` record with the `username` of the service account.
+
+The limits are set for the whole instance, they cannot be changed for the service account alone. If there are more pushes with API requests per minute than these limits, raise them in Admin > Settings > Network or through the API. The value `0` turns a limit off for all users:
+
+```sh
+curl --fail -sS -H "PRIVATE-TOKEN: $ADMIN_TOKEN" -X PUT "$GITLAB/api/v4/application/settings" \
+  --data project_api_limit=2000 --data project_members_api_limit=1000 --data users_api_limit_ssh_key=1000
+```
+
+On an instance upgraded to GitLab 18.0 or later, GitLab may have set these limits to `0` itself. `GET /api/v4/application/settings` shows the current values.
+
 ## 4. Configuration
 
 Open `/etc/gitlab-repopolicy/config.yaml` before connecting the hook. The single-node Linux package configuration uses the Workhorse unix socket. Check `mode: audit` and `default_branch`: the package contains `[main]`, which restricts every group project. Use `[]` to start without this global restriction. If Gitaly runs on a separate node, set the HTTPS address of GitLab and, if needed, the CA:

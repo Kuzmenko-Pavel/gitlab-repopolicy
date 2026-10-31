@@ -3,5 +3,4 @@ rules:
   r:
     match: all
     check_history: all
-    parser: free
     message: m

@@ -1,0 +1,8 @@
+# Every new branch is denied.
+version: 1
+rules:
+  all:
+    match: all
+    priority: 1
+    deny: true
+    message: m

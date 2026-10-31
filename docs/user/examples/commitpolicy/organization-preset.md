@@ -3,7 +3,7 @@
 
 # Налаштування стандарту комітів із пресета
 
-Організація централізовано задає формат комітів. Проєкт залишає типи й parser, але замінює відмову за довгий header на попередження та дозволяє крапку наприкінці subject.
+Організація централізовано задає формат комітів. Проєкт залишає типи й формат header, але замінює відмову за довгий header на попередження та дозволяє крапку наприкінці subject.
 
 ## Два джерела правил
 
@@ -16,13 +16,12 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           except:
             merge_commit: true
             git_reverts: true
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:
@@ -76,7 +75,6 @@ COMMITPOLICY: valid
     help.docs_url: preset:org-commits
     match: preset:org-commits
     message: preset:org-commits
-    parser: preset:org-commits
 ```
 
 Запустіть `gitlab-repopolicy validate -f COMMITPOLICY --config presets.yaml`, потім `gitlab-repopolicy lint-commit -f COMMITPOLICY --config presets.yaml -m "docs: update the guide."`. Останнє повідомлення проходить, бо крапку дозволено. Для перевірки межі довжини використайте header понад 100 символів: очікується попередження й код 0, якщо інших помилок немає.

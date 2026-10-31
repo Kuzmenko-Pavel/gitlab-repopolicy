@@ -1,0 +1,8 @@
+# A valid COMMITPOLICY with one check.
+version: 1
+rules:
+  r:
+    match: all
+    message: m
+    checks:
+      type-enum: {types: {level: error, value: [feat]}}

@@ -1,6 +1,7 @@
 package path
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 	"testing"
@@ -52,12 +53,15 @@ func TestParse(t *testing.T) {
 	assert.NoError(t, err, "a policy may only guard itself")
 }
 
+//go:embed testdata/extends-org-ci.yaml
+var extendsPolicy string
+
 func TestParse_Presets(t *testing.T) {
 	s := NewSettings(map[string]any{"org-ci": map[string]any{"rules": map[string]any{
 		"ci":     map[string]any{"match": "all", "paths": []any{".gitlab-ci.yml"}, "allow": []any{"lead"}, "message": "CI belongs to the platform team."},
 		"agents": map[string]any{"match": "default", "paths": []any{".gitlab/agents/**"}, "allow": []any{"lead"}, "message": "Agents."},
 	}}})
-	p, err := Parse([]byte("version: 1\nadmins: [a]\nextends: org-ci\nrules:\n  ci:\n    allow: [lead, alice]\n  agents: null\n"), s)
+	p, err := Parse([]byte(extendsPolicy), s)
 	require.NoError(t, err)
 	require.Len(t, p.rules, 1)
 	assert.Equal(t, []string{"lead", "alice"}, p.rules[0].allow)
@@ -77,7 +81,15 @@ func TestParse_Presets(t *testing.T) {
 
 func TestParse_GroupsAndRolesRejected(t *testing.T) {
 	for _, principal := range []string{"group/subgroup", "@maintainers", "role:maintainer", "@alice"} {
-		_, err := Parse([]byte(fmt.Sprintf("version: 1\nadmins: [a]\nrules:\n  r:\n    match: all\n    paths: [x]\n    allow: [%q]\n    message: m\n", principal)), nil)
+		_, err := Parse(fmt.Appendf(nil, `version: 1
+admins: [a]
+rules:
+  r:
+    match: all
+    paths: [x]
+    allow: [%q]
+    message: m
+`, principal), nil)
 		require.Error(t, err, principal)
 		assert.Contains(t, err.Error(), "groups and roles are not supported", principal)
 	}

@@ -301,10 +301,9 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:
@@ -316,12 +315,11 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           checks:
             header-max-length:
               limit: { level: error, value: 72 }
-            body-min-line-length:
-              feat-fix: { level: error, value: 1, types: [feat, fix] }
+            body-required:
+              feat-fix: { level: error, value: required, types: [feat, fix] }
           message: Commits of the payments team follow Conventional Commits with a body.
           help:
             contact: "#payments-team"
@@ -358,11 +356,10 @@ COMMITPOLICY: valid
     checks.subject-trailing-dot.no-dot: preset:org-commits, file
     checks.type-enum: preset:org-commits
     checks.type-enum.allowed: preset:org-commits
-    checks.body-min-line-length: preset:team-strict
-    checks.body-min-line-length.feat-fix: preset:team-strict
+    checks.body-required: preset:team-strict
+    checks.body-required.feat-fix: preset:team-strict
     match: preset:team-strict
     message: preset:team-strict
-    parser: preset:team-strict
     help: preset:team-strict
     help.contact: preset:team-strict
 ```
@@ -370,15 +367,15 @@ COMMITPOLICY: valid
 How to read it:
 - checks merge by type and name. `checks.header-max-length.limit` went through all three layers. `value: 72` of `team-strict` won over `100` of `org-commits`, because `team-strict` comes later in `extends`. `level: warn` of the file won over `error`
 - `checks.subject-trailing-dot.no-dot` stayed in the rule, but the file gave it `value: optional`: a full stop at the end of the subject may be there or not. To remove the check completely, the file would write `no-dot: null`, and the line `checks.subject-trailing-dot.no-dot` would not be in the output
-- `match`, `message` and `parser` come from `team-strict`: the later layer replaced the values of `org-commits`. For `match` and `parser` they are the same, and `message` became the text of the team
-- `checks.type-enum` is only in `org-commits`, `checks.body-min-line-length` only in `team-strict`, and both apply
+- `match` and `message` come from `team-strict`: the later layer replaced the values of `org-commits`. `match` is the same, and `message` became the text of the team
+- `checks.type-enum` is only in `org-commits`, `checks.body-required` only in `team-strict`, and both apply
 
 A check of a message against the merged rules:
 
 ```console
 $ gitlab-repopolicy lint-commit --config presets.yaml -m "fix: round refunds to cents in the payment service and in the monthly reports"
 message: [conventional] warning: header-max-length limit: the header is 77 characters, the limit is 72
-message: [conventional] error: body-min-line-length feat-fix: the message needs a body
+message: [conventional] error: body-required feat-fix: the message needs a body
 ```
 
 ### A broken or missing preset

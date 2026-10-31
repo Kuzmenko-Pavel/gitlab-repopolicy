@@ -1,0 +1,13 @@
+# Two rules: types in main, the header length in every branch.
+version: 1
+rules:
+  main:
+    match: [main]
+    message: m
+    checks:
+      type-enum: {types: {level: error, value: [feat, fix]}}
+  all:
+    match: all
+    message: m
+    checks:
+      header-max-length: {short: {level: error, value: 20}}

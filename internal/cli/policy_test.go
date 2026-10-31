@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +16,8 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/modules/tag"
 )
 
-const goodPolicy = "version: 1\nrules:\n  r:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {types: {level: error, value: [feat]}}\n"
+//go:embed testdata/commitpolicy-good.yaml
+var goodPolicy string
 
 func inDir(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -30,9 +32,9 @@ func inDir(t *testing.T, files map[string]string) string {
 func TestValidate(t *testing.T) {
 	dir := inDir(t, map[string]string{
 		"COMMITPOLICY": goodPolicy,
-		"bad.yaml":     "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {typo: {level: error}}}\n",
+		"bad.yaml":     "version: 1\nrules:\n  r: {match: all, message: m, checks: {typo: {level: error}}}\n",
 		"broken.yaml":  "version: 1\nrules:\n  r: {match: all}\n",
-		"config.yaml":  "gitlab_url: https://gitlab.example.com\npresets: {commitpolicy: {org: {rules: {r: {match: all, parser: conventional, message: m, checks: {type-enum: {types: {level: error, value: [fix]}}}}}}}}\n",
+		"config.yaml":  "gitlab_url: https://gitlab.example.com\npresets: {commitpolicy: {org: {rules: {r: {match: all, message: m, checks: {type-enum: {types: {level: error, value: [fix]}}}}}}}}\n",
 		"extends.yaml": "version: 1\nextends: org\n",
 	})
 	code, out, _ := run(t, "validate")
@@ -46,7 +48,7 @@ func TestValidate(t *testing.T) {
 
 	code, out, _ = run(t, "validate", "-f", "broken.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code)
-	assert.Contains(t, out, "rule r: parser: required")
+	assert.Contains(t, out, "rule r: message: required")
 
 	code, out, _ = run(t, "validate", "-f", "extends.yaml", "--module", "commitpolicy")
 	assert.Equal(t, ExitError, code, "a preset is unknown without the server config")
@@ -109,9 +111,11 @@ func TestLintCommit_Usage(t *testing.T) {
 	assert.Contains(t, errOut, "git")
 }
 
+//go:embed testdata/commitpolicy-two-rules.yaml
+var twoRulesPolicy string
+
 func TestLintCommit_Rule(t *testing.T) {
-	policy := "version: 1\nrules:\n  main:\n    match: [main]\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {types: {level: error, value: [feat, fix]}}\n" +
-		"  all:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      header-max-length: {short: {level: error, value: 20}}\n"
+	policy := twoRulesPolicy
 	inDir(t, map[string]string{"COMMITPOLICY": policy})
 	code, out, _ := run(t, "lint-commit", "-m", "chore: a header longer than twenty")
 	assert.Equal(t, ExitError, code)
@@ -130,7 +134,7 @@ func TestLintCommit_Rule(t *testing.T) {
 func TestLintCommit_PresetsOnlyConfig(t *testing.T) {
 	inDir(t, map[string]string{
 		"COMMITPOLICY": "version: 1\nextends: org\n",
-		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\npresets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all, parser: conventional, message: m, checks: {type-enum: {types: {level: error, value: [feat]}}}}\n",
+		"config.yaml":  "# a developer copy: no gitlab_url, no token\nmode: strict\npresets:\n  commitpolicy:\n    org:\n      rules:\n        r: {match: all, message: m, checks: {type-enum: {types: {level: error, value: [feat]}}}}\n",
 	})
 	code, out, errOut := run(t, "lint-commit", "--config", "config.yaml", "-m", "fix: no")
 	assert.Equal(t, ExitError, code, errOut)
@@ -149,11 +153,13 @@ const branchPresetConfig = `presets:
         other: {match: all, priority: 100, deny: true, message: Use username/topic.}
 `
 
+//go:embed testdata/branchpolicy-extends.yaml
+var branchExtendsPolicy string
+
 func TestValidate_Branch(t *testing.T) {
 	inDir(t, map[string]string{
-		"BRANCHPOLICY": "version: 1\nextends: org\nrules:\n  release:\n    message: Release branches belong to the release team.\n" +
-			"  hotfix: {match: ['/^hotfix\\//'], priority: 1, message: Hotfixes are free.}\n",
-		"config.yaml": branchPresetConfig,
+		"BRANCHPOLICY": branchExtendsPolicy,
+		"config.yaml":  branchPresetConfig,
 	})
 	tests := []struct {
 		branch, want string
@@ -234,8 +240,11 @@ func (fakeUsers) AccessLevels(context.Context, []int64) (map[int64]int, module.S
 
 func (fakeUsers) Known(string) bool { return false }
 
+//go:embed testdata/branchpolicy-user-prefix.yaml
+var userPrefixPolicy string
+
 func TestPrintBranch_UserPrefix(t *testing.T) {
-	p, err := branch.Parse([]byte("version: 1\nrules:\n  work:\n    match: ['/./']\n    priority: 1\n    user_prefix: true\n    message: Work branches start with your username.\n"), nil)
+	p, err := branch.Parse([]byte(userPrefixPolicy), nil)
 	require.NoError(t, err)
 	tests := []struct {
 		name, branch string

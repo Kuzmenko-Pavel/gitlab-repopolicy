@@ -1,0 +1,7 @@
+# The release rule of the preset with its own message, and a rule of the file.
+version: 1
+extends: org
+rules:
+  release:
+    message: Release branches belong to the release team.
+  hotfix: {match: ['/^hotfix\//'], priority: 1, message: Hotfixes are free.}

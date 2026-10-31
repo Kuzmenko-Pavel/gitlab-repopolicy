@@ -1,0 +1,9 @@
+# mode warn: every error of the file is a warning.
+version: 1
+mode: warn
+rules:
+  conventional:
+    match: all
+    message: m
+    checks:
+      type-enum: {allowed: {level: error, value: [feat, fix]}}

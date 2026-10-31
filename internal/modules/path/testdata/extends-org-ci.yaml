@@ -1,0 +1,8 @@
+# The ci rule of the preset org-ci with more people; the agents rule of the preset is removed.
+version: 1
+admins: [a]
+extends: org-ci
+rules:
+  ci:
+    allow: [lead, alice]
+  agents: null

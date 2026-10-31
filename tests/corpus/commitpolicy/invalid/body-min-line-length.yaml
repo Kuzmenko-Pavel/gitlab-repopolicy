@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    checks:
+      body-min-line-length:
+        body: { level: error, value: 1 }
+    message: m

@@ -21,14 +21,13 @@ rules:
   conventional:
     match: [main, '/^release\//']
     check_history: incoming
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
       users: [release-bot]
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         limit: { level: warn, value: 100 }
       type-enum:
@@ -43,11 +42,14 @@ rules:
         no-dot: { level: error, value: forbidden }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
-      body-min-line-length:
-        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      body-required:
+        feat-fix: { level: error, value: required, types: [feat, fix] }
+      trailer-leading-blank-lines:
+        blank-line: { level: error, value: required }
       trailer-required:
-        dco: { level: error, value: [Signed-off-by] }
+        dco: { level: error, value: required }
       pattern:
+        dco: { level: error, location: trailer, value: '/(?m)^Signed-off-by: /' }
         issue-ref: { level: warn, location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits in main and release branches follow Conventional Commits.
@@ -56,14 +58,13 @@ rules:
   release:
     match: ['/^release\//']
     check_history: incoming
-    parser: conventional
     checks:
       type-enum:
         release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore commits.
 ```
 
-`main` matches `conventional`. `release/1` matches both rules: general requirements remain, and `release` narrows the type list. `header-max-length` and issue references produce warnings rather than denials. A body is required only for `feat` and `fix`: `body-min-line-length` is limited by `types`. Exceptions allow ordinary merge commits, standard reverts and pushes by a recognized release-bot; they apply only to their own rule.
+`main` matches `conventional`. `release/1` matches both rules: general requirements remain, and `release` narrows the type list. `header-max-length` and issue references produce warnings rather than denials. A body is required only for `feat` and `fix`: `body-required` is limited by `types`. Two checks set DCO: `trailer-required dco` requires a trailer, and `pattern dco` a `Signed-off-by` line in it. Exceptions allow ordinary merge commits, standard reverts and pushes by a recognized release-bot; they apply only to their own rule.
 
 Both rules have `check_history: incoming`. Commits come into `main` and release branches through merge requests from work branches, and this file does not check them there. `incoming` checks every commit that enters a branch of the rule, so the commits of a work branch are checked at the merge. With `new-content` they would pass unchecked: they are no longer new to the repository.
 
@@ -82,7 +83,7 @@ Signed-off-by: A <a@example.com>
 
 Save the message in `message.txt` and run `gitlab-repopolicy lint-commit -f COMMITPOLICY -m "$(cat message.txt)"`. Exit 0 means no `error` findings. Add `--rule conventional` to check only the general standard: the local linter does not select rules using `match`.
 
-`feat(api): add validation` with a body and trailers can pass the general rule but fails `release` when linting all rules locally or pushing to a release branch. Do not expand the release list if new features are intentionally forbidden there.
+`feat(api): add validation` with a body and a trailer can pass the general rule but fails `release` when linting all rules locally or pushing to a release branch. Do not expand the release list if new features are intentionally forbidden there.
 
 Start observation with `mode: warn` in the file. Under global `audit`, even policy `mode: enforce` does not block pushes; testing actual rejection requires server `enforce`.
 

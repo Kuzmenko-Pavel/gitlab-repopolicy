@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,24 +16,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	commitPolicy = `version: 1
-rules:
-  conventional:
-    match: all
-    parser: conventional
-    except: {merge_commit: true, git_reverts: true}
-    checks:
-      header-format: {conventional: {level: error}}
-      type-enum: {allowed: {level: error, value: [feat, fix, chore]}}
-      subject-trailing-dot: {no-dot: {level: error, value: forbidden}}
-    message: Commits follow Conventional Commits.
-`
-	commitWarn    = "version: 1\nmode: warn\nrules:\n  conventional:\n    match: all\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
-	commitWeak    = "version: 1\nrules:\n  conventional:\n    match: all\n    parser: free\n    message: m\n"
-	commitMain    = "version: 1\nrules:\n  main:\n    match: [main]\n    check_history: incoming\n    parser: conventional\n    message: m\n    checks:\n      header-format: {conventional: {level: error}}\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
-	commitMerged  = "version: 1\nrules:\n  all:\n    match: ['/.*/']\n    check_history: incoming\n    parser: conventional\n    message: m\n    except: {merge_commit: true, merged_commits: true}\n    checks:\n      header-format: {conventional: {level: error}}\n      type-enum: {allowed: {level: error, value: [feat, fix]}}\n"
-	commitRelease = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    check_history: incoming\n    parser: conventional\n    message: m\n    checks:\n      type-enum: {allowed: {level: error, value: [fix]}}\n"
+// Policies of the COMMITPOLICY tests.
+var (
+	//go:embed testdata/commitpolicy/conventional.yaml
+	commitPolicy string
+	//go:embed testdata/commitpolicy/warn.yaml
+	commitWarn string
+	//go:embed testdata/commitpolicy/weak.yaml
+	commitWeak string
+	//go:embed testdata/commitpolicy/main-incoming.yaml
+	commitMain string
+	//go:embed testdata/commitpolicy/merged-commits.yaml
+	commitMerged string
+	//go:embed testdata/commitpolicy/release.yaml
+	commitRelease string
 )
 
 func TestCommitPolicy_Enforce(t *testing.T) {

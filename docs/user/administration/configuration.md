@@ -301,10 +301,9 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:
@@ -316,12 +315,11 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           checks:
             header-max-length:
               limit: { level: error, value: 72 }
-            body-min-line-length:
-              feat-fix: { level: error, value: 1, types: [feat, fix] }
+            body-required:
+              feat-fix: { level: error, value: required, types: [feat, fix] }
           message: Commits of the payments team follow Conventional Commits with a body.
           help:
             contact: "#payments-team"
@@ -358,11 +356,10 @@ COMMITPOLICY: valid
     checks.subject-trailing-dot.no-dot: preset:org-commits, file
     checks.type-enum: preset:org-commits
     checks.type-enum.allowed: preset:org-commits
-    checks.body-min-line-length: preset:team-strict
-    checks.body-min-line-length.feat-fix: preset:team-strict
+    checks.body-required: preset:team-strict
+    checks.body-required.feat-fix: preset:team-strict
     match: preset:team-strict
     message: preset:team-strict
-    parser: preset:team-strict
     help: preset:team-strict
     help.contact: preset:team-strict
 ```
@@ -370,15 +367,15 @@ COMMITPOLICY: valid
 Як читати:
 - перевірки зливаються за типом і ім'ям. `checks.header-max-length.limit` пройшла всі три шари. `value: 72` з `team-strict` перемогло `100` з `org-commits`, бо `team-strict` пізніше в `extends`. `level: warn` з файлу перемогло `error`
 - `checks.subject-trailing-dot.no-dot` лишилася в правилі, але файл задав їй `value: optional`: крапка в кінці subject може бути або не бути. Щоб прибрати перевірку зовсім, файл написав би `no-dot: null`, і рядка `checks.subject-trailing-dot.no-dot` у виводі не було б
-- `match`, `message` і `parser` - з `team-strict`: пізніший шар замінив значення `org-commits`. Для `match` і `parser` вони однакові, а `message` став текстом команди
-- `checks.type-enum` є лише в `org-commits`, `checks.body-min-line-length` - лише в `team-strict`, і обидві діють
+- `match` і `message` - з `team-strict`: пізніший шар замінив значення `org-commits`. `match` однаковий, а `message` став текстом команди
+- `checks.type-enum` є лише в `org-commits`, `checks.body-required` - лише в `team-strict`, і обидві діють
 
 Перевірка повідомлення за злитими правилами:
 
 ```console
 $ gitlab-repopolicy lint-commit --config presets.yaml -m "fix: round refunds to cents in the payment service and in the monthly reports"
 message: [conventional] warning: header-max-length limit: the header is 77 characters, the limit is 72
-message: [conventional] error: body-min-line-length feat-fix: the message needs a body
+message: [conventional] error: body-required feat-fix: the message needs a body
 ```
 
 ### Зламаний або відсутній пресет

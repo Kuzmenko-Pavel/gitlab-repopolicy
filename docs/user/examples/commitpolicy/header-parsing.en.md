@@ -14,16 +14,15 @@ version: 1
 rules:
   r:
     match: all
-    parser: conventional
     checks:
       header-format:
-        conventional: {level: error}
+        conventional: {level: error, value: required}
     message: Use a Conventional Commits header.
 ```
 
 `fix: round refunds` and `fix(billing): round refunds` are valid headers. The parenthesized scope is optional. Exactly one space must follow the colon.
 
-<!-- check: lint-commit parser=conventional -->
+<!-- check: lint-commit header-format=required -->
 | Header | Error of `lint-commit` |
 | --- | --- |
 | `fix round refunds` | `header-format conventional: expected "type(scope): subject"` |
@@ -37,10 +36,10 @@ rules:
 
 The hint after the comma appears when the hook can tell what exactly is wrong. Without a hint the header does not look like `type(scope): subject` at all: a space before the parenthesis, square brackets, an issue key instead of a type.
 
-The header is always the first line. `fix: round\nbody right after` is parsed without an error: the header is `fix: round`, the body is `body right after`. Whether an empty line is needed between them is set by a separate check `body-leading-blank-lines` ([message results](message-results.en.md)), not by the parser.
+The header is always the first line. `fix: round\nbody right after` is parsed without an error: the header is `fix: round`, the body is `body right after`. Whether an empty line is needed between them is set by a separate check `body-leading-blank-lines` ([message results](message-results.en.md)), not by the parsing of the header.
 
 To check a row, save it with actual line breaks in `message.txt`, then run `gitlab-repopolicy lint-commit -m "$(cat message.txt)"`. The table contains expected diagnostic fragments; each row exits 1. After correcting it to `fix: round refunds`, the command should exit 0 without findings.
 
-`parser: free` permits another header format, but choosing it changes the project's standard rather than repairing a particular Conventional Commits message. A rule with `parser: conventional` and without `header-format` does not reject a wrong header: the parser only takes the header apart for the other checks, and the denial comes from a check. `header-format` with `level: warn` makes a wrong header a warning, while the other checks of the rule stay errors.
+`header-format` with `value: optional` permits another header format, but choosing it changes the project's standard ([issue keys](issue-key.en.md)) rather than repairing a particular Conventional Commits message. A rule without `header-format` does not reject a wrong header: the hook takes the header apart for the other checks, and only `header-format` with `value: required` denies for the format. `header-format` with `level: warn` makes a wrong header a warning, while the other checks of the rule stay errors.
 
 [COMMITPOLICY reference](../../policies/commitpolicy.en.md)

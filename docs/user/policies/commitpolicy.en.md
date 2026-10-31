@@ -12,14 +12,13 @@ version: 1
 rules:
   conventional:
     match: default
-    parser: conventional
     checks:
       header-format:
-        conventional: {level: error}
+        conventional: {level: error, value: required}
     message: Commits in the default branch follow Conventional Commits.
 ```
 
-Messages on the default branch must have a type and short description, such as `feat: add request validation`. A parenthesized scope is optional. The format of the header is checked by `header-format`: the parser only takes the header apart, and the denial comes from the check. This file adds no length checks or type list.
+Messages on the default branch must have a type and short description, such as `feat: add request validation`. A parenthesized scope is optional. The format of the header is required by `header-format` with `value: required`. Without this check the hook takes the header apart the same way, but does not deny for the format. This file adds no length checks or type list.
 
 ## Quick start
 
@@ -40,15 +39,15 @@ Validate incoming requests before processing.
 Refs: #123
 ```
 
-A message has a header and may contain a body and trailer block. The header is always the first line, the body starts on the second. An empty line between them is formatting that `body-leading-blank-lines` checks, not a condition of parsing. Body and trailers are optional unless the policy requires them through `checks`:
+A message has a header and may contain a body and a trailer. The hook splits it into these parts by lines and empty lines ([parsing](#how-the-hook-parses-a-message)). The header is always the first line. An empty line after it is formatting that `body-leading-blank-lines` checks. Body and trailer are optional unless the policy requires them through `body-required` and `trailer-required`:
 
 | Part | In the example | What it is |
 | --- | --- | --- |
 | header | `feat(api): add request validation` | the first line. `git log --oneline`, the list of commits in GitLab and the title of a merge request show it |
 | body | `Validate incoming requests before processing.` | the explanation: what changed and why |
-| trailer block | `Refs: #123` | the last paragraph after an empty line, where every line looks like `Key: value` or `Key #value`: structured metadata, such as an issue reference; `Signed-off-by` can be an additional trailer |
+| trailer | `Refs: #123` | the last part of the message: an issue reference, `Signed-off-by` and other metadata. The hook does not set the format of the trailer lines, `pattern` checks it |
 
-A header in the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format:
+The hook always tries to parse the header in the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format:
 
 | Part | In the example | What it is |
 | --- | --- | --- |
@@ -58,7 +57,7 @@ A header in the [Conventional Commits](https://www.conventionalcommits.org/en/v1
 | `: ` | `: ` | a colon and exactly one space |
 | subject | `add request validation` | a short description of the change, not empty |
 
-For another standard, such as `PAY-123 Add request validation`, use `parser: free` with the required `pattern`. Conventional Commits defines first-line structure; the policy defines type lists, length and mandatory metadata. A valid `feat: add validation` can fail an additional body or trailer requirement. [Message comparisons](../examples/commitpolicy/message-results.en.md) provide checked valid and invalid cases.
+A header of another standard, such as `PAY-123 Add request validation`, is not taken apart: type, scope and `!` are unknown, and the subject is the whole line. For such a standard set `header-format` with `value: optional` and the required `pattern` ([issue keys](../examples/commitpolicy/issue-key.en.md)). Conventional Commits defines first-line structure; the policy defines type lists, length and mandatory metadata. A valid `feat: add validation` can fail an additional body or trailer requirement. [Message comparisons](../examples/commitpolicy/message-results.en.md) provide checked valid and invalid cases.
 
 Create a message with a body, reference and DCO sign-off as follows. Each `-m` adds a separate paragraph:
 
@@ -69,7 +68,7 @@ git commit -s \
   -m "Refs: #665"
 ```
 
-`-s` (`--signoff`) adds `Signed-off-by: Name <email>` from `user.name` and `user.email`. `-S` (capital) is something else, a cryptographic signature of the commit. COMMITPOLICY checks only the text of the message, it does not check the signature of a commit. Signatures of tags are checked by TAGPOLICY ([tagpolicy.en.md](tagpolicy.en.md)).
+`-s` (`--signoff`) adds `Signed-off-by: Name <email>` from `user.name` and `user.email`. When the last paragraph consists of `Key: value` lines, like `Refs: #665`, git adds the line to it, otherwise as a separate paragraph. Either way `Signed-off-by` ends up in the trailer. `-S` (capital) is something else, a cryptographic signature of the commit. COMMITPOLICY checks only the text of the message, it does not check the signature of a commit. Signatures of tags are checked by TAGPOLICY ([tagpolicy.en.md](tagpolicy.en.md)).
 
 How to fix a commit after a denial. The hook does not update refs for this push. Fix the rejected commits in your clone; they may already be reachable through other branches or pushes:
 - the last commit: `git commit --amend` (with `-s` when `Signed-off-by` is missing)
@@ -87,7 +86,6 @@ If `rebase -i` rewrote commits that were already on the server, push with `--for
 | `rules` | no | rules, up to 50: rule name → rule. The name is `[a-z0-9-]{1,63}` |
 | `rules.<name>.match` | yes | the branches the rule applies to: `all`, `default` or a list of branches ([match.en.md](match.en.md)) |
 | `rules.<name>.check_history` | no | which commits of the branch to check: `new-content` (the default) or `incoming` ([below](#which-commits-are-checked)) |
-| `rules.<name>.parser` | yes | `conventional` or `free` ([below](#parser)) |
 | `rules.<name>.except` | no | which commits to skip ([below](#exceptions-except)) |
 | `rules.<name>.checks` | no | checks of the catalogue: type → name of the check → its fields ([below](#catalogue-of-checks-checks)) |
 | `rules.<name>.message` | yes | text for the author of a commit with a violation, up to 1000 characters |
@@ -99,28 +97,77 @@ Every rule whose `match` matches the branch applies. An error of any of them is 
 
 Unknown keys, YAML anchors and aliases are an error. The file is up to 64 KiB, with up to 50 usernames in `except.users` of one rule.
 
-### `parser`
+### How the hook parses a message
 
-`parser` says how the hook takes the header apart.
+First the hook normalizes the text:
+- `\r\n` and `\r` become `\n` (the GitLab UI writes `\r\n`)
+- trailing empty lines are dropped
+- an empty line is a line with no characters other than spaces and tabs
 
-- `conventional` - a Conventional Commits header, `type(scope)!: subject`. Scope and `!` are optional. Type is Latin letters, digits, `_` and `-`
-- `free` - a free header, the whole first line is the subject. Checks of type and scope are not available for such a rule
-
-The parser only takes the message apart. Without a check, only a message that cannot be parsed at all is a violation:
+Without a check, only a message that cannot be parsed at all is a violation:
 - an empty header
 - a NUL byte in the message or a commit larger than 1 MiB
 
-A header that does not follow the `conventional` scheme is not a denial by itself: the check `header-format` reports it with its `level`. When the header is not parsed, its parts are unknown, so the checks of the header parts (`type-enum`, `scope`, `scope-enum`, `breaking-bang`, `subject-starts-lowercase`, `subject-trailing-dot`) do not run for such a message: the header is already wrong, and `header-format` reports it.
+Then the message is split into parts from the top down:
 
-How the hook reads a message:
-- `\r\n` and `\r` become `\n` (the GitLab UI writes `\r\n`)
-- the header is the first line, the body is everything from the second line to the trailer block, without the empty lines around it
-- whether an empty line follows the header right away, `body-leading-blank-lines` looks at in the message as git stores it, before the hook drops trailing empty lines
-- the trailer block is the last paragraph that an empty line precedes and whose lines all look like `Key: value` or `Key #value`, as in `git interpret-trailers`. Lines starting with a space or tab may continue the preceding trailer. Any other ordinary line makes the whole final paragraph part of the body. A line `Signed-off-by: ...` right after the header, without an empty line, is body, not a trailer
+1. The header is always the first line. The hook parses it as `type(scope)!: subject`. Type is Latin letters, digits, `_` and `-`, scope and `!` are optional. When the header does not follow this format, type, scope and `!` are unknown, and the subject is the whole line
+2. The empty lines right after the header separate it from the rest. `body-leading-blank-lines` looks at them, in the message as git stores it, before the hook drops trailing empty lines
+3. The trailer is the paragraph after the last empty line, except the empty lines right after the header. When there is no such empty line, the trailer depends on `trailer-required`:
+   - `required` - there is a trailer. When an empty line follows the header, the body is not required and an empty line before the trailer is not forbidden, the trailer is the whole paragraph after the header, and there is no body. Otherwise the trailer is the last line. When there are no lines after the header, there is no trailer
+   - `optional` or no check - there is no trailer, everything after the header is the body
+4. With `trailer-required: forbidden` the trailer is not looked for at all, even after an empty line: everything after the header is the body
+5. The body is the lines between the header and the trailer without the empty lines around them. Empty lines inside the body are allowed
+
+"Not required" and "not forbidden" mean that `body-required` is not `required` and `trailer-leading-blank-lines` is not `forbidden`. Each of these values comes from the checks of its type that apply to the type of the commit (the `types` field): `required` wins over `forbidden`, and without such checks `optional` applies.
+
+```mermaid
+flowchart TD
+    start["Lines after the header<br/>and the empty lines after it"] --> forbidden{"trailer-required"}
+    forbidden -->|forbidden| none["no trailer,<br/>everything is the body"]
+    forbidden -->|optional or required| blank{"Another<br/>empty line?"}
+    blank -->|yes| last["trailer is the paragraph<br/>after the last one"]
+    blank -->|no| required{"trailer-required"}
+    required -->|optional| none
+    required -->|required| whole{"Empty line after the header,<br/>body not required,<br/>empty line before the trailer<br/>not forbidden?"}
+    whole -->|yes| paragraph["trailer is the whole paragraph,<br/>no body"]
+    whole -->|no| line["trailer is the last line"]
+```
+
+A trailer of several lines exists only after an empty line or as the whole paragraph after the header. With `trailer-leading-blank-lines: forbidden` the trailer is always one last line.
+
+In the table below the same messages go through five sets of checks. H is the header, B and T are lines of text, `_` is an empty line. The letter shows what the line is meant to be: body or trailer. The second column shows the parts for the sets with `trailer-required` r. The result columns are the values of four checks in the order of the parts of a message from the top down: `body-leading-blank-lines` / `body-required` / `trailer-leading-blank-lines` / `trailer-required`, where o is `optional`, r is `required`, f is `forbidden`. A denial cell names the checks that give it.
+
+<!-- check: commit-structure -->
+| Message | Parts with `trailer-required` r | r / r / r / r | o / r / o / r | f / r / f / r | o / o / f / r | r / o / r / o |
+| --- | --- | --- | --- | --- | --- | --- |
+| `H _ B _ T` | body `B`, trailer `T` | passes | passes | denied: `body-leading-blank-lines`, `trailer-leading-blank-lines` | denied: `trailer-leading-blank-lines` | passes |
+| `H _ B _ B _ T` | body `B _ B`, trailer `T` | passes | passes | denied: `body-leading-blank-lines`, `trailer-leading-blank-lines` | denied: `trailer-leading-blank-lines` | passes |
+| `H _ B B _ T T` | body `B B`, trailer `T T` | passes | passes | denied: `body-leading-blank-lines`, `trailer-leading-blank-lines` | denied: `trailer-leading-blank-lines` | passes |
+| `H B B B T` | body `B B B`, trailer is the last line | denied: `body-leading-blank-lines`, `trailer-leading-blank-lines` | passes | passes | passes | denied: `body-leading-blank-lines` |
+| `H _ B B B T` | body `B B B`, trailer is the last line | denied: `trailer-leading-blank-lines` | passes | denied: `body-leading-blank-lines` | passes | passes |
+| `H _ T` | no body, trailer `T` | denied: `body-required` | denied: `body-required` | denied: `body-leading-blank-lines`, `body-required` | passes | passes |
+| `H T` | no body, trailer `T` | denied: `body-leading-blank-lines`, `body-required` | denied: `body-required` | denied: `body-required` | passes | denied: `body-leading-blank-lines` |
+| `H _ B` | no body, trailer `B` | denied: `body-required` | denied: `body-required` | denied: `body-leading-blank-lines`, `body-required` | passes | passes |
+| `H` | neither body nor trailer | denied: `body-leading-blank-lines`, `body-required`, `trailer-required` | denied: `body-required`, `trailer-required` | denied: `body-required`, `trailer-required` | denied: `trailer-required` | denied: `body-leading-blank-lines` |
+
+In the set r / o / r / o the trailer is optional, so the paragraph after the header without another empty line is the body: `H _ B B B T` has no trailer, and in `H _ T` the line T is the body. In the set o / o / f / r an empty line before the trailer is forbidden, so `H _ T` is the trailer `T` without a body.
+
+The whole paragraph after the header becomes the trailer when the body is not required. This way `git commit -s` without a body gives a message where the reference and `Signed-off-by` stand in one paragraph:
+
+```text
+fix: round refunds
+
+Refs: #665
+Signed-off-by: Name <email>
+```
+
+With `trailer-required: required` both lines are the trailer, there is no body. When the body is required (`body-required: required`) or an empty line before the trailer is forbidden (`trailer-leading-blank-lines: forbidden`), the trailer is only the line `Signed-off-by: ...`, and `Refs: #665` becomes the body.
+
+When the header is not parsed, the checks of type, scope and `!` (`type-enum`, `scope`, `scope-enum`, `breaking-bang`) and the checks with `types` do not run. The subject checks (`subject-starts-lowercase`, `subject-trailing-dot`) do not run with `header-format: required` either: the header is already wrong, and `header-format` reports it. With `optional` or without `header-format` they look at the whole first line. The other checks work the same way for any header.
 
 ### Catalogue of checks (`checks`)
 
-`checks` is a mapping of mappings. The first-level key is a check type of the catalogue, the second-level key is a name of the check that you choose (`[a-z0-9-]{1,63}`). So one rule can have several checks of one type, for example two `pattern`, each with its own level and parameters, while the shared `match`, `parser` and `except` are not repeated. The name shows in a denial next to the type: `pattern no-wip: ...`.
+`checks` is a mapping of mappings. The first-level key is a check type of the catalogue, the second-level key is a name of the check that you choose (`[a-z0-9-]{1,63}`). So one rule can have several checks of one type, for example two `pattern`, each with its own level and parameters, while the shared `match` and `except` are not repeated. The name shows in a denial next to the type: `pattern no-wip: ...`.
 
 ```yaml
 checks:
@@ -128,18 +175,18 @@ checks:
     limit: {level: warn, value: 100}
   pattern:
     no-wip: {level: error, location: header, value: '!/^WIP/i'}
-    issue-ref: {level: error, location: trailer, keys: [Refs], value: '/#[0-9]+/'}
+    issue-ref: {level: error, location: trailer, value: '/(?m)^Refs: #[0-9]+$/'}
 ```
 
 Fields of a check:
 
 - `level` is required after merging with presets: `error` reports a violation as a check error, while `warn` reports a warning
-- `value` is the check's parameter: a list, string or integer from the table below. It is required after merging for every type except `header-format`, which has no parameter, and `body-min-line-length`, where `1` applies without `value`
-- `types` is an optional nonempty type list, available only with `parser: conventional`. It limits the check to commits of those types; without it in the merged rule, there is no such restriction. `header-format` has no `types` field: until the header is parsed, the type is unknown
+- `value` is the check's parameter: a list, string or integer from the table below. It is required after merging with presets
+- `types` is an optional nonempty type list. It limits the check to commits of those types; without it in the merged rule, there is no such restriction. For a header that is not parsed the type is unknown, and a check with `types` does not run. `header-format` has no `types` field: the format of the header is checked while the type is still unknown
 
 A check of a preset is overridden by its type and name: the file sets only the fields it changes, the rest comes from the preset. For example, `header-max-length: {limit: {level: warn}}` keeps the `value` of the preset and makes the check a warning.
 
-The checks of whether a message has a feature - `scope`, `breaking-bang`, `subject-starts-lowercase`, `subject-trailing-dot` and `body-leading-blank-lines` - share the same `value`:
+The checks of whether a message has a feature - `scope`, `breaking-bang`, `subject-starts-lowercase`, `subject-trailing-dot`, `body-leading-blank-lines`, `body-required`, `trailer-leading-blank-lines` and `trailer-required` - share the same `value`:
 
 | `value` | What it means |
 | --- | --- |
@@ -149,23 +196,25 @@ The checks of whether a message has a feature - `scope`, `breaking-bang`, `subje
 
 To lift a requirement of a preset, give the same check `value: optional`. `null` removes the check completely.
 
-| Check | Value of the `value` field | `parser` | What it checks | Fails |
-| --- | --- | --- | --- | --- |
-| `header-format` | Do not specify a `value` field | conventional | the header follows `type(scope)!: subject`, the scope in parentheses is not empty | `Fix timeout`, `feat(): add login` |
-| `header-max-length` | An integer from 1 to 10000 | any | the length of the header in characters | a header of 101 characters with `100` |
-| `type-enum` | A nonempty type list, such as `[feat, fix]` | conventional | the type is in the list | `bugfix: round refunds` with `[feat, fix]` |
-| `scope` | `optional`, `required`, `forbidden` | conventional | a scope in parentheses after the type | `fix: round refunds` with `required` |
-| `scope-enum` | A nonempty scope list, such as `[api, billing]` | conventional | the scope is in the list. A scope `a, b` or `a/b` is split into parts | `fix(ui): round refunds` with `[api, billing]` |
-| `breaking-bang` | `optional`, `required`, `forbidden` | conventional | `!` after the type or the scope | `feat!: drop v1` with `forbidden` |
-| `subject-starts-lowercase` | `optional`, `required`, `forbidden` | any | the subject starts with a lowercase letter. A digit, a sign or a character without case is not a lowercase letter | `fix: Round refunds` and `fix: 2fa for login` with `required`; `fix: round refunds` with `forbidden` |
-| `subject-trailing-dot` | `optional`, `required`, `forbidden` | any | a full stop at the end of the subject | `fix: round refunds.` with `forbidden` |
-| `body-leading-blank-lines` | `optional`, `required`, `forbidden` | any | an empty line right after the header, also when there is no body text | `fix: round refunds` as one line or a body right on the second line with `required` |
-| `body-min-line-length` | An integer from 0 to 10000, `1` by default | any | the length of the body text in characters, without the trailer block and the empty lines around it. `0` makes the body optional, `1` required | a message of only a header and `Signed-off-by` with `1` |
-| `body-max-line-length` | An integer from 1 to 10000 | any | the length of every line of the body. Lines with URLs and code do not count | a body line of 101 characters with `100` |
-| `trailer-required` | A nonempty key list, such as `[Signed-off-by]` | any | the trailer block has these keys | a commit without `-s` with `[Signed-off-by]` |
-| `pattern` | `/regex/`, `/regex/i`, `!/regex/` or `!/regex/i` | any | a regular expression in part of the message; a separate `location` field is also required | [below](#pattern) |
+| Check | Value of the `value` field | What it checks | Fails |
+| --- | --- | --- | --- |
+| `header-format` | `optional`, `required` | `required` - the header follows `type(scope)!: subject`, the scope in parentheses is not empty. `optional` - any header, as without the check | `Fix timeout`, `feat(): add login` with `required` |
+| `header-max-length` | An integer from 1 to 10000 | the length of the header in characters | a header of 101 characters with `100` |
+| `type-enum` | A nonempty type list, such as `[feat, fix]` | the type is in the list | `bugfix: round refunds` with `[feat, fix]` |
+| `scope` | `optional`, `required`, `forbidden` | a scope in parentheses after the type | `fix: round refunds` with `required` |
+| `scope-enum` | A nonempty scope list, such as `[api, billing]` | the scope is in the list. A scope `a, b` or `a/b` is split into parts | `fix(ui): round refunds` with `[api, billing]` |
+| `breaking-bang` | `optional`, `required`, `forbidden` | `!` after the type or the scope | `feat!: drop v1` with `forbidden` |
+| `subject-starts-lowercase` | `optional`, `required`, `forbidden` | the subject starts with a lowercase letter. A digit, a sign or a character without case is not a lowercase letter | `fix: Round refunds` and `fix: 2fa for login` with `required`; `fix: round refunds` with `forbidden` |
+| `subject-trailing-dot` | `optional`, `required`, `forbidden` | a full stop at the end of the subject | `fix: round refunds.` with `forbidden` |
+| `body-leading-blank-lines` | `optional`, `required`, `forbidden` | an empty line right after the header, also when there is no body text | `fix: round refunds` as one line or a body right on the second line with `required` |
+| `body-required` | `optional`, `required`, `forbidden` | a body between the header and the trailer | a message of only a header and `Signed-off-by` with `required` |
+| `body-max-length` | An integer from 1 to 10000 | the length of the whole body in characters, line breaks included | a body of 2001 characters with `2000` |
+| `trailer-leading-blank-lines` | `optional`, `required`, `forbidden` | an empty line between the body and the trailer. Without a body or without a trailer the check passes | `H _ B B B T` from the parsing table with `required` and `body-required: required` |
+| `trailer-required` | `optional`, `required`, `forbidden` | a trailer, the last part of the message. The value also sets how the hook finds the trailer ([parsing](#how-the-hook-parses-a-message)). `forbidden` alone gives no violation: the trailer is not looked for then | `fix: round refunds` with `required` |
+| `trailer-max-length` | An integer from 1 to 10000 | the length of the whole trailer in characters, line breaks included | a trailer of 501 characters with `500` |
+| `pattern` | `/regex/`, `/regex/i`, `!/regex/` or `!/regex/i` | a regular expression in part of the message; a separate `location` field is also required | [below](#pattern) |
 
-`body-leading-blank-lines` looks at the message as git stores it. `git commit` with the usual cleanup drops trailing empty lines, so a commit of one header is stored as `header\n`, even if the editor had an empty line after it. With `required` such a commit fails: add a body or a trailer, for example with `git commit -s`. `body-min-line-length: 0` lets you skip the body, but does not turn off `body-leading-blank-lines`.
+`body-leading-blank-lines` looks at the message as git stores it. `git commit` with the usual cleanup drops trailing empty lines, so a commit of one header is stored as `header\n`, even if the editor had an empty line after it. With `required` such a commit fails: add a body or a trailer, for example with `git commit -s`. `body-required: optional` lets you skip the body, but does not turn off `body-leading-blank-lines`.
 
 New check types appear in new versions without a change of `version`. An unknown type in a new version of the file is an error, and in the default branch (for example after a rollback of the binary) it is skipped with a warning.
 
@@ -177,9 +226,10 @@ New check types appear in new versions without a change of `version`. An unknown
 | --- | --- |
 | `location` | `header`, `body`, `trailer` or `message` (the whole message) |
 | `value` | `/regex/` or `/regex/i` - must be found, `!/regex/` or `!/regex/i` - must not be found |
-| `keys` | only with `location: trailer`: the trailer keys whose values are searched, case-insensitively. Without `keys` - all trailers |
 
-The regex is in RE2 syntax, as in GitLab CI and in [match](match.en.md), and is searched anywhere in the part, like `=~`. To anchor to the start or the end, write `^` and `$`. For `body` and `message` `^` and `$` mean the start and the end of the whole part, for lines write `(?m)`. With `location: trailer` the regex is checked against the value of every trailer separately, and one match is enough.
+The regex is in RE2 syntax, as in GitLab CI and in [match](match.en.md), and is searched anywhere in the part, like `=~`. To anchor to the start or the end, write `^` and `$`. For `body`, `trailer` and `message` `^` and `$` mean the start and the end of the whole part, for lines write `(?m)`. One regex checks both the key and the value of a trailer line, for example `/(?m)^Refs: #[0-9]+$/`.
+
+`pattern` takes the trailer from the parsing ([above](#how-the-hook-parses-a-message)), so `location: trailer` usually needs `trailer-required: required`. Without it the paragraph right after the header is the body, and the regex does not find `Refs: #12` in the message `fix: x` + an empty line + `Refs: #12`. With `trailer-required: forbidden` the trailer is empty: `/regex/` is not found and gives a violation, `!/regex/` passes.
 
 Several requirements for the same commits are several `pattern` checks with different names in one rule ([example](../examples/commitpolicy/multiple-requirements.en.md)).
 
@@ -263,15 +313,14 @@ The warnings of a successful push show in the terminal as `remote:` lines. For a
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| `parser: required` from `validate` | `parser` is required | write `parser: conventional` or `parser: free` |
-| `checks.type-enum: needs parser: conventional` | a check of the type with `parser: free` | change `parser` or remove the check |
+| `rule r: unknown field "parser"` from `validate` | there is no `parser` field: the hook always tries to parse the header as Conventional Commits | remove `parser`. To require the format, add `header-format: {conventional: {level: error, value: required}}` |
 | `checks.type-enum.level: expected a mapping, got a string` | the check is written without a name: `type-enum: {level: error, ...}` | add a name: `type-enum: {allowed: {level: error, ...}}` |
-| `Fix timeout` passes in a rule with `parser: conventional` | the rule has no `header-format` | add `header-format: {conventional: {level: error}}` |
-| `pattern` with `location: trailer` does not see the reference | the reference is in the body, not in the last paragraph, or a plain line sits between the trailers | move the reference into a separate last paragraph `Refs: #12` |
-| `pattern` for `body` does not find a line that starts with `- ` | `^` means the start of the whole body | write `/(?m)^- /` |
+| `Fix timeout` passes | the rule has no `header-format` with `value: required` | add `header-format: {conventional: {level: error, value: required}}` |
+| `pattern` with `location: trailer` does not see the reference | the rule has no `trailer-required: required`, and the paragraph after the header is the body, or another paragraph follows the reference | add `trailer-required` with `value: required` or move the reference into the last paragraph |
+| `pattern` for `body` or `trailer` does not find a line that starts with `- ` or `Refs:` | `^` means the start of the whole part | write `/(?m)^- /` |
 | a denial for `feat:` in a release branch, although it passes in `main` | both rules of example 1 apply in a release branch | this is intended. For local checks use `lint-commit --rule` |
 | a merge commit of GitLab is rejected | the header `Merge branch ...` is not in the Conventional Commits format | `except.merge_commit: true` |
-| `checks.header-max-length.limit.level: "off" is not one of error, warn` | there is no value `off` | to lift a requirement of a preset, give the check `value: optional` or remove it with `null`; for `body-min-line-length` use `value: 0` |
+| `checks.header-max-length.limit.level: "off" is not one of error, warn` | there is no value `off` | to lift a requirement of a preset, give the check `value: optional` or remove it with `null` |
 
 ## Checking without a push
 
@@ -292,7 +341,8 @@ Without `--rule` `lint-commit` applies every rule of the file and ignores `match
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
 message: [conventional] error: header-format conventional: expected "type(scope): subject"
 message: [conventional] error: body-leading-blank-lines blank-line: an empty line must follow the header
-message: [conventional] error: trailer-required dco: missing Signed-off-by in the trailer block
+message: [conventional] error: trailer-required dco: the message needs a trailer, the last part of the message
+message: [conventional] error: pattern dco: no match of /(?m)^Signed-off-by: / in the trailer
 ```
 
 The rule `release` of the example reports nothing: it has no `header-format`, and `type-enum` does not run for a header that is not parsed.

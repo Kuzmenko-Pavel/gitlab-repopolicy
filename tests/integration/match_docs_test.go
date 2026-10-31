@@ -28,7 +28,13 @@ func TestMatchDocs(t *testing.T) {
 		for _, row := range rows {
 			list, name, want := row[1], row[2], row[3] == "так" || row[3] == "yes"
 			dir := t.TempDir()
-			policy := "version: 1\nrules:\n  r:\n    match: " + list + "\n    priority: 1\n    message: m\n"
+			policy := `version: 1
+rules:
+  r:
+    match: ` + list + `
+    priority: 1
+    message: m
+`
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "BRANCHPOLICY"), []byte(policy), 0o600))
 			out, code := s.binary(dir, "validate", "--branch", name)
 			require.Equal(t, 0, code, "%s: %s", doc, out)

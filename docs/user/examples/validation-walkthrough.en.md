@@ -82,14 +82,13 @@ rules:
   conventional:
     match: [main, '/^release\//']
     check_history: incoming
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
       users: [release-bot]
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         limit: { level: warn, value: 100 }
       type-enum:
@@ -104,11 +103,14 @@ rules:
         no-dot: { level: error, value: forbidden }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
-      body-min-line-length:
-        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      body-required:
+        feat-fix: { level: error, value: required, types: [feat, fix] }
+      trailer-leading-blank-lines:
+        blank-line: { level: error, value: required }
       trailer-required:
-        dco: { level: error, value: [Signed-off-by] }
+        dco: { level: error, value: required }
       pattern:
+        dco: { level: error, location: trailer, value: '/(?m)^Signed-off-by: /' }
         issue-ref: { level: warn, location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits in main and release branches follow Conventional Commits.
@@ -117,7 +119,6 @@ rules:
   release:
     match: ['/^release\//']
     check_history: incoming
-    parser: conventional
     checks:
       type-enum:
         release: { level: error, value: [fix, docs, chore] }
@@ -195,13 +196,12 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           except:
             merge_commit: true
             git_reverts: true
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:
@@ -342,14 +342,13 @@ $ echo $?
 1
 ```
 
-A required field is missing. `match`, `message`, and in COMMITPOLICY also `parser`, are required in every rule:
+A required field is missing. `match` and `message` are required in every rule:
 
 ```sh
 cat > drafts/no-match <<'EOF'
 version: 1
 rules:
   conventional:
-    parser: conventional
     message: Commits follow Conventional Commits.
 EOF
 ```
@@ -585,7 +584,6 @@ drafts/org-commits: valid
     help.docs_url: preset:org-commits
     match: preset:org-commits
     message: preset:org-commits
-    parser: preset:org-commits
 $ echo $?
 0
 ```

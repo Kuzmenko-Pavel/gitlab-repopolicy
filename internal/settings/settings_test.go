@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"strings"
@@ -92,7 +93,6 @@ mode: enforce
 rules:
   all:
     match: all
-    parser: conventional
     except:
       users: [release-bot]
     checks:
@@ -114,7 +114,8 @@ func project(id int64, path string) gitlab.Project {
 	return p
 }
 
-const branchPolicyYAML = "version: 1\nrules:\n  release:\n    match: ['/^release\\//']\n    priority: 1\n    protected: true\n    message: m\n"
+//go:embed testdata/branchpolicy-release.yaml
+var branchPolicyYAML string
 
 func expected() config.SettingsCheck {
 	return config.SettingsCheck{ProtectedTags: []string{"v*"}, JobTokenPush: ptr(false)}
@@ -278,7 +279,7 @@ func TestRun_Presets(t *testing.T) {
 	api.files["2:main:TAGPOLICY"] = "version: 1\nextends: missing\n"
 	api.branches[2], api.repo[2], api.tags[2] = []string{"main"}, []string{"main"}, []string{"v*"}
 	presets := map[string]map[string]any{"commitpolicy": {"org": map[string]any{"rules": map[string]any{
-		"all": map[string]any{"match": "all", "parser": "conventional", "message": "m",
+		"all": map[string]any{"match": "all", "message": "m",
 			"checks": map[string]any{"type-enum": map[string]any{"types": map[string]any{"level": "error", "value": []any{"feat"}}}}}}}}}
 	set := modules.Default(modules.Settings{Presets: presets})
 	rep, err := Run(context.Background(), api, Options{Expected: expected(), DefaultBranches: []string{"main"}, Guard: set.Root, Modules: set.All()})

@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    checks:
+      trailer-required:
+        dco: { level: error, value: [Signed-off-by] }
+    message: m

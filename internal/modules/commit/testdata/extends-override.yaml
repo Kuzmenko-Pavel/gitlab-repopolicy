@@ -1,0 +1,9 @@
+# The file overrides a preset check and removes the type-enum checks.
+version: 1
+extends: org
+rules:
+  conventional:
+    checks:
+      header-max-length:
+        short: {level: error, value: 20}
+      type-enum: null

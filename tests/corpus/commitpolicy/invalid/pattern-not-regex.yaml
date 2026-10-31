@@ -2,7 +2,6 @@ version: 1
 rules:
   r:
     match: all
-    parser: free
     checks:
       pattern:
         issue-key: { level: error, location: header, value: 'PAY-1' }

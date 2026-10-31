@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    checks:
+      header-format:
+        conventional: { level: error, value: required, types: [feat] }
+    message: m

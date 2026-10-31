@@ -142,7 +142,8 @@ gitlab-repopolicy lint-commit (-m MSG | --range A..B [--skip-author EMAIL]...) [
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
 message: [conventional] error: header-format conventional: expected "type(scope): subject"
 message: [conventional] error: body-leading-blank-lines blank-line: an empty line must follow the header
-message: [conventional] error: trailer-required dco: missing Signed-off-by in the trailer block
+message: [conventional] error: trailer-required dco: the message needs a trailer, the last part of the message
+message: [conventional] error: pattern dco: no match of /(?m)^Signed-off-by: / in the trailer
 ```
 
 Щоб перевіряти повідомлення перед створенням коміту або в CI, використайте [приклади запуску lint-commit](../policies/commitpolicy.md#перевірка-без-push).

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	_ "embed"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,8 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest"
 )
 
-const ciPolicy = "version: 1\nadmins: [alice]\nrules:\n  ci:\n    match: all\n    paths: [ci.yml]\n    allow: [alice]\n    message: CI belongs to alice.\n"
+//go:embed testdata/pathpolicy-ci.yaml
+var ciPolicy string
 
 // repo is a repository whose main holds PATHPOLICY and ci.yml (base), and a
 // commit that changes ci.yml and that no ref holds yet (change), as in a push.

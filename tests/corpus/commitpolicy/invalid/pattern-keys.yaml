@@ -1,0 +1,8 @@
+version: 1
+rules:
+  r:
+    match: all
+    checks:
+      pattern:
+        ref: { level: error, location: trailer, keys: [Refs], value: '/#[0-9]+/' }
+    message: m

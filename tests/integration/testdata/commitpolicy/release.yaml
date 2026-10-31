@@ -1,0 +1,9 @@
+# Only release branches, only fix commits.
+version: 1
+rules:
+  release:
+    match: ['/^release\//']
+    check_history: incoming
+    message: m
+    checks:
+      type-enum: {allowed: {level: error, value: [fix]}}

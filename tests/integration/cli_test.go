@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -328,12 +329,20 @@ func TestCLI_Explain(t *testing.T) {
 	assert.Contains(t, r.Stdout, "has no PATHPOLICY on its default branch")
 }
 
+//go:embed testdata/pathpolicy/extends-org-ci.yaml
+var explainPresetsPolicy string
+
 // TestCLI_ExplainPresets: explain names the layers of a rule and of each of
 // its fields when the rule comes from a preset.
 func TestCLI_ExplainPresets(t *testing.T) {
-	policy := "version: 1\nadmins: [alice]\nextends: org-ci\nrules:\n  ci:\n    allow: [alice, bob]\n"
+	policy := explainPresetsPolicy
 	s, _ := pathStand(t, policy, nil)
-	s.AddConfig("presets:\n  pathpolicy:\n    org-ci:\n      rules:\n        ci: {match: all, paths: [ci.yml], allow: [alice], message: CI belongs to alice.}\n")
+	s.AddConfig(`presets:
+  pathpolicy:
+    org-ci:
+      rules:
+        ci: {match: all, paths: [ci.yml], allow: [alice], message: CI belongs to alice.}
+`)
 	projectAPI(s, policy)
 	r := s.Run(nil, "explain", "--config", s.config, "--project", "acme/platform/app", "--user", "bob", "--path", "ci.yml")
 	require.Equal(t, 0, r.Code, r.Stderr)

@@ -1,0 +1,10 @@
+# Only main, every commit that enters it.
+version: 1
+rules:
+  main:
+    match: [main]
+    check_history: incoming
+    message: m
+    checks:
+      header-format: {conventional: {level: error, value: required}}
+      type-enum: {allowed: {level: error, value: [feat, fix]}}

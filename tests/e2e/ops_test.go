@@ -394,8 +394,15 @@ func tagPolicy(t *testing.T) string {
 	t.Helper()
 	pub, err := os.ReadFile(user("alice").SSHKey + ".pub")
 	require.NoError(t, err)
-	return "version: 1\nrules:\n  release:\n    match: ['/^v\\d+\\.\\d+\\.\\d+$/']\n    signers: [alice]\n    message: Release tags are signed by alice.\nkeys:\n  alice: " +
-		strings.TrimSpace(string(pub)) + "\n"
+	return fmt.Sprintf(`version: 1
+rules:
+  release:
+    match: ['/^v\d+\.\d+\.\d+$/']
+    signers: [alice]
+    message: Release tags are signed by alice.
+keys:
+  alice: %s
+`, strings.TrimSpace(string(pub)))
 }
 
 // pushSignedTag pushes a tag signed by alice with her SSH key.

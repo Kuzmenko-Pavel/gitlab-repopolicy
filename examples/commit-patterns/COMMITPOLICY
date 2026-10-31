@@ -6,13 +6,14 @@ version: 1
 rules:
   default-branch:
     match: default
-    parser: free
     except:
       merge_commit: true
     checks:
+      trailer-required:
+        issue-ref: { level: error, value: required }
       pattern:
         no-wip: { level: error, location: header, value: '!/^(WIP|fixup!|squash!)/i' }
-        issue-ref: { level: error, location: trailer, keys: [Refs, Closes], value: '/^[A-Za-z0-9_.\/-]*#[0-9]+$/' }
+        issue-ref: { level: error, location: trailer, value: '/(?m)^(Refs|Closes): [A-Za-z0-9_.\/-]*#[0-9]+$/' }
     message: >-
       Squash or reword work-in-progress commits before the merge, and end the
       message with a trailer such as "Refs: payments/api#123".

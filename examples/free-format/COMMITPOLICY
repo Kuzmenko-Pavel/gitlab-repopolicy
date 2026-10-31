@@ -4,10 +4,11 @@ version: 1
 rules:
   issue-key:
     match: default
-    parser: free
     except:
       merge_commit: true
     checks:
+      header-format:
+        free: { level: error, value: optional }
       header-max-length:
         limit: { level: error, value: 72 }
       subject-trailing-dot:

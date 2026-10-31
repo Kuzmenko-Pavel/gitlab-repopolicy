@@ -57,7 +57,7 @@ func (p *Policy) lint(c commitInfo) []LintFinding {
 		if r.except.MergeCommit && c.parents > 1 {
 			continue
 		}
-		m := ParseMessage(c.message, r.conventional)
+		m := r.parse(c.message)
 		if r.except.GitReverts && isGitRevert(m) {
 			continue
 		}

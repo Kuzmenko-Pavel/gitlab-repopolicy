@@ -1,0 +1,9 @@
+# The file changes the level of a preset check and adds a check of the same type.
+version: 1
+extends: org
+rules:
+  conventional:
+    checks:
+      header-max-length:
+        short: {level: error}
+        hard: {level: error, value: 100}

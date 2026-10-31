@@ -1,6 +1,8 @@
 package cli
 
 import (
+	_ "embed"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,9 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/gitlab/gitlabtest"
 )
 
+//go:embed testdata/pathpolicy-extends.yaml
+var explainPolicy string
+
 // TestExplain_PresetFields: a rule from a preset names the layer of each of
 // its fields, a rule of the file alone does not.
 func TestExplain_PresetFields(t *testing.T) {
@@ -19,10 +24,16 @@ func TestExplain_PresetFields(t *testing.T) {
 	dir := t.TempDir()
 	token := filepath.Join(dir, "token")
 	require.NoError(t, os.WriteFile(token, []byte("glpat-test\n"), 0o600))
-	policy := "version: 1\nadmins: [alice]\nextends: org-ci\nrules:\n  ci:\n    allow: [alice, bob]\n" +
-		"  docs:\n    match: all\n    paths: [docs/**]\n    allow: [alice]\n    message: m\n"
-	config := writeConfig(t, "gitlab_url: "+api.URL()+"\ntoken_file: "+token+"\naudit: {file: /tmp/x.log}\n"+
-		"presets:\n  pathpolicy:\n    org-ci:\n      rules:\n        ci: {match: all, paths: [ci.yml, docs/**], allow: [alice], message: CI belongs to alice.}\n")
+	policy := explainPolicy
+	config := writeConfig(t, fmt.Sprintf(`gitlab_url: %s
+token_file: %s
+audit: {file: /tmp/x.log}
+presets:
+  pathpolicy:
+    org-ci:
+      rules:
+        ci: {match: all, paths: [ci.yml, docs/**], allow: [alice], message: CI belongs to alice.}
+`, api.URL(), token))
 	api.Handle("GET", "/api/v4/projects/acme%2Fapp", gitlabtest.OK(map[string]any{"id": 1, "path_with_namespace": "acme/app", "default_branch": "main"}))
 	api.Handle("GET", "/api/v4/projects/1/repository/files/PATHPOLICY/raw?ref=main", gitlabtest.OK(policy))
 

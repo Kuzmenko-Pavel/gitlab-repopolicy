@@ -136,18 +136,15 @@ func TestRules_And(t *testing.T) {
 rules:
   case:
     match: all
-    parser: conventional
     checks: {subject-starts-lowercase: {lower: {level: error, value: required}}}
     message: m
     help: {contact: "#commits"}
   stop:
     match: default
-    parser: conventional
     checks: {subject-trailing-dot: {no-dot: {level: error, value: forbidden}}}
     message: m
   release:
     match: ['/^release\//']
-    parser: conventional
     checks: {type-enum: {fix: {level: error, value: [fix]}}}
     message: m
 `
@@ -178,13 +175,13 @@ func TestCheckHistory(t *testing.T) {
 		repo.entering[ref] = []string{repo.add("c", "feat: x\n", 1)}
 	}
 	for policyText, want := range map[string][]module.Scope{
-		"version: 1\nrules:\n  r: {match: all, parser: free, message: m}\n": {
+		"version: 1\nrules:\n  r: {match: all, message: m}\n": {
 			{Class: module.ClassOther}, {Class: module.ClassOther}, {Class: module.ClassOther}},
-		"version: 1\nrules:\n  r: {match: ['/./'], parser: free, message: m}\n": {
+		"version: 1\nrules:\n  r: {match: ['/./'], message: m}\n": {
 			{Class: module.ClassOther}, {Class: module.ClassOther}, {Class: module.ClassOther}},
-		"version: 1\nrules:\n  r: {match: all, check_history: incoming, parser: free, message: m}\n": {
+		"version: 1\nrules:\n  r: {match: all, check_history: incoming, message: m}\n": {
 			{Class: module.ClassDefault}, {Class: module.ClassProtected, Key: "incoming"}, {Class: module.ClassProtected, Key: "incoming"}},
-		"version: 1\nrules:\n  r: {match: all, check_history: new-content, parser: free, message: m}\n": {
+		"version: 1\nrules:\n  r: {match: all, check_history: new-content, message: m}\n": {
 			{Class: module.ClassOther}, {Class: module.ClassOther}, {Class: module.ClassOther}},
 	} {
 		repo.scopes = nil
@@ -199,7 +196,6 @@ const exceptPolicy = `version: 1
 rules:
   r:
     match: all
-    parser: conventional
     except: {users: [release-bot]}
     checks: {type-enum: {feat: {level: error, value: [feat]}}}
     message: m
@@ -237,16 +233,16 @@ func TestMergedCommits(t *testing.T) {
 	bad := repo.add("b", "wip\n", 1)
 	repo.entering["refs/heads/main"] = []string{merge, bad}
 	repo.firstPar["refs/heads/main"] = []string{merge}
-	policyText := "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, except: {merge_commit: true, merged_commits: true}, checks: {header-format: {x: {level: error}}}}\n"
+	policyText := "version: 1\nrules:\n  r: {match: all, message: m, except: {merge_commit: true, merged_commits: true}, checks: {header-format: {x: {level: error, value: required}}}}\n"
 	assert.Equal(t, module.Allow, evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main")).Decision)
 	assert.True(t, repo.scopes[0].FirstParent)
-	policyText = "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, except: {merge_commit: true}, checks: {header-format: {x: {level: error}}}}\n"
+	policyText = "version: 1\nrules:\n  r: {match: all, message: m, except: {merge_commit: true}, checks: {header-format: {x: {level: error, value: required}}}}\n"
 	assert.Equal(t, module.Deny, evaluate(t, policyText, input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main")).Decision,
 		"without merged_commits the branch commit is checked")
 }
 
 func TestMatchList(t *testing.T) {
-	policyText := "version: 1\nrules:\n  p: {match: [main, '/^release\\//'], parser: conventional, message: m, checks: {header-format: {x: {level: error}}}}\n"
+	policyText := "version: 1\nrules:\n  p: {match: [main, '/^release\\//'], message: m, checks: {header-format: {x: {level: error, value: required}}}}\n"
 	repo := newRepo()
 	repo.entering["refs/heads/x"] = []string{repo.add("b", "wip\n", 1)}
 	refs := &fakeRefs{class: module.ClassProtected, status: confirmed()}
@@ -292,8 +288,8 @@ func TestWarningLevel(t *testing.T) {
 rules:
   r:
     match: all
-    parser: conventional
     checks:
+      header-format: {conventional: {level: warn, value: required}}
       type-enum: {fix: {level: warn, value: [fix]}}
       scope-enum: {api: {level: warn, value: [api]}}
     message: m
@@ -309,23 +305,23 @@ rules:
 func TestTooManyCommits(t *testing.T) {
 	repo := newRepo()
 	repo.limit = true
-	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, parser: free, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Deny, res.Decision)
 	assert.Equal(t, module.CodeLimitExceeded, res.Violations[0].Code)
-	res = evaluate(t, "version: 1\nmode: warn\nrules:\n  r: {match: all, parser: free, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res = evaluate(t, "version: 1\nmode: warn\nrules:\n  r: {match: all, message: m}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Warn, res.Decision)
 }
 
 func TestUnknownCheck_Anchor(t *testing.T) {
 	repo := newRepo()
 	repo.entering["refs/heads/main"] = []string{repo.add("c", "feat: ok\n", 1)}
-	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {future-check: {level: error}}}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
+	res := evaluate(t, "version: 1\nrules:\n  r: {match: all, message: m, checks: {future-check: {level: error}}}\n", input(repo, &fakeRefs{}, &fakePrincipal{}, "refs/heads/main"))
 	assert.Equal(t, module.Warn, res.Decision)
 	assert.Contains(t, res.Violations[0].Title, "future-check")
 }
 
 func TestUnknownCheck_NewVersion(t *testing.T) {
-	p, err := New(testSettings()).Parse([]byte("version: 1\nrules:\n  r: {match: all, parser: conventional, message: m, checks: {typo-enum: {x: {level: error}}}}\n"))
+	p, err := New(testSettings()).Parse([]byte("version: 1\nrules:\n  r: {match: all, message: m, checks: {typo-enum: {x: {level: error}}}}\n"))
 	require.NoError(t, err)
 	got := p.Validate(context.Background(), nil)
 	require.Len(t, got, 1)

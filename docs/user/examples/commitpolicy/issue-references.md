@@ -3,7 +3,7 @@
 
 # Посилання на issue, merge request і задачу Jira
 
-Команда хоче, щоб кожен коміт пояснював, навіщо він: посилався хоча б на одну issue чи merge request GitLab або на задачу Jira. Посилань у повідомленні може бути кілька, і стояти вони можуть будь-де: у header, у body або в trailers. Header при цьому - Conventional Commits.
+Команда хоче, щоб кожен коміт пояснював, навіщо він: посилався хоча б на одну issue чи merge request GitLab або на задачу Jira. Посилань у повідомленні може бути кілька, і стояти вони можуть будь-де: у header, у body або в trailer. Header при цьому - Conventional Commits.
 
 ## Які посилання розпізнаються
 
@@ -35,13 +35,12 @@ version: 1
 rules:
   references:
     match: all
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       pattern:
         issue-or-mr: { level: error, location: message, value: '/(^|[^A-Za-z0-9_])([A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*)?[#!][0-9]+\b|https?:\/\/\S+\/-\/(issues|merge_requests|work_items)\/[0-9]+|\b(INFRA|PAY)-[0-9]+\b/' }
     message: >-
@@ -76,7 +75,7 @@ Merge-коміт GitLab має header `Merge branch ...`, і `header-format` й�
 
 Форму `GL-121`, яку згадує документація GitLab для повідомлень, що не можуть починатися з `#`, ця політика приймає, якщо додати `GL` до переліку проєктів: за формою це такий самий ключ.
 
-Якщо посилання мають стояти лише в trailers, наприклад `issue:`, `jira:` і `close:`, замініть `location: message` на `location: trailer` і додайте `keys: [issue, jira, close]`. Тоді посилання в header чи body не враховується.
+Якщо посилання мають стояти лише в trailer, наприклад `issue:`, `jira:` і `close:`, замініть `location: message` на `location: trailer`, додайте `trailer-required` з `value: required` і почніть вираз з ключів рядка: `/(?m)^(issue|jira|close): .../`. Тоді посилання в header чи body не враховується.
 
 ## Повідомлення та перевірка
 

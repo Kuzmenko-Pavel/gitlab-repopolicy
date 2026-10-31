@@ -1,0 +1,7 @@
+# The ci rule of the preset org-ci with more people.
+version: 1
+admins: [alice]
+extends: org-ci
+rules:
+  ci:
+    allow: [alice, bob]

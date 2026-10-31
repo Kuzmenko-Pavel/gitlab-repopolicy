@@ -3,7 +3,7 @@
 
 # References to an issue, a merge request and a Jira task
 
-The team wants every commit to explain why it exists: to reference at least one GitLab issue or merge request, or a Jira task. A message may have several references, and they may stand anywhere: in the header, in the body or in the trailers. The header is Conventional Commits.
+The team wants every commit to explain why it exists: to reference at least one GitLab issue or merge request, or a Jira task. A message may have several references, and they may stand anywhere: in the header, in the body or in the trailer. The header is Conventional Commits.
 
 ## Which references are recognized
 
@@ -35,13 +35,12 @@ version: 1
 rules:
   references:
     match: all
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       pattern:
         issue-or-mr: { level: error, location: message, value: '/(^|[^A-Za-z0-9_])([A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*)?[#!][0-9]+\b|https?:\/\/\S+\/-\/(issues|merge_requests|work_items)\/[0-9]+|\b(INFRA|PAY)-[0-9]+\b/' }
     message: >-
@@ -76,7 +75,7 @@ The list of projects is needed because the general form of a key `[A-Z]+-[0-9]+`
 
 The form `GL-121`, which the GitLab documentation mentions for messages that cannot start with `#`, is accepted by this policy if `GL` is added to the list of projects: in form it is the same kind of key.
 
-If references must stand only in trailers, for example `issue:`, `jira:` and `close:`, replace `location: message` with `location: trailer` and add `keys: [issue, jira, close]`. Then a reference in the header or the body does not count.
+If references must stand only in the trailer, for example `issue:`, `jira:` and `close:`, replace `location: message` with `location: trailer`, add `trailer-required` with `value: required` and start the regex with the keys of the line: `/(?m)^(issue|jira|close): .../`. Then a reference in the header or the body does not count.
 
 ## Messages and checking
 

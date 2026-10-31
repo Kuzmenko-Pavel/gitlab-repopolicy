@@ -1,7 +1,6 @@
 package commit
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/module"
@@ -9,40 +8,49 @@ import (
 	"github.com/Kuzmenko-Pavel/gitlab-repopolicy/internal/strictyaml"
 )
 
+// Parts of a conventional header that a check reads. A header that is not
+// parsed has no type, scope or "!", so their checks are skipped; its subject
+// is the whole line, and subject checks are skipped only when the rule
+// requires the conventional format.
+const (
+	partNone = iota
+	partType
+	partSubject
+)
+
 // checkDef is a check type of the catalogue: the spec of one check of the
-// type, whether it needs the conventional parser and whether it reads a part
-// of a conventional header, so that it is skipped when the header is not parsed.
+// type and the part of a conventional header it reads.
 type checkDef struct {
-	name         string
-	conventional bool
-	headerPart   bool
-	spec         *spec.Spec
+	name string
+	part int
+	spec *spec.Spec
 }
 
 // catalogue is the check types of v1 in the order of the parts of a message;
 // new types are only added.
 var catalogue = []checkDef{
-	{"header-format", true, false, levelSpec()},
-	{"header-max-length", false, false, checkSpec(numberValue())},
-	{"type-enum", true, true, checkSpec(listValue("Allowed types."))},
-	{"scope", true, true, checkSpec(presenceValue("a scope in parentheses after the type"))},
-	{"scope-enum", true, true, checkSpec(listValue("Allowed scopes."))},
-	{"breaking-bang", true, true, checkSpec(presenceValue(`"!" after the type or the scope`))},
-	{"subject-starts-lowercase", false, true, checkSpec(presenceValue("a lowercase letter as the first character of the subject"))},
-	{"subject-trailing-dot", false, true, checkSpec(presenceValue(`"." at the end of the subject`))},
-	{"body-leading-blank-lines", false, false, checkSpec(presenceValue("an empty line right after the header"))},
-	{"body-min-line-length", false, false, checkSpec(spec.Field{Name: "value", Spec: &spec.Spec{Type: spec.Integer, Minimum: 0, Maximum: 10000, Nullable: true,
-		Desc: "Minimum length of the body text in characters, without the trailer block; 0 makes the body optional. The default is 1."}})},
-	{"body-max-line-length", false, false, checkSpec(numberValue())},
-	{"trailer-required", false, false, checkSpec(listValue("Trailer keys that every message must have."))},
-	{"pattern", false, false, withCheck(checkSpec(
+	{"header-format", partNone, levelSpec(spec.Field{Name: "value", AfterMerge: true, Spec: &spec.Spec{Type: spec.String,
+		Enum: []string{"optional", "required"}, Nullable: true,
+		Desc: "required: the header follows type(scope)!: subject; optional: any header, the conventional parts are read when it follows the format."}})},
+	{"header-max-length", partNone, checkSpec(numberValue("Maximum length of the header in characters."))},
+	{"type-enum", partType, checkSpec(listValue("Allowed types."))},
+	{"scope", partType, checkSpec(presenceValue("a scope in parentheses after the type"))},
+	{"scope-enum", partType, checkSpec(listValue("Allowed scopes."))},
+	{"breaking-bang", partType, checkSpec(presenceValue(`"!" after the type or the scope`))},
+	{"subject-starts-lowercase", partSubject, checkSpec(presenceValue("a lowercase letter as the first character of the subject"))},
+	{"subject-trailing-dot", partSubject, checkSpec(presenceValue(`"." at the end of the subject`))},
+	{"body-leading-blank-lines", partNone, checkSpec(presenceValue("an empty line right after the header"))},
+	{"body-required", partNone, checkSpec(presenceValue("a body between the header and the trailer"))},
+	{"body-max-length", partNone, checkSpec(numberValue("Maximum length of the body in characters, line breaks included."))},
+	{"trailer-leading-blank-lines", partNone, checkSpec(presenceValue("an empty line between the body and the trailer"))},
+	{"trailer-required", partNone, checkSpec(presenceValue("a trailer, the last part of the message; it also says how the trailer is found"))},
+	{"trailer-max-length", partNone, checkSpec(numberValue("Maximum length of the trailer in characters, line breaks included."))},
+	{"pattern", partNone, checkSpec(
 		spec.Field{Name: "location", AfterMerge: true, Spec: &spec.Spec{Type: spec.String, Nullable: true,
 			Enum: []string{"header", "body", "trailer", "message"}, Desc: "Where the regex is searched."}},
-		spec.Field{Name: "keys", Spec: &spec.Spec{Type: spec.Array, MinItems: 1, Noun: "trailer keys", Nullable: true, Items: nonEmpty(),
-			Desc: "Trailer keys to search, for location: trailer; compared case-insensitively."}},
 		spec.Field{Name: "value", AfterMerge: true, Spec: &spec.Spec{Type: spec.String, MinLength: 1, Nullable: true, Check: "pattern",
 			Desc: "/re/ or /re/i must be found; !/re/ or !/re/i must not be found. RE2, searched anywhere like =~ in GitLab CI."}},
-	), "pattern-keys")},
+	)},
 }
 
 // checkDefOf returns the check type of the catalogue with the name.
@@ -59,22 +67,17 @@ func levelField() spec.Field {
 	return spec.Field{Name: "level", AfterMerge: true, Spec: &spec.Spec{Type: spec.String, Enum: []string{"error", "warn"}, Nullable: true}}
 }
 
-// levelSpec is a check with a level only: the header has no type to filter by yet.
-func levelSpec() *spec.Spec {
-	return &spec.Spec{Type: spec.Object, Nullable: true, Fields: []spec.Field{levelField()}}
+// levelSpec is a check without types: the header has no type to filter by yet.
+func levelSpec(value spec.Field) *spec.Spec {
+	return &spec.Spec{Type: spec.Object, Nullable: true, Fields: []spec.Field{levelField(), value}}
 }
 
 func checkSpec(value ...spec.Field) *spec.Spec {
 	return &spec.Spec{Type: spec.Object, Nullable: true, Fields: append([]spec.Field{
 		levelField(),
 		{Name: "types", Spec: &spec.Spec{Type: spec.Array, MinItems: 1, Noun: "types", Items: nonEmpty(), Nullable: true,
-			Desc: "Apply the check only to these types."}},
+			Desc: "Apply the check only to commits of these conventional types."}},
 	}, value...)}
-}
-
-func withCheck(s *spec.Spec, check string) *spec.Spec {
-	s.Check = check
-	return s
 }
 
 func nonEmpty() *spec.Spec { return &spec.Spec{Type: spec.String, MinLength: 1} }
@@ -89,8 +92,8 @@ func presenceValue(feature string) spec.Field {
 		Desc: "Whether the message has " + feature + ": optional, required or forbidden."}}
 }
 
-func numberValue() spec.Field {
-	return spec.Field{Name: "value", AfterMerge: true, Spec: &spec.Spec{Type: spec.Integer, Minimum: 1, Maximum: 10000, Nullable: true}}
+func numberValue(desc string) spec.Field {
+	return spec.Field{Name: "value", AfterMerge: true, Spec: &spec.Spec{Type: spec.Integer, Minimum: 1, Maximum: 10000, Nullable: true, Desc: desc}}
 }
 
 // checksSpec is the checks of a rule by type, then by name. It is open: a type
@@ -120,11 +123,9 @@ var presetSpec = &spec.Spec{Type: spec.Object, Fields: []spec.Field{
 	{Name: "rules", Required: true, Spec: spec.Rules(ruleSpec, maxRules)},
 }}
 
-var ruleSpec = &spec.Spec{Type: spec.Object, Check: "conventional", Desc: "Every rule that matches a branch applies (AND).", Fields: []spec.Field{
+var ruleSpec = &spec.Spec{Type: spec.Object, Desc: "Every rule that matches a branch applies (AND).", Fields: []spec.Field{
 	{Name: "match", AfterMerge: true, Spec: spec.Match("all, default or a list of branch names and /regexes/: the branches the rule applies to.", true)},
 	{Name: "check_history", Spec: spec.CheckHistory("the commits that no branch or tag has yet", "every commit that enters the branch")},
-	{Name: "parser", AfterMerge: true, Spec: &spec.Spec{Type: spec.String, Enum: []string{"conventional", "free"}, Nullable: true,
-		Desc: "conventional: type(scope)!: subject; free: the header is the subject."}},
 	{Name: "except", Spec: &spec.Spec{Type: spec.Object, Nullable: true, Fields: []spec.Field{
 		{Name: "merge_commit", Spec: &spec.Spec{Type: spec.Boolean, Nullable: true, Desc: "Skip merge commits."}},
 		{Name: "merged_commits", Spec: &spec.Spec{Type: spec.Boolean, Nullable: true,
@@ -149,42 +150,5 @@ var checks = spec.Checks{
 	"pattern": func(v *strictyaml.Value) error {
 		_, err := module.ParsePattern(v.Str)
 		return err
-	},
-	"pattern-keys": func(v *strictyaml.Value) error {
-		if keys, ok := v.Fields["keys"]; ok && keys.Kind != strictyaml.Null {
-			if loc, ok := v.Fields["location"]; ok && loc.Kind == strictyaml.String && loc.Str != "trailer" {
-				return errors.New("keys: only for location: trailer")
-			}
-		}
-		return nil
-	},
-	// conventional: check types of the conventional format and types need
-	// parser: conventional. A file without parser takes it from a preset, so
-	// only the rule that has the parser is checked.
-	"conventional": func(v *strictyaml.Value) error {
-		if p, ok := v.Fields["parser"]; !ok || p.Str != "free" {
-			return nil
-		}
-		cs, ok := v.Fields["checks"]
-		if !ok || cs.Kind != strictyaml.Map {
-			return nil
-		}
-		for _, typ := range cs.Keys {
-			named := cs.Fields[typ]
-			d, known := checkDefOf(typ)
-			switch {
-			case named.Kind != strictyaml.Map:
-				continue
-			case known && d.conventional:
-				return fmt.Errorf("checks.%s: needs parser: conventional", typ)
-			}
-			for _, name := range named.Keys {
-				c := named.Fields[name]
-				if c.Kind == strictyaml.Map && c.Fields["types"] != nil && c.Fields["types"].Kind != strictyaml.Null {
-					return fmt.Errorf("checks.%s.%s.types: needs parser: conventional", typ, name)
-				}
-			}
-		}
-		return nil
 	},
 }

@@ -1,0 +1,8 @@
+# Release branches are protected.
+version: 1
+rules:
+  release:
+    match: ['/^release\//']
+    priority: 1
+    protected: true
+    message: m

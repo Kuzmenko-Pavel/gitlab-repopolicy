@@ -21,14 +21,13 @@ rules:
   conventional:
     match: [main, '/^release\//']
     check_history: incoming
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
       users: [release-bot]
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         limit: { level: warn, value: 100 }
       type-enum:
@@ -43,11 +42,14 @@ rules:
         no-dot: { level: error, value: forbidden }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
-      body-min-line-length:
-        feat-fix: { level: error, value: 1, types: [feat, fix] }
+      body-required:
+        feat-fix: { level: error, value: required, types: [feat, fix] }
+      trailer-leading-blank-lines:
+        blank-line: { level: error, value: required }
       trailer-required:
-        dco: { level: error, value: [Signed-off-by] }
+        dco: { level: error, value: required }
       pattern:
+        dco: { level: error, location: trailer, value: '/(?m)^Signed-off-by: /' }
         issue-ref: { level: warn, location: message, value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
     message: >-
       Commits in main and release branches follow Conventional Commits.
@@ -56,14 +58,13 @@ rules:
   release:
     match: ['/^release\//']
     check_history: incoming
-    parser: conventional
     checks:
       type-enum:
         release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore commits.
 ```
 
-У `main` збігається `conventional`. У `release/1` діють обидва правила: загальні вимоги не зникають, а список типів звужується правилом `release`. `header-max-length` і посилання на issue дають попередження, а не відмову. Body обов'язковий лише для `feat` і `fix`: `body-min-line-length` обмежено `types`. Винятки дозволяють звичайний merge-коміт, стандартний revert і push розпізнаного release-bot; вони стосуються лише свого правила.
+У `main` збігається `conventional`. У `release/1` діють обидва правила: загальні вимоги не зникають, а список типів звужується правилом `release`. `header-max-length` і посилання на issue дають попередження, а не відмову. Body обов'язковий лише для `feat` і `fix`: `body-required` обмежено `types`. DCO задають дві перевірки: `trailer-required dco` вимагає trailer, а `pattern dco` - рядок `Signed-off-by` у ньому. Винятки дозволяють звичайний merge-коміт, стандартний revert і push розпізнаного release-bot; вони стосуються лише свого правила.
 
 Обидва правила мають `check_history: incoming`. Коміти в `main` і release-гілки приходять через merge request з робочих гілок, а там цей файл їх не перевіряє. `incoming` перевіряє кожен коміт, який входить у гілку правила, тож коміти робочої гілки перевіряються під час merge. З `new-content` вони пройшли б без перевірки: для репозиторію вони вже не нові.
 
@@ -82,7 +83,7 @@ Signed-off-by: A <a@example.com>
 
 Збережіть повідомлення в `message.txt` і запустіть `gitlab-repopolicy lint-commit -f COMMITPOLICY -m "$(cat message.txt)"`. Код 0 означає відсутність помилок рівня `error`. Для перевірки тільки загального стандарту додайте `--rule conventional`: локальний лінтер сам не обирає правило за `match`.
 
-`feat(api): add validation` з body і trailers може пройти загальне правило, але буде відхилений `release` при локальній перевірці всіх правил або push у release-гілку. Не виправляйте це розширенням release-списку, якщо нові можливості там справді заборонені.
+`feat(api): add validation` з body і trailer може пройти загальне правило, але буде відхилений `release` при локальній перевірці всіх правил або push у release-гілку. Не виправляйте це розширенням release-списку, якщо нові можливості там справді заборонені.
 
 Для спостереження спочатку задайте `mode: warn` у файлі. У глобальному `audit` навіть `mode: enforce` не блокує push; щоб побачити реальну відмову, потрібен серверний `enforce`.
 

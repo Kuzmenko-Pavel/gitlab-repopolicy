@@ -22,7 +22,7 @@ presets:
       rules:
         conventional:
           match: all
-          parser: conventional
           checks:
-            type-enum: { level: error, value: [feat, fix] }
+            type-enum:
+              allowed: { level: error, value: [feat, fix] }
           message: Commits follow Conventional Commits.

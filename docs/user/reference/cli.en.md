@@ -142,7 +142,8 @@ Exit code 0 - no violations of level `error`, 1 - there are. Violations go to st
 $ gitlab-repopolicy lint-commit -f examples/conventional-commits/COMMITPOLICY -m "Fix deploy."
 message: [conventional] error: header-format conventional: expected "type(scope): subject"
 message: [conventional] error: body-leading-blank-lines blank-line: an empty line must follow the header
-message: [conventional] error: trailer-required dco: missing Signed-off-by in the trailer block
+message: [conventional] error: trailer-required dco: the message needs a trailer, the last part of the message
+message: [conventional] error: pattern dco: no match of /(?m)^Signed-off-by: / in the trailer
 ```
 
 To check messages before committing or in CI, use the [lint-commit examples](../policies/commitpolicy.en.md#checking-without-a-push).

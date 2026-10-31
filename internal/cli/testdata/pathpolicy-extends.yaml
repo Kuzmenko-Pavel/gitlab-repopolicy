@@ -1,0 +1,12 @@
+# The ci rule of the preset org-ci with more people, and a rule of the file.
+version: 1
+admins: [alice]
+extends: org-ci
+rules:
+  ci:
+    allow: [alice, bob]
+  docs:
+    match: all
+    paths: [docs/**]
+    allow: [alice]
+    message: m

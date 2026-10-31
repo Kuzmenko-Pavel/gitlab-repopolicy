@@ -20,12 +20,11 @@ rules:
   main:
     match: [main]
     check_history: new-content
-    parser: conventional
     except:
       merge_commit: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
     message: Commits in main follow Conventional Commits.
 ```
 
@@ -40,12 +39,11 @@ rules:
   main:
     match: [main]
     check_history: incoming
-    parser: conventional
     except:
       merge_commit: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
     message: Commits in main follow Conventional Commits.
 ```
 

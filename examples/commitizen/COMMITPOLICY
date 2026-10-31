@@ -1,24 +1,25 @@
 # The commitizen schema of a project: the type from a list, a header of up to
 # 100 characters and a trailer ref, refs or issue with a GitLab issue. The
-# parser takes the header apart, the checks cover the format, the list, the
-# length and the empty line after the header, the pattern covers the trailer.
+# checks cover the format, the list, the length and the empty line after the
+# header; the trailer is required and the pattern covers its lines.
 version: 1
 
 rules:
   commitizen:
     match: all
-    parser: conventional
     except:
       merge_commit: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         commitizen: { level: error, value: 100 }
       type-enum:
         commitizen: { level: error, value: [build, ci, docs, feat, fix, perf, refactor, style, test, chore, revert, bump] }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
+      trailer-required:
+        ref: { level: error, value: required }
       pattern:
-        ref: { level: error, location: trailer, keys: [ref, refs, issue], value: '/^[a-zA-Z0-9_.\/-]*#\d+$/' }
+        ref: { level: error, location: trailer, value: '/(?m)^(ref|refs|issue): [a-zA-Z0-9_.\/-]*#\d+$/' }
     message: 'Commits follow the commitizen schema: type: subject, then a trailer such as "ref: payments/api#123".'

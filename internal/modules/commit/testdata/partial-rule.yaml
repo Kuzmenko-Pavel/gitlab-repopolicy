@@ -1,0 +1,7 @@
+# A rule without match and message: it needs a preset rule of the same name.
+version: 1
+rules:
+  conventional:
+    checks:
+      body-required:
+        x: {level: error, value: required}

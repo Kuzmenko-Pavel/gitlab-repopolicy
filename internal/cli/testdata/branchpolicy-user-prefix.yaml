@@ -1,0 +1,8 @@
+# Every branch starts with the username of the author.
+version: 1
+rules:
+  work:
+    match: ['/./']
+    priority: 1
+    user_prefix: true
+    message: Work branches start with your username.

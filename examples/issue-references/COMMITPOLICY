@@ -7,13 +7,12 @@ version: 1
 rules:
   references:
     match: all
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       pattern:
         issue-or-mr: { level: error, location: message, value: '/(^|[^A-Za-z0-9_])([A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*)?[#!][0-9]+\b|https?:\/\/\S+\/-\/(issues|merge_requests|work_items)\/[0-9]+|\b(INFRA|PAY)-[0-9]+\b/' }
     message: >-

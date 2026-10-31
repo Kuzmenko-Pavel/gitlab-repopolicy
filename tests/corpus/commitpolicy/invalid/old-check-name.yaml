@@ -2,7 +2,6 @@ version: 1
 rules:
   r:
     match: all
-    parser: conventional
     checks:
       subject-full-stop:
         no-dot: { level: error, value: forbidden }

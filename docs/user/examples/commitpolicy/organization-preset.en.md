@@ -3,7 +3,7 @@
 
 # Customizing a shared commit standard
 
-The organization defines commit formatting centrally. A project keeps the type list and parser, but turns long-header errors into warnings and allows a full stop at the end of the subject.
+The organization defines commit formatting centrally. A project keeps the type list and the header format, but turns long-header errors into warnings and allows a full stop at the end of the subject.
 
 ## Two rule sources
 
@@ -16,13 +16,12 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           except:
             merge_commit: true
             git_reverts: true
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:
@@ -76,7 +75,6 @@ COMMITPOLICY: valid
     help.docs_url: preset:org-commits
     match: preset:org-commits
     message: preset:org-commits
-    parser: preset:org-commits
 ```
 
 Run `gitlab-repopolicy validate -f COMMITPOLICY --config presets.yaml`, then `gitlab-repopolicy lint-commit -f COMMITPOLICY --config presets.yaml -m "docs: update the guide."`. The latter passes because the full stop is permitted. To check length, use a header longer than 100 characters: expect a warning and exit 0 if there are no other errors.

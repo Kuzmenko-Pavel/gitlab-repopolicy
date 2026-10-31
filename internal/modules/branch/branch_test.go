@@ -2,6 +2,7 @@ package branch
 
 import (
 	"context"
+	_ "embed"
 	"strings"
 	"testing"
 
@@ -171,8 +172,11 @@ func TestStandard_Names(t *testing.T) {
 	assert.Equal(t, []string{"preset:org-branches"}, res.Violations[0].Source)
 }
 
+//go:embed testdata/deny-all.yaml
+var denyAllPolicy string
+
 func TestDefaultUpdateDelete(t *testing.T) {
-	p := parse(t, settings(t), "version: 1\nrules:\n  all:\n    match: all\n    priority: 1\n    deny: true\n    message: m\n")
+	p := parse(t, settings(t), denyAllPolicy)
 	e := protectedEnv()
 	res := e.create(t, p, "main")
 	assert.Equal(t, module.Allow, res.Decision, "the default branch is the business of the core")
@@ -215,6 +219,12 @@ rules:
 	assert.Equal(t, []string{"preset:org-branches", "file"}, res.Violations[0].Source)
 }
 
+//go:embed testdata/deny-preset-unprotected.yaml
+var denyPresetPolicy string
+
+//go:embed testdata/deny-preset-protected.yaml
+var denyPresetProtectedPolicy string
+
 // TestDenyWithChecksOff: false turns a check off, so it goes with deny: true,
 // also over a true of the preset; an active true is a conflict after merging.
 func TestDenyWithChecksOff(t *testing.T) {
@@ -223,12 +233,12 @@ func TestDenyWithChecksOff(t *testing.T) {
 	require.NoError(t, p.unusable)
 	assert.Equal(t, []string{module.CodeBranchName}, codes(protectedEnv().create(t, p, "x")))
 
-	p = parse(t, s, "version: 1\nextends: org-branches\nrules:\n  release:\n    deny: true\n    protected: false\n")
+	p = parse(t, s, denyPresetPolicy)
 	require.NoError(t, p.unusable)
 	assert.Equal(t, []string{module.CodeBranchName}, codes(protectedEnv().create(t, p, "release/v1.0.0")),
 		"the file denies the class and turns off the protection of the preset")
 
-	_, err := Parse([]byte("version: 1\nextends: org-branches\nrules:\n  release:\n    deny: true\n"), s)
+	_, err := Parse([]byte(denyPresetProtectedPolicy), s)
 	assert.ErrorContains(t, err, "rule release: protected: true is not allowed with deny: true", "the true of the preset stays active")
 }
 
@@ -345,8 +355,11 @@ func TestProtected(t *testing.T) {
 	assert.Zero(t, e.refs.asked, "a class without protected does not ask GitLab")
 }
 
+//go:embed testdata/user-prefix.yaml
+var userPrefixPolicy string
+
 func TestUserPrefix(t *testing.T) {
-	p := parse(t, settings(t), "version: 1\nrules:\n  work:\n    match: all\n    priority: 1\n    user_prefix: true\n    message: m\n    help: {contact: \"#branches\"}\n")
+	p := parse(t, settings(t), userPrefixPolicy)
 	e := protectedEnv()
 	e.user = "Kuzmenko.Pavel"
 	assert.Equal(t, module.Allow, e.create(t, p, "kuzmenko.pavel/disable_auth").Decision)

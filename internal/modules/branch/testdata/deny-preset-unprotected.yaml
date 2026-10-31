@@ -1,0 +1,7 @@
+# The release class of the preset is denied, its protection is turned off.
+version: 1
+extends: org-branches
+rules:
+  release:
+    deny: true
+    protected: false

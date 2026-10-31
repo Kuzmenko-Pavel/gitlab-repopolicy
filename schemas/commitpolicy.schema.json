@@ -65,7 +65,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -103,7 +103,7 @@
                   "null"
                 ]
               },
-              "body-max-line-length": {
+              "body-max-length": {
                 "additionalProperties": {
                   "additionalProperties": false,
                   "properties": {
@@ -119,7 +119,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -131,7 +131,7 @@
                       ]
                     },
                     "value": {
-                      "description": "Required after merging with presets.",
+                      "description": "Required after merging with presets. Maximum length of the body in characters, line breaks included.",
                       "maximum": 10000,
                       "minimum": 1,
                       "type": [
@@ -154,7 +154,7 @@
                   "null"
                 ]
               },
-              "body-min-line-length": {
+              "body-required": {
                 "additionalProperties": {
                   "additionalProperties": false,
                   "properties": {
@@ -170,7 +170,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -182,11 +182,14 @@
                       ]
                     },
                     "value": {
-                      "description": "Minimum length of the body text in characters, without the trailer block; 0 makes the body optional. The default is 1.",
-                      "maximum": 10000,
-                      "minimum": 0,
+                      "description": "Required after merging with presets. Whether the message has a body between the header and the trailer: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
                       "type": [
-                        "integer",
+                        "string",
                         "null"
                       ]
                     }
@@ -221,7 +224,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -273,6 +276,17 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. required: the header follows type(scope)!: subject; optional: any header, the conventional parts are read when it follows the format.",
+                      "enum": [
+                        "optional",
+                        "required"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "type": [
@@ -305,7 +319,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -317,7 +331,7 @@
                       ]
                     },
                     "value": {
-                      "description": "Required after merging with presets.",
+                      "description": "Required after merging with presets. Maximum length of the header in characters.",
                       "maximum": 10000,
                       "minimum": 1,
                       "type": [
@@ -344,18 +358,6 @@
                 "additionalProperties": {
                   "additionalProperties": false,
                   "properties": {
-                    "keys": {
-                      "description": "Trailer keys to search, for location: trailer; compared case-insensitively.",
-                      "items": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "minItems": 1,
-                      "type": [
-                        "array",
-                        "null"
-                      ]
-                    },
                     "level": {
                       "description": "Required after merging with presets.",
                       "enum": [
@@ -381,7 +383,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -405,8 +407,7 @@
                   "type": [
                     "object",
                     "null"
-                  ],
-                  "x-repopolicy-check": "pattern-keys"
+                  ]
                 },
                 "description": "Checks of this type by name.",
                 "propertyNames": {
@@ -433,7 +434,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -487,7 +488,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -541,7 +542,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -595,7 +596,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -633,6 +634,111 @@
                   "null"
                 ]
               },
+              "trailer-leading-blank-lines": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "types": {
+                      "description": "Apply the check only to commits of these conventional types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Whether the message has an empty line between the body and the trailer: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "trailer-max-length": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "level": {
+                      "description": "Required after merging with presets.",
+                      "enum": [
+                        "error",
+                        "warn"
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "types": {
+                      "description": "Apply the check only to commits of these conventional types.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "value": {
+                      "description": "Required after merging with presets. Maximum length of the trailer in characters, line breaks included.",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "description": "Checks of this type by name.",
+                "propertyNames": {
+                  "pattern": "^[a-z0-9-]{1,63}$"
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
               "trailer-required": {
                 "additionalProperties": {
                   "additionalProperties": false,
@@ -649,7 +755,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -661,14 +767,14 @@
                       ]
                     },
                     "value": {
-                      "description": "Required after merging with presets. Trailer keys that every message must have.",
-                      "items": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "minItems": 1,
+                      "description": "Required after merging with presets. Whether the message has a trailer, the last part of the message; it also says how the trailer is found: optional, required or forbidden.",
+                      "enum": [
+                        "optional",
+                        "required",
+                        "forbidden"
+                      ],
                       "type": [
-                        "array",
+                        "string",
                         "null"
                       ]
                     }
@@ -703,7 +809,7 @@
                       ]
                     },
                     "types": {
-                      "description": "Apply the check only to these types.",
+                      "description": "Apply the check only to commits of these conventional types.",
                       "items": {
                         "minLength": 1,
                         "type": "string"
@@ -851,24 +957,12 @@
               "string",
               "null"
             ]
-          },
-          "parser": {
-            "description": "Required after merging with presets. conventional: type(scope)!: subject; free: the header is the subject.",
-            "enum": [
-              "conventional",
-              "free"
-            ],
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "type": [
           "object",
           "null"
-        ],
-        "x-repopolicy-check": "conventional"
+        ]
       },
       "description": "Rules by name. A rule of the file with the name of a preset rule overrides its fields; null removes it.",
       "maxProperties": 50,

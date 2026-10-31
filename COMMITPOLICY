@@ -4,13 +4,12 @@ mode: enforce
 rules:
   conventional:
     match: all
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         limit: { level: error, value: 100 }
       type-enum:
@@ -25,8 +24,12 @@ rules:
         no-dot: { level: error, value: forbidden }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
+      trailer-leading-blank-lines:
+        blank-line: { level: error, value: required }
       trailer-required:
-        dco: { level: error, value: [Signed-off-by] }
+        dco: { level: error, value: required }
+      pattern:
+        dco: { level: error, location: trailer, value: '/(?m)^Signed-off-by: /' }
     message: >-
       Commits follow Conventional Commits and carry a DCO Signed-off-by
       trailer (git commit -s).

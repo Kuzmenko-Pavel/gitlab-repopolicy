@@ -109,10 +109,10 @@ func TestDocsPolicyBlocks(t *testing.T) {
 					blockModule = "pathpolicy"
 				case strings.Contains(block[2], "\nkeys:"):
 					blockModule = "tagpolicy"
-				case strings.Contains(block[2], "    parser:"):
-					blockModule = "commitpolicy"
 				case strings.Contains(block[2], "    priority:"):
 					blockModule = "branchpolicy"
+				case strings.Contains(block[2], "\n    checks:\n"):
+					blockModule = "commitpolicy"
 				}
 			}
 			require.NotEmpty(t, blockModule, "%s: a complete inline policy needs an identifiable module", doc)

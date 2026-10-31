@@ -14,16 +14,15 @@ version: 1
 rules:
   r:
     match: all
-    parser: conventional
     checks:
       header-format:
-        conventional: {level: error}
+        conventional: {level: error, value: required}
     message: Use a Conventional Commits header.
 ```
 
 `fix: round refunds` і `fix(billing): round refunds` є коректними header. Scope у дужках необов'язковий. Після двокрапки потрібен рівно один пробіл.
 
-<!-- check: lint-commit parser=conventional -->
+<!-- check: lint-commit header-format=required -->
 | Header | Помилка `lint-commit` |
 | --- | --- |
 | `fix round refunds` | `header-format conventional: expected "type(scope): subject"` |
@@ -37,10 +36,10 @@ rules:
 
 Підказка після коми з'являється, коли hook розуміє, що саме не так. Без підказки header зовсім не схожий на `type(scope): subject`: пробіл перед дужкою, квадратні дужки, ключ задачі замість type.
 
-Header - завжди перший рядок. `fix: round\nbody right after` розбирається без помилки: header `fix: round`, body `body right after`. Чи потрібен порожній рядок між ними, задає окрема перевірка `body-leading-blank-lines` ([порівняння повідомлень](message-results.md)), а не parser.
+Header - завжди перший рядок. `fix: round\nbody right after` розбирається без помилки: header `fix: round`, body `body right after`. Чи потрібен порожній рядок між ними, задає окрема перевірка `body-leading-blank-lines` ([порівняння повідомлень](message-results.md)), а не розбір header.
 
 Для перевірки запишіть один рядок таблиці в `message.txt` зі справжніми переносами й запустіть `gitlab-repopolicy lint-commit -m "$(cat message.txt)"`. Таблиця містить очікувані частини діагностики; кожен рядок дає код 1. Після виправлення до `fix: round refunds` команда має завершитися з кодом 0 без порушень.
 
-`parser: free` дозволяє інший формат header, але це вибір стандарту проєкту, а не спосіб обійти помилку конкретного Conventional Commits повідомлення. Правило з `parser: conventional` без `header-format` неправильний header не відхиляє: parser лише розбирає header для інших перевірок, а відмову дає перевірка. `header-format` з `level: warn` робить неправильний header попередженням, а решта перевірок правила лишаються помилками.
+`header-format` з `value: optional` дозволяє інший формат header, але це вибір стандарту проєкту ([ключ задачі](issue-key.md)), а не спосіб обійти помилку конкретного Conventional Commits повідомлення. Правило без `header-format` неправильний header не відхиляє: hook розбирає header для інших перевірок, а відмову за формат дає лише `header-format` з `value: required`. `header-format` з `level: warn` робить неправильний header попередженням, а решта перевірок правила лишаються помилками.
 
 [Довідник COMMITPOLICY](../../policies/commitpolicy.md)

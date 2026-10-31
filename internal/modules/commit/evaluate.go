@@ -194,7 +194,7 @@ func (e *evaluation) check(ctx context.Context, r *rule, commits []string) ([]co
 		if r.except.MergeCommit && c.parents > 1 {
 			continue
 		}
-		m := ParseMessage(c.message, r.conventional)
+		m := r.parse(c.message)
 		if r.except.GitReverts && isGitRevert(m) {
 			continue
 		}
@@ -290,10 +290,10 @@ func verb(n int) string {
 
 // format describes the expected header once, with the types and scopes of the checks.
 func (r *rule) format() []string {
-	if !r.conventional {
-		return nil
+	var out []string
+	if r.headerRequired() {
+		out = append(out, "required: type(scope): subject, for example feat(api): add refunds")
 	}
-	out := []string{"required: type(scope): subject, for example feat(api): add refunds"}
 	for _, c := range r.checks {
 		switch c.def.name {
 		case "type-enum":

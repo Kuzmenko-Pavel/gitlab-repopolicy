@@ -4,7 +4,6 @@ rules:
   commits:
     match: [main, '/^feature\//', '!feature/legacy']
     check_history: incoming
-    parser: conventional
     except:
       merge_commit: true
       git_reverts: true
@@ -12,7 +11,7 @@ rules:
       users: [release-bot]
     checks:
       header-format:
-        conventional: { level: error }
+        conventional: { level: error, value: required }
       header-max-length:
         soft: { level: warn, value: 72 }
         hard: { level: error, value: 100 }
@@ -30,14 +29,19 @@ rules:
         no-dot: { level: error, value: forbidden }
       body-leading-blank-lines:
         blank-line: { level: error, value: required }
-      body-min-line-length:
-        feat-fix: { level: error, value: 1, types: [feat, fix] }
-      body-max-line-length:
-        wrap: { level: warn, value: 120 }
+      body-required:
+        feat-fix: { level: error, value: required, types: [feat, fix] }
+      body-max-length:
+        size: { level: warn, value: 2000 }
+      trailer-leading-blank-lines:
+        blank-line: { level: error, value: required }
       trailer-required:
-        dco: { level: error, value: [Signed-off-by] }
+        dco: { level: error, value: required }
+      trailer-max-length:
+        size: { level: warn, value: 500 }
       pattern:
-        issue-ref: { level: error, location: trailer, keys: [Issue, Refs], value: '/[A-Za-z0-9_.\/-]*#[0-9]+/', types: [feat, fix] }
+        dco: { level: error, location: trailer, value: '/(?m)^Signed-off-by: /' }
+        issue-ref: { level: error, location: trailer, value: '/(?m)^(Issue|Refs): [A-Za-z0-9_.\/-]*#[0-9]+$/', types: [feat, fix] }
         no-wip: { level: error, location: header, value: '!/^(WIP|fixup!)/i' }
     message: >-
       Commits follow Conventional Commits.
@@ -47,24 +51,21 @@ rules:
   release:
     match: ['/^release\//']
     check_history: new-content
-    parser: conventional
     checks:
       type-enum:
         release: { level: error, value: [fix, docs, chore] }
     message: Release branches take only fix, docs and chore.
   no-wip:
     match: all
-    parser: free
     checks:
       pattern:
         no-wip: { level: warn, location: header, value: '!/^(WIP|fixup!)/i' }
     message: Squash WIP and fixup commits before the merge.
   default-only:
     match: default
-    parser: free
     checks:
       subject-trailing-dot:
         no-dot: { level: warn, value: forbidden }
-      body-min-line-length:
-        optional: { level: error, value: 0 }
+      body-required:
+        optional: { level: error, value: optional }
     message: m

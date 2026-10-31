@@ -1,0 +1,6 @@
+# A rule without checks: a policy that lets every message pass.
+version: 1
+rules:
+  conventional:
+    match: all
+    message: m

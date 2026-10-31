@@ -15,19 +15,21 @@ type finding struct {
 }
 
 // apply applies the checks of the rule to a parsed message. A message that
-// the parser cannot read at all is always an error, whatever the checks; a
-// conventional header that is not parsed skips the checks of its parts.
+// cannot be read at all is always an error, whatever the checks. A header
+// that is not conventional skips the checks of its type, scope and "!", and
+// the checks of its subject too when the rule requires the format.
 func (r *rule) apply(m Message) []finding {
 	var out []finding
 	for _, g := range m.Grammar {
 		out = append(out, finding{level: levelError, reason: g})
 	}
-	headerParsed := !r.conventional || m.Type != ""
+	parsed := m.Type != ""
+	strict := r.headerRequired()
 	for _, c := range r.checks {
-		if c.def.headerPart && !headerParsed {
+		switch {
+		case c.def.part == partType && !parsed, c.def.part == partSubject && !parsed && strict:
 			continue
-		}
-		if len(c.types) > 0 && !slices.Contains(c.types, m.Type) {
+		case !c.applies(m.Type):
 			continue
 		}
 		if reason := c.verify(m); reason != "" {
@@ -41,11 +43,11 @@ func (r *rule) apply(m Message) []finding {
 func (c *check) verify(m Message) string {
 	switch c.def.name {
 	case "header-format":
-		return m.HeaderError
-	case "header-max-length":
-		if n := utf8.RuneCountInString(m.Header); n > c.number {
-			return fmt.Sprintf("the header is %d characters, the limit is %d", n, c.number)
+		if c.enum == "required" {
+			return m.HeaderError
 		}
+	case "header-max-length":
+		return maxLength("header", m.Header, c.number)
 	case "type-enum":
 		if !slices.Contains(c.list, m.Type) {
 			return fmt.Sprintf("%q is not one of %s", m.Type, strings.Join(c.list, ", "))
@@ -76,27 +78,20 @@ func (c *check) verify(m Message) string {
 	case "body-leading-blank-lines":
 		return c.presence(m.BlankAfterHeader,
 			"an empty line must follow the header", "the line after the header must not be empty")
-	case "body-min-line-length":
-		n := utf8.RuneCountInString(strings.TrimSpace(m.Body))
-		switch {
-		case n >= c.number:
-		case n == 0:
-			return "the message needs a body"
-		default:
-			return fmt.Sprintf("the body is %d characters, at least %d are required", n, c.number)
+	case "body-required":
+		return c.presence(m.Body != "", "the message needs a body", "the message must not have a body")
+	case "body-max-length":
+		return maxLength("body", m.Body, c.number)
+	case "trailer-leading-blank-lines":
+		if m.Body == "" || m.Trailer == "" {
+			return ""
 		}
-	case "body-max-line-length":
-		return checkBodyLines(m.Body, c.number)
+		return c.presence(m.BlankBeforeTrailer,
+			"an empty line must separate the body and the trailer", "the line before the trailer must not be empty")
 	case "trailer-required":
-		var missing []string
-		for _, key := range c.list {
-			if len(m.Trailer(key)) == 0 {
-				missing = append(missing, key)
-			}
-		}
-		if len(missing) > 0 {
-			return fmt.Sprintf("missing %s in the trailer block", strings.Join(missing, ", "))
-		}
+		return c.presence(m.Trailer != "", "the message needs a trailer, the last part of the message", "the message must not have a trailer")
+	case "trailer-max-length":
+		return maxLength("trailer", m.Trailer, c.number)
 	case "pattern":
 		return c.checkPattern(m)
 	}
@@ -124,21 +119,10 @@ func splitScopes(scope string) []string {
 	return parts
 }
 
-// checkBodyLines skips fenced and indented code and lines with URLs.
-func checkBodyLines(body string, limit int) string {
-	fenced := false
-	for i, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			fenced = !fenced
-			continue
-		}
-		if fenced || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") || strings.Contains(line, "://") {
-			continue
-		}
-		if n := utf8.RuneCountInString(line); n > limit {
-			return fmt.Sprintf("body line %d is %d characters, the limit is %d", i+1, n, limit)
-		}
+// maxLength measures a whole part of the message, line breaks included.
+func maxLength(part, text string, limit int) string {
+	if n := utf8.RuneCountInString(text); n > limit {
+		return fmt.Sprintf("the %s is %d characters, the limit is %d", part, n, limit)
 	}
 	return ""
 }
@@ -156,15 +140,7 @@ func (c *check) checkPattern(m Message) string {
 	case "message":
 		texts = []string{m.Text}
 	case "trailer":
-		where = "the trailer block"
-		if len(c.keys) > 0 {
-			where = "a trailer " + strings.Join(c.keys, ", ")
-		}
-		for _, t := range m.Trailers {
-			if len(c.keys) == 0 || slices.ContainsFunc(c.keys, func(k string) bool { return strings.EqualFold(k, t.Key) }) {
-				texts = append(texts, t.Value)
-			}
-		}
+		texts = []string{m.Trailer}
 	}
 	found := slices.ContainsFunc(texts, c.pattern.Found)
 	switch {

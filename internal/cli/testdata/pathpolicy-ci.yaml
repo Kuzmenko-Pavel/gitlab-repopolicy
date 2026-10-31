@@ -1,0 +1,9 @@
+# Only alice changes ci.yml.
+version: 1
+admins: [alice]
+rules:
+  ci:
+    match: all
+    paths: [ci.yml]
+    allow: [alice]
+    message: CI belongs to alice.

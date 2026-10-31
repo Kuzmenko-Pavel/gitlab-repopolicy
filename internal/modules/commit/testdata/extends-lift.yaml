@@ -1,0 +1,10 @@
+# The file removes one named check of the preset and lifts the format requirement.
+version: 1
+extends: org
+rules:
+  conventional:
+    checks:
+      type-enum:
+        types: null
+      header-format:
+        conventional: {value: optional}

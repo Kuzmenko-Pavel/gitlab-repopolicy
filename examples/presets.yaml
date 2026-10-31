@@ -24,13 +24,12 @@ presets:
       rules:
         conventional:
           match: default
-          parser: conventional
           except:
             merge_commit: true
             git_reverts: true
           checks:
             header-format:
-              conventional: { level: error }
+              conventional: { level: error, value: required }
             header-max-length:
               limit: { level: error, value: 100 }
             type-enum:

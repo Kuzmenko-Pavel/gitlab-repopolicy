@@ -23,7 +23,6 @@ const (
 type ruleYAML struct {
 	Match        any            `yaml:"match"`
 	CheckHistory string         `yaml:"check_history"`
-	Parser       string         `yaml:"parser"`
 	Except       exceptYAML     `yaml:"except"`
 	Checks       map[string]any `yaml:"checks"`
 	Message      string         `yaml:"message"`
@@ -57,16 +56,15 @@ type Policy struct {
 
 // rule is a rule of the file: the checks for the branches of match.
 type rule struct {
-	name         string
-	match        module.Match
-	history      string
-	conventional bool
-	except       exceptYAML
-	checks       []*check
-	unknown      []string
-	message      string
-	help         module.Help
-	source       []string
+	name    string
+	match   module.Match
+	history string
+	except  exceptYAML
+	checks  []*check
+	unknown []string
+	message string
+	help    module.Help
+	source  []string
 }
 
 // check is a named check of a type of the catalogue in a rule.
@@ -79,7 +77,6 @@ type check struct {
 	enum     string
 	number   int
 	location string
-	keys     []string
 	pattern  module.Pattern
 }
 
@@ -137,7 +134,7 @@ func newRule(name string, y ruleYAML, source []string) (*rule, error) {
 		return nil, fmt.Errorf("match: %w", err)
 	}
 	r := &rule{name: name, match: m, history: y.CheckHistory, except: y.Except, message: strings.TrimSpace(y.Message),
-		conventional: y.Parser == "conventional", help: y.Help, source: source}
+		help: y.Help, source: source}
 	for _, typ := range slices.Sorted(maps.Keys(y.Checks)) {
 		if _, known := checkDefOf(typ); !known {
 			r.unknown = append(r.unknown, typ)
@@ -153,7 +150,7 @@ func newRule(name string, y ruleYAML, source []string) (*rule, error) {
 			return nil, fmt.Errorf("checks.%s: %w", d.name, err)
 		}
 		for _, cname := range slices.Sorted(maps.Keys(named)) {
-			c, err := newCheck(d, cname, named[cname], r.conventional)
+			c, err := newCheck(d, cname, named[cname])
 			if err != nil {
 				return nil, fmt.Errorf("checks.%s.%s: %w", d.name, cname, err)
 			}
@@ -172,31 +169,23 @@ type checkYAML struct {
 	Types    []string `yaml:"types"`
 	Value    any      `yaml:"value"`
 	Location string   `yaml:"location"`
-	Keys     []string `yaml:"keys"`
 }
 
 // newCheck builds a check that the spec of its type accepted.
-func newCheck(d checkDef, name string, raw map[string]any, conventional bool) (*check, error) {
+func newCheck(d checkDef, name string, raw map[string]any) (*check, error) {
 	var y checkYAML
 	if err := strictyaml.DecodeValue(raw, &y, module.DefaultMaxPolicySize); err != nil {
 		return nil, err
 	}
-	if len(y.Types) > 0 && !conventional {
-		return nil, errors.New("types: needs parser: conventional")
-	}
-	c := &check{def: d, name: name, level: levels[y.Level], types: y.Types, location: y.Location, keys: y.Keys}
+	c := &check{def: d, name: name, level: levels[y.Level], types: y.Types, location: y.Location}
 	var err error
 	switch d.name {
-	case "type-enum", "scope-enum", "trailer-required":
+	case "type-enum", "scope-enum":
 		err = strictyaml.DecodeValue(y.Value, &c.list, module.DefaultMaxPolicySize)
-	case "header-max-length", "body-max-line-length":
+	case "header-max-length", "body-max-length", "trailer-max-length":
 		err = strictyaml.DecodeValue(y.Value, &c.number, module.DefaultMaxPolicySize)
-	case "body-min-line-length":
-		c.number = 1
-		if y.Value != nil {
-			err = strictyaml.DecodeValue(y.Value, &c.number, module.DefaultMaxPolicySize)
-		}
-	case "scope", "breaking-bang", "subject-starts-lowercase", "subject-trailing-dot", "body-leading-blank-lines":
+	case "header-format", "scope", "breaking-bang", "subject-starts-lowercase", "subject-trailing-dot",
+		"body-leading-blank-lines", "body-required", "trailer-leading-blank-lines", "trailer-required":
 		err = strictyaml.DecodeValue(y.Value, &c.enum, module.DefaultMaxPolicySize)
 	case "pattern":
 		var src string
@@ -212,6 +201,43 @@ func newCheck(d checkDef, name string, raw map[string]any, conventional bool) (*
 
 // label names the check in findings: its type and its name.
 func (c *check) label() string { return c.def.name + " " + c.name }
+
+// applies reports whether the check is for commits of the type.
+func (c *check) applies(typ string) bool { return len(c.types) == 0 || slices.Contains(c.types, typ) }
+
+// headerRequired reports whether a check of the rule requires the
+// conventional format of the header.
+func (r *rule) headerRequired() bool {
+	return slices.ContainsFunc(r.checks, func(c *check) bool { return c.def.name == "header-format" && c.enum == "required" })
+}
+
+// mode is the value of the checks of a type for commits of the type: required
+// wins over forbidden, without either it is optional.
+func (r *rule) mode(name, typ string) string {
+	mode := "optional"
+	for _, c := range r.checks {
+		if c.def.name != name || !c.applies(typ) {
+			continue
+		}
+		switch c.enum {
+		case "required":
+			return "required"
+		case "forbidden":
+			mode = "forbidden"
+		}
+	}
+	return mode
+}
+
+// parse reads a message as the checks of the rule say. A required trailer
+// takes the whole paragraph after the header when the body is not required
+// and an empty line may come before the trailer: then the body is empty.
+func (r *rule) parse(raw string) Message {
+	m := parseHeader(raw)
+	whole := r.mode("body-required", m.Type) != "required" && r.mode("trailer-leading-blank-lines", m.Type) != "forbidden"
+	m.split(r.mode("trailer-required", m.Type), whole)
+	return m
+}
 
 // helpOf is the help of a rule for its violation, nil without one.
 func (r *rule) helpOf() []module.Help {

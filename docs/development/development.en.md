@@ -129,7 +129,6 @@ make test-e2e-down
 | `GITLAB_VERSION` | the current minor version | the `gitlab/gitlab-ce` image tag |
 | `E2E_HTTPS_PORT`, `E2E_SSH_PORT` | `8443`, `2222` | ports of the stand on `127.0.0.1` |
 | `E2E_STATE_ROOT` | `bin/e2e-stand` | the test CA, SSH keys and tokens of the stand, a directory per stand |
-| `E2E_NIGHTLY` | `""` (empty string) | only `1` adds the nightly scenario with parallel merges |
 | `COMPOSE_PROJECT_NAME` | from the GitLab version | the stand name; every version has its own |
 
 Do not run two stands at once: GitLab CE needs several GB of memory.

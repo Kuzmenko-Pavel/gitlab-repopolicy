@@ -1,4 +1,4 @@
-//go:build e2e && nightly
+//go:build e2e
 
 package e2e
 
@@ -17,12 +17,14 @@ import (
 // parallelMerges is the number of merge requests merged at once.
 const parallelMerges = 8
 
-// TestNightly_ParallelMerges: merges pressed at the
+// TestOps_ParallelMerges: merges pressed at the
 // same time on one node. GitLab lets one merge per target update win and
-// answers 422 to the others (FACTS); the hook must allow every attempt it
-// sees within its time limit, and retries merge the rest.
-func TestNightly_ParallelMerges(t *testing.T) {
-	p := withCIPolicy(t, "parallel")
+// answers 422 to the others; the hook must allow every attempt it sees
+// within its time limit, and retries merge the rest. check_history: incoming
+// makes the hook check every merge: the merged commits are already in the
+// repository.
+func TestOps_ParallelMerges(t *testing.T) {
+	p := withPathPolicy(t, "parallel", ciIncomingPolicy)
 	alice := user("alice")
 	iids := make([]int, parallelMerges)
 	for i := range iids {

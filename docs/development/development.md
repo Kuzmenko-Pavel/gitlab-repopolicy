@@ -129,7 +129,6 @@ make test-e2e-down
 | `GITLAB_VERSION` | поточна minor-версія | тег образу `gitlab/gitlab-ce` |
 | `E2E_HTTPS_PORT`, `E2E_SSH_PORT` | `8443`, `2222` | порти стенду на `127.0.0.1` |
 | `E2E_STATE_ROOT` | `bin/e2e-stand` | тестовий CA, SSH-ключі й токени стенду, по каталогу на стенд |
-| `E2E_NIGHTLY` | `""` (порожній рядок) | лише значення `1` додає nightly-сценарій з паралельними merge |
 | `COMPOSE_PROJECT_NAME` | з версії GitLab | ім'я стенду; у кожної версії свій |
 
 Не запускайте два стенди одночасно: GitLab CE потребує кількох ГБ пам'яті.

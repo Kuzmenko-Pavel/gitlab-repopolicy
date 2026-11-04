@@ -337,13 +337,15 @@ test-e2e:
 	go test -tags e2e -count=1 -v -timeout 60m ./tests/e2e/...
 
 .PHONY: test-e2e-logs
-## Copy the audit log and the GitLab logs of the e2e stand into bin/e2e-logs/.
+## Copy the audit log, the GitLab logs and the container output of the e2e stand into bin/e2e-logs/.
 test-e2e-logs:
 	rm -rf bin/e2e-logs; mkdir -p bin/e2e-logs
 	for f in /var/log/gitlab-repopolicy/audit.log /var/log/gitlab/gitaly/current /var/log/gitlab/gitlab-rails/production_json.log \
 		/var/log/gitlab/gitlab-rails/api_json.log /var/log/gitlab/sidekiq/current /var/log/gitlab/gitlab-workhorse/current; do \
 		docker compose cp "gitlab:$$f" "bin/e2e-logs/$$(echo "$${f#/var/log/}" | tr / -)" || echo "test-e2e-logs: $$f is not copied" >&2; \
 	done
+	# The output of the containers shows why GitLab did not start, for example a failed reconfigure.
+	docker compose logs --no-color --timestamps > bin/e2e-logs/compose.log || echo "test-e2e-logs: the container output is not copied" >&2
 
 .PHONY: test-e2e-down
 ## Remove the e2e stand COMPOSE_PROJECT_NAME with its volumes.

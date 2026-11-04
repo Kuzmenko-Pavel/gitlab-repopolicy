@@ -122,7 +122,7 @@ make test-e2e
 make test-e2e-down
 ```
 
-`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes. `test-e2e-logs` copies the audit log and the logs of Gitaly, Rails, Sidekiq and Workhorse from the stand into `bin/e2e-logs/`. When e2e fails in CI, the workflow keeps them as the artifact `e2e-logs-<version>` for 14 days.
+`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes. `test-e2e-logs` copies the audit log and the logs of Gitaly, Rails, Sidekiq and Workhorse from the stand into `bin/e2e-logs/`, and the output of the containers into `compose.log`. It shows why GitLab did not start, for example a failed `reconfigure`. When e2e fails in CI, the workflow keeps them as the artifact `e2e-logs-<version>` for 14 days.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

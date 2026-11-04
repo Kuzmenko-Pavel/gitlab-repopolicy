@@ -122,14 +122,13 @@ make test-e2e
 make test-e2e-down
 ```
 
-`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes. `test-e2e-logs` copies the audit log and the logs of Gitaly, Rails, Sidekiq and Workhorse from the stand into `bin/e2e-logs/`. When e2e fails in CI, the workflow keeps them as the artifact `e2e-logs-<version>` for 14 days.
+`test-e2e` builds the binary for Linux, starts GitLab CE `GITLAB_VERSION` and gitlab-runner in docker compose, prepares the stand through the API (users, groups, service account, projects, SSH keys, runner), installs the hook with `install-hook` and runs the scenarios from `tests/e2e`. The first start of GitLab takes a few minutes; the stand lives between runs, a repeated `make test-e2e` only prepares the state again. `test-e2e-down` removes the stand with its volumes. `test-e2e-logs` copies the audit log and the logs of Gitaly, Rails, Sidekiq and Workhorse from the stand into `bin/e2e-logs/`, and the output of the containers into `compose.log`. It shows why GitLab did not start, for example a failed `reconfigure`. When e2e fails in CI, the workflow keeps them as the artifact `e2e-logs-<version>` for 14 days.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `GITLAB_VERSION` | the current minor version | the `gitlab/gitlab-ce` image tag |
 | `E2E_HTTPS_PORT`, `E2E_SSH_PORT` | `8443`, `2222` | ports of the stand on `127.0.0.1` |
 | `E2E_STATE_ROOT` | `bin/e2e-stand` | the test CA, SSH keys and tokens of the stand, a directory per stand |
-| `E2E_NIGHTLY` | `""` (empty string) | only `1` adds the nightly scenario with parallel merges |
 | `COMPOSE_PROJECT_NAME` | from the GitLab version | the stand name; every version has its own |
 
 Do not run two stands at once: GitLab CE needs several GB of memory.

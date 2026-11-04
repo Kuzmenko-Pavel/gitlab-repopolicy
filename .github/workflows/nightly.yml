@@ -30,7 +30,6 @@ jobs:
       - run: make test-e2e
         env:
           GITLAB_VERSION: latest
-          E2E_NIGHTLY: "1"
       - if: failure()
         run: make test-e2e-logs
         env:

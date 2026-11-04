@@ -122,14 +122,13 @@ make test-e2e
 make test-e2e-down
 ```
 
-`test-e2e` збирає бінарник під Linux, піднімає в docker compose GitLab CE `GITLAB_VERSION` і gitlab-runner, готує стенд через API (користувачі, групи, service account, проєкти, SSH-ключі, runner), встановлює hook командою `install-hook` і запускає сценарії з `tests/e2e`. Перший старт GitLab займає кілька хвилин; стенд живе між запусками, повторний `make test-e2e` лише заново готує стан. `test-e2e-down` видаляє стенд разом з volumes. `test-e2e-logs` копіює зі стенду в `bin/e2e-logs/` audit log, логи Gitaly, Rails, Sidekiq і Workhorse. Коли e2e падає в CI, workflow зберігає їх артефактом `e2e-logs-<версія>` на 14 днів.
+`test-e2e` збирає бінарник під Linux, піднімає в docker compose GitLab CE `GITLAB_VERSION` і gitlab-runner, готує стенд через API (користувачі, групи, service account, проєкти, SSH-ключі, runner), встановлює hook командою `install-hook` і запускає сценарії з `tests/e2e`. Перший старт GitLab займає кілька хвилин; стенд живе між запусками, повторний `make test-e2e` лише заново готує стан. `test-e2e-down` видаляє стенд разом з volumes. `test-e2e-logs` копіює зі стенду в `bin/e2e-logs/` audit log, логи Gitaly, Rails, Sidekiq і Workhorse, а у `compose.log` - вивід контейнерів. З нього видно, чому GitLab не запустився, наприклад через помилку `reconfigure`. Коли e2e падає в CI, workflow зберігає їх артефактом `e2e-logs-<версія>` на 14 днів.
 
 | Змінна | За замовчуванням | Значення |
 | --- | --- | --- |
 | `GITLAB_VERSION` | поточна minor-версія | тег образу `gitlab/gitlab-ce` |
 | `E2E_HTTPS_PORT`, `E2E_SSH_PORT` | `8443`, `2222` | порти стенду на `127.0.0.1` |
 | `E2E_STATE_ROOT` | `bin/e2e-stand` | тестовий CA, SSH-ключі й токени стенду, по каталогу на стенд |
-| `E2E_NIGHTLY` | `""` (порожній рядок) | лише значення `1` додає nightly-сценарій з паралельними merge |
 | `COMPOSE_PROJECT_NAME` | з версії GitLab | ім'я стенду; у кожної версії свій |
 
 Не запускайте два стенди одночасно: GitLab CE потребує кількох ГБ пам'яті.

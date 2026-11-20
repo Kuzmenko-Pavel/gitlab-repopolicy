@@ -8,3 +8,7 @@ reason = "Only github.com/sigstore/rekor/pkg/pki/pgp imports golang.org/x/crypto
 [[IgnoredVulns]]
 id = "GO-2026-6225"
 reason = "Only internal/pipe/ko imports the Azure ACR credential helper. .goreleaser.yaml has no kos."
+
+[[IgnoredVulns]]
+id = "GO-2026-6905"
+reason = "goreleaser writes .deb packages with github.com/blakesmith/ar and does not call Reader.Read (govulncheck -mode=binary)."

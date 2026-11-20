@@ -4,3 +4,7 @@
 [[IgnoredVulns]]
 id = "GO-2026-5932"
 reason = "golang.org/x/crypto/openpgp is not in the build of syft."
+
+[[IgnoredVulns]]
+id = "GO-2026-6905"
+reason = "syft reads .deb members with github.com/blakesmith/ar Reader.Read. The release runs syft only on the tar.gz archives goreleaser has just built (sboms: artifacts: archive), which hold no .deb."
